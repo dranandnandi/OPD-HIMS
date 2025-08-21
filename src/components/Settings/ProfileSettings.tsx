@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, User, Mail, Phone, Award, Shield, DollarSign } from 'lucide-react';
+import { Save, User, Mail, Phone, Award, Shield, IndianRupee } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { authService } from '../../services/authService';
 import { Profile, Role } from '../../types';
@@ -197,7 +197,7 @@ const ProfileSettings: React.FC = () => {
       {(user.roleName?.toLowerCase() === 'doctor' || user.roleName?.toLowerCase() === 'admin') && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center gap-2 mb-6">
-            <DollarSign className="w-5 h-5 text-green-600" />
+            <IndianRupee className="w-5 h-5 text-green-600" />
             <h3 className="text-lg font-semibold text-gray-800">My Consultation Fees</h3>
           </div>
           

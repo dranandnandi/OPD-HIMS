@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, Shield, User, Mail, Phone, X, Save, DollarSign } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Shield, User, Mail, Phone, X, Save, IndianRupee } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { authService } from '../../services/authService';
 import { Profile, Role } from '../../types';
@@ -280,7 +280,7 @@ const UserManagement: React.FC = () => {
                         )}
                           {user.role?.name.toLowerCase() === 'doctor' && user.consultationFee && (
                             <div className="flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" />
+                              <IndianRupee className="w-3 h-3" />
                               ₹{user.consultationFee}
                             </div>
                           )}
@@ -545,7 +545,7 @@ const UserManagement: React.FC = () => {
                   {/* Doctor Consultation Fees */}
                   <div className="mt-6">
                     <div className="flex items-center gap-2 mb-4">
-                      <DollarSign className="w-5 h-5 text-green-600" />
+                      <IndianRupee className="w-5 h-5 text-green-600" />
                       <h4 className="text-md font-medium text-gray-800">
                         {isDoctorRole ? 'Consultation Fees' : 'Admin Consultation Fees'}
                       </h4>

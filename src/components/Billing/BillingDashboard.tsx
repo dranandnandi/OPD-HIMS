@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, FileText, Calendar, Search, Plus, Eye, Edit } from 'lucide-react';
+import { IndianRupee, FileText, Calendar, Search, Plus, Eye, Edit } from 'lucide-react';
 import { Bill, Patient } from '../../types';
 import { billingService } from '../../services/billingService';
 import { patientService } from '../../services/patientService';
@@ -257,7 +257,7 @@ const BillingDashboard: React.FC = () => {
               <p className="text-sm text-gray-600">Paid Bills</p>
               <p className="text-3xl font-bold text-purple-600">{paidBills}</p>
             </div>
-            <DollarSign className="w-8 h-8 text-purple-600" />
+            <IndianRupee className="w-8 h-8 text-purple-600" />
           </div>
         </div>
       </div>

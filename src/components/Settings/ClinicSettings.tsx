@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Building, Phone, Mail, Globe, Clock, DollarSign } from 'lucide-react';
+import { Save, Building, Phone, Mail, Globe, Clock, IndianRupee } from 'lucide-react';
 import { ClinicSetting } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
@@ -233,7 +233,7 @@ const ClinicSettings: React.FC = () => {
       {/* Consultation Fees */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center gap-2 mb-4">
-          <DollarSign className="w-5 h-5 text-green-600" />
+          <IndianRupee className="w-5 h-5 text-green-600" />
           <h3 className="text-lg font-semibold text-gray-800">Consultation Fees</h3>
         </div>
         

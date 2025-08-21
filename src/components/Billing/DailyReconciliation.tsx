@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, DollarSign, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp, Clock, Users, BarChart3, PieChart } from 'lucide-react';
+import { Calendar, IndianRupee, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp, Clock, Users, BarChart3, PieChart } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { DailyPaymentSummary } from '../../types';
 
@@ -60,7 +60,7 @@ const DailyReconciliation: React.FC = () => {
   const getPaymentMethodIcon = (method: string) => {
     switch (method) {
       case 'cash':
-        return <DollarSign className="w-6 h-6" />;
+        return <IndianRupee className="w-6 h-6" />;
       case 'card':
         return <CreditCard className="w-6 h-6" />;
       case 'upi':
@@ -72,7 +72,7 @@ const DailyReconciliation: React.FC = () => {
       case 'wallet':
         return <Wallet className="w-6 h-6" />;
       default:
-        return <DollarSign className="w-6 h-6" />;
+        return <IndianRupee className="w-6 h-6" />;
     }
   };
 
@@ -402,7 +402,7 @@ const DailyReconciliation: React.FC = () => {
             {/* No Data Message */}
             {summary.total === 0 && (
               <div className="text-center py-12">
-                <DollarSign className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <IndianRupee className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Collections Today</h3>
                 <p className="text-gray-600">No payments were recorded for {formatDate(selectedDate)}</p>
               </div>

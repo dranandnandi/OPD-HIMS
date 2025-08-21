@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Plus, Search, Edit, Trash2, Pill, TestTube, Save, X, DollarSign, Bot } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Pill, TestTube, Save, X, IndianRupee, Bot } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { masterDataService } from '../../services/masterDataService';
 import { getCurrentProfile } from '../../services/profileService';
@@ -168,7 +168,7 @@ const MasterDataManagement: React.FC = () => {
                   : 'text-gray-600 hover:text-gray-800'
               }`}
             >
-              <DollarSign className="w-4 h-4" />
+              <IndianRupee className="w-4 h-4" />
               Pricing
             </button>
           </nav>
@@ -332,7 +332,7 @@ const MedicinesTable: React.FC<{
                     className="p-1 text-green-600 hover:bg-green-50 rounded"
                     title="Set Price"
                   >
-                    <DollarSign className="w-4 h-4" />
+                    <IndianRupee className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => onDelete(medicine.id)}
@@ -426,7 +426,7 @@ const TestsTable: React.FC<{
                     className="p-1 text-green-600 hover:bg-green-50 rounded"
                     title="Set Price"
                   >
-                    <DollarSign className="w-4 h-4" />
+                    <IndianRupee className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => onDelete(test.id)}

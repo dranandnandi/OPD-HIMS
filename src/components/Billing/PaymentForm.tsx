@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CreditCard, DollarSign, Smartphone, FileText, Building, Wallet, Save, X } from 'lucide-react';
+import { CreditCard, IndianRupee, Smartphone, FileText, Building, Wallet, Save, X } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { PaymentRecord } from '../../types';
 
@@ -34,7 +34,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
   const remainingBalance = billAmount - paidAmount;
 
   const paymentMethods = [
-    { value: 'cash', label: 'Cash', icon: <DollarSign className="w-4 h-4" /> },
+    { value: 'cash', label: 'Cash', icon: <IndianRupee className="w-4 h-4" /> },
     { value: 'card', label: 'Card', icon: <CreditCard className="w-4 h-4" /> },
     { value: 'upi', label: 'UPI', icon: <Smartphone className="w-4 h-4" /> },
     { value: 'cheque', label: 'Cheque', icon: <FileText className="w-4 h-4" /> },

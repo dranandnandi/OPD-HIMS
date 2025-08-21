@@ -4,7 +4,7 @@ import { useAuth } from '../Auth/useAuth';
 import { 
   User, 
   Stethoscope, 
-  DollarSign, 
+  IndianRupee, 
   Users, 
   Bell, 
   Shield,
@@ -68,7 +68,7 @@ const Settings: React.FC = () => {
   // Admin-only tabs
   const adminTabs = [
     { id: 'clinic', label: 'Clinic Settings', icon: Building },
-    { id: 'fees', label: 'Consultation Fees', icon: DollarSign },
+    { id: 'fees', label: 'Consultation Fees', icon: IndianRupee },
     { id: 'templates', label: 'Specialty Templates', icon: Stethoscope },
     { id: 'staff', label: 'Staff Roles', icon: Users },
     { id: 'master-data', label: 'Master Data', icon: Database },
