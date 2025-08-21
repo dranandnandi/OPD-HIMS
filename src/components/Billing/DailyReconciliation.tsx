@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, DollarSign, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp } from 'lucide-react';
+import { Calendar, DollarSign, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp, Clock, Users, BarChart3, PieChart } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { DailyPaymentSummary } from '../../types';
 
 const DailyReconciliation: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [summary, setSummary] = useState<DailyPaymentSummary | null>(null);
+  const [enhancedReport, setEnhancedReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load daily summary when date changes
   useEffect(() => {
     loadDailySummary();
+    loadEnhancedReport();
   }, [selectedDate]);
 
   const loadDailySummary = async () => {
@@ -25,6 +27,15 @@ const DailyReconciliation: React.FC = () => {
       console.error('Error loading daily summary:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEnhancedReport = async () => {
+    try {
+      const enhanced = await paymentService.getEnhancedDailyReport(selectedDate);
+      setEnhancedReport(enhanced);
+    } catch (err) {
+      console.error('Error loading enhanced report:', err);
     }
   };
 
@@ -279,6 +290,114 @@ const DailyReconciliation: React.FC = () => {
                 </table>
               </div>
             </div>
+
+            {/* Enhanced Analytics - Service Categories */}
+            {enhancedReport && enhancedReport.serviceCategories && enhancedReport.serviceCategories.length > 0 && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <PieChart className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">Revenue by Service Category</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {enhancedReport.serviceCategories.map((category: any, index: number) => {
+                    const colors = [
+                      'bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500'
+                    ];
+                    const lightColors = [
+                      'bg-emerald-50 text-emerald-700', 'bg-blue-50 text-blue-700', 
+                      'bg-purple-50 text-purple-700', 'bg-orange-50 text-orange-700', 'bg-pink-50 text-pink-700'
+                    ];
+                    return (
+                      <div key={category.category} className={`${lightColors[index % lightColors.length]} rounded-lg p-4`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium capitalize">{category.category}</span>
+                          <div className={`w-3 h-3 rounded-full ${colors[index % colors.length]}`}></div>
+                        </div>
+                        <div className="text-lg font-bold">{formatCurrency(category.amount)}</div>
+                        <div className="text-xs opacity-75">{category.count} items • {category.percentage.toFixed(1)}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Enhanced Analytics - Summary Cards */}
+            {enhancedReport && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-100 text-sm font-medium">Average Transaction</p>
+                      <p className="text-2xl font-bold">{formatCurrency(enhancedReport.averageTransactionValue)}</p>
+                    </div>
+                    <BarChart3 className="w-8 h-8 text-green-200" />
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-orange-100 text-sm font-medium">Outstanding Balance</p>
+                      <p className="text-2xl font-bold">{formatCurrency(enhancedReport.outstandingBalance)}</p>
+                    </div>
+                    <Users className="w-8 h-8 text-orange-200" />
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100 text-sm font-medium">Peak Collection Hour</p>
+                      <p className="text-2xl font-bold">
+                        {enhancedReport.peakHours && enhancedReport.peakHours.length > 0 
+                          ? `${enhancedReport.peakHours[0].hour}:00` 
+                          : 'N/A'}
+                      </p>
+                      <p className="text-purple-100 text-sm">
+                        {enhancedReport.peakHours && enhancedReport.peakHours.length > 0 
+                          ? formatCurrency(enhancedReport.peakHours[0].amount)
+                          : ''}
+                      </p>
+                    </div>
+                    <Clock className="w-8 h-8 text-purple-200" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Hourly Collection Chart */}
+            {enhancedReport && enhancedReport.hourlyBreakdown && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">Hourly Collection Pattern</h3>
+                </div>
+                <div className="flex items-end justify-between h-32 gap-1">
+                  {enhancedReport.hourlyBreakdown.map((hour: any, index: number) => {
+                    const maxAmount = Math.max(...enhancedReport.hourlyBreakdown.map((h: any) => h.amount));
+                    const height = maxAmount > 0 ? (hour.amount / maxAmount) * 100 : 0;
+                    
+                    return (
+                      <div key={index} className="flex flex-col items-center group relative">
+                        <div 
+                          className="w-3 bg-blue-500 rounded-t hover:bg-blue-600 transition-colors cursor-pointer"
+                          style={{ height: `${height}%`, minHeight: hour.amount > 0 ? '2px' : '0px' }}
+                        />
+                        <span className="text-xs text-gray-500 mt-1 transform -rotate-45 origin-center">
+                          {hour.hour}
+                        </span>
+                        
+                        {/* Tooltip */}
+                        <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10">
+                          {hour.hour}: {formatCurrency(hour.amount)} ({hour.transactions} tx)
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* No Data Message */}
             {summary.total === 0 && (

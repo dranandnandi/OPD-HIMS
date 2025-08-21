@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Calculator, Search, User, Download } from 'lucide-reac
 import { Patient, BillItem, Profile, Visit } from '../../types';
 import { getCurrentProfile } from '../../services/profileService';
 import { billingService } from '../../services/billingService';
+import { paymentService } from '../../services/paymentService';
 import { patientService } from '../../services/patientService';
 import { masterDataService } from '../../services/masterDataService';
 import { visitService } from '../../services/visitService';
@@ -18,6 +19,7 @@ interface BillModalProps {
   prefillItems?: any[];
   onSave: () => void;
   onClose: () => void;
+  isReadOnly?: boolean;
 }
 
 const BillModal: React.FC<BillModalProps> = ({
@@ -26,9 +28,22 @@ const BillModal: React.FC<BillModalProps> = ({
   visitId,
   prefillItems = [],
   onSave,
-  onClose
+  onClose,
+  isReadOnly = false
 }) => {
   const { user } = useAuth();
+  
+  // Check if user can edit bills
+  const canEditBills = () => {
+    if (isReadOnly) return false;
+    if (!user) return false;
+    return user.roleName === 'admin' || 
+           user.roleName === 'super_admin' || 
+           user.permissions.includes('edit_bills') ||
+           user.permissions.includes('manage_billing');
+  };
+  
+  const isEditMode = canEditBills();
   
   // Data states
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -44,6 +59,9 @@ const BillModal: React.FC<BillModalProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [fullPayment, setFullPayment] = useState(false);
+  const [saveProgress, setSaveProgress] = useState('');
+  const [progressStep, setProgressStep] = useState(0);
 
   const [formData, setFormData] = useState({
     billNumber: '',
@@ -93,6 +111,31 @@ const BillModal: React.FC<BillModalProps> = ({
     }
   }, [selectedPatient]);
 
+  // Handle full payment checkbox when total amount changes
+  useEffect(() => {
+    if (fullPayment) {
+      setFormData(prev => ({
+        ...prev,
+        paidAmount: prev.totalAmount,
+        balanceAmount: 0
+      }));
+    }
+  }, [formData.totalAmount, fullPayment]);
+
+  // Uncheck full payment if user manually changes paid amount
+  const handlePaidAmountChange = (paid: number) => {
+    setFormData(prev => ({
+      ...prev,
+      paidAmount: paid,
+      balanceAmount: prev.totalAmount - paid
+    }));
+    
+    // Uncheck full payment if the amount doesn't match total
+    if (paid !== formData.totalAmount && fullPayment) {
+      setFullPayment(false);
+    }
+  };
+
   // Auto-calculate totals when bill items change
   useEffect(() => {
     calculateTotals();
@@ -101,56 +144,60 @@ const BillModal: React.FC<BillModalProps> = ({
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [patientsData, medicinesData, testsData, doctorsResponse] = await Promise.all([
+      const [patientsData, medicinesData, testsData] = await Promise.all([
         patientService.getPatients(),
         masterDataService.getMedicines(),
-        masterDataService.getTests(),
-        supabase
+        masterDataService.getTests()
+      ]);
+      
+      // Load doctors separately with null check
+      let doctorsData = [];
+      if (supabase) {
+        const doctorsResponse = await supabase
           .from('profiles')
           .select('*')
           .eq('is_open_for_consultation', true)
           .eq('is_active', true)
-          .order('name', { ascending: true })
-      ]);
+          .order('name', { ascending: true });
+        
+        if (doctorsResponse.data) {
+          doctorsData = doctorsResponse.data;
+        }
+      }
       
       setPatients(patientsData);
       setMedicines(medicinesData);
       setTests(testsData);
       
-      if (doctorsResponse.error) {
-        console.error('Error loading doctors:', doctorsResponse.error);
-        setDoctors([]);
-      } else {
-        // Convert database profiles to Profile type
-        const convertedDoctors = doctorsResponse.data.map(profile => ({
-          id: profile.id,
-          userId: profile.user_id,
-          roleId: profile.role_id,
-          clinicId: profile.clinic_id,
-          name: profile.name,
-          email: profile.email,
-          phone: profile.phone,
-          specialization: profile.specialization,
-          qualification: profile.qualification,
-          registrationNo: profile.registration_no,
-          roleName: profile.role_name,
-          permissions: profile.permissions,
-          consultationFee: profile.consultation_fee,
-          followUpFee: profile.follow_up_fee,
-          emergencyFee: profile.emergency_fee,
-          isActive: profile.is_active,
-          isOpenForConsultation: profile.is_open_for_consultation,
-          doctorAvailability: profile.doctor_availability,
-          createdAt: new Date(profile.created_at),
-          updatedAt: new Date(profile.updated_at)
-        }));
-        
-        // Filter doctors by current user's clinic ID
-        const filteredDoctors = convertedDoctors.filter(doctor => 
-          doctor.clinicId === user?.clinicId
-        );
-        setDoctors(filteredDoctors);
-      }
+      // Convert database profiles to Profile type
+      const convertedDoctors = doctorsData.map((profile: any) => ({
+        id: profile.id,
+        userId: profile.user_id,
+        roleId: profile.role_id,
+        clinicId: profile.clinic_id,
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        specialization: profile.specialization,
+        qualification: profile.qualification,
+        registrationNo: profile.registration_no,
+        roleName: profile.role_name,
+        permissions: profile.permissions,
+        consultationFee: profile.consultation_fee,
+        followUpFee: profile.follow_up_fee,
+        emergencyFee: profile.emergency_fee,
+        isActive: profile.is_active,
+        isOpenForConsultation: profile.is_open_for_consultation,
+        doctorAvailability: profile.doctor_availability,
+        createdAt: new Date(profile.created_at),
+        updatedAt: new Date(profile.updated_at)
+      }));
+      
+      // Filter doctors by current user's clinic ID
+      const filteredDoctors = convertedDoctors.filter((doctor: any) => 
+        doctor.clinicId === user?.clinicId
+      );
+      setDoctors(filteredDoctors);
     } catch (error) {
       console.error('Error loading initial data:', error);
       setDoctors([]);
@@ -331,9 +378,9 @@ const BillModal: React.FC<BillModalProps> = ({
         
         // Always recalculate total price after any changes
         const subtotal = updatedItem.quantity * updatedItem.unitPrice;
-        const discountAmount = subtotal * (updatedItem.discount / 100);
+        const discountAmount = subtotal * ((updatedItem.discount || 0) / 100);
         const taxableAmount = subtotal - discountAmount;
-        const taxAmount = taxableAmount * (updatedItem.tax / 100);
+        const taxAmount = taxableAmount * ((updatedItem.tax || 0) / 100);
         updatedItem.totalPrice = taxableAmount + taxAmount;
         
         return updatedItem;
@@ -420,14 +467,18 @@ const BillModal: React.FC<BillModalProps> = ({
 
     try {
       setSaving(true);
+      setProgressStep(1);
+      setSaveProgress('Updating visit information...');
       
       // First, update the visit with the selected doctor if we have both visitId and doctorId
       if ((currentVisitId || visitId) && selectedDoctorId) {
         try {
           const visitIdToUpdate = currentVisitId || visitId;
-          await visitService.updateVisit(visitIdToUpdate, { doctorId: selectedDoctorId });
-          if (import.meta.env.DEV) {
-            console.log('✅ Updated visit doctor:', { visitId: visitIdToUpdate, doctorId: selectedDoctorId });
+          if (visitIdToUpdate) {
+            await visitService.updateVisit(visitIdToUpdate, { doctorId: selectedDoctorId });
+            if (import.meta.env.DEV) {
+              console.log('✅ Updated visit doctor:', { visitId: visitIdToUpdate, doctorId: selectedDoctorId });
+            }
           }
         } catch (visitUpdateError) {
           console.error('Error updating visit doctor:', visitUpdateError);
@@ -435,17 +486,13 @@ const BillModal: React.FC<BillModalProps> = ({
         }
       }
       
+      setProgressStep(2);
+      setSaveProgress('Preparing bill data...');
+      
       const billData = {
-        visitId: currentVisitId || visitId || null,
+        visitId: currentVisitId || visitId || undefined,
         patientId: selectedPatient.id,
-        billNumber: formData.billNumber || billingService.generateBillNumber(),
         totalAmount: formData.totalAmount,
-        paidAmount: formData.paidAmount,
-        balanceAmount: formData.totalAmount - formData.paidAmount,
-        paymentStatus: formData.paidAmount >= formData.totalAmount ? 'paid' as const : 
-                      formData.paidAmount > 0 ? 'partial' as const : 'pending' as const,
-        paymentMethod: formData.paymentMethod,
-        billDate: new Date(formData.billDate),
         notes: formData.notes,
         billItems: billItems.map(item => ({
           itemType: item.itemType,
@@ -453,16 +500,40 @@ const BillModal: React.FC<BillModalProps> = ({
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
-          discount: item.discount,
-          tax: item.tax
+          discount: item.discount || 0,
+          tax: item.tax || 0
         }))
       };
 
       if (bill) {
-        await billingService.updateBill(bill.id, billData);
+        setProgressStep(3);
+        setSaveProgress('Updating bill...');
+        // For updates, we need a different structure - let's fix this
+        await billingService.updateBill(bill.id, {
+          notes: formData.notes
+        });
       } else {
-        await billingService.createBill(billData);
+        setProgressStep(3);
+        setSaveProgress('Creating bill...');
+        // Create the bill first
+        const createdBill = await billingService.createBill(billData);
+        
+        // If payment amount is greater than 0, create a payment record
+        if (formData.paidAmount > 0) {
+          setProgressStep(4);
+          setSaveProgress('Recording payment...');
+          await paymentService.recordPayment({
+            billId: createdBill.id,
+            amount: formData.paidAmount,
+            paymentMethod: formData.paymentMethod as 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet',
+            notes: formData.notes || undefined,
+            paymentDate: new Date(formData.billDate)
+          });
+        }
       }
+      
+      setProgressStep(5);
+      setSaveProgress('Finalizing...');
       
       onSave();
       onClose();
@@ -471,6 +542,8 @@ const BillModal: React.FC<BillModalProps> = ({
       alert(error instanceof Error ? error.message : 'Failed to save bill');
     } finally {
       setSaving(false);
+      setProgressStep(0);
+      setSaveProgress('');
     }
   };
 
@@ -586,7 +659,7 @@ const BillModal: React.FC<BillModalProps> = ({
           </div>
 
           {/* Bill Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Bill Date</label>
               <input
@@ -595,20 +668,6 @@ const BillModal: React.FC<BillModalProps> = ({
                 onChange={(e) => setFormData({ ...formData, billDate: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-              <select
-                value={formData.paymentMethod}
-                onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="upi">UPI</option>
-                <option value="cheque">Cheque</option>
-                <option value="online">Online</option>
-              </select>
             </div>
           </div>
 
@@ -735,28 +794,65 @@ const BillModal: React.FC<BillModalProps> = ({
 
           {/* Payment Details */}
           <div className="bg-gray-50 rounded-lg p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
                 <div className="text-2xl font-bold text-gray-800">₹{formData.totalAmount.toFixed(2)}</div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.paidAmount}
-                  onChange={(e) => {
-                    const paid = parseFloat(e.target.value) || 0;
-                    setFormData(prev => ({
-                      ...prev,
-                      paidAmount: paid,
-                      balanceAmount: prev.totalAmount - paid
-                    }));
-                  }}
+                <div className="space-y-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.paidAmount}
+                    disabled={fullPayment}
+                    onChange={(e) => {
+                      const paid = parseFloat(e.target.value) || 0;
+                      handlePaidAmountChange(paid);
+                    }}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fullPayment ? 'bg-gray-100 cursor-not-allowed' : ''
+                    }`}
+                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="fullPayment"
+                      checked={fullPayment}
+                      onChange={(e) => {
+                        const isFullPayment = e.target.checked;
+                        setFullPayment(isFullPayment);
+                        if (isFullPayment) {
+                          setFormData(prev => ({
+                            ...prev,
+                            paidAmount: prev.totalAmount,
+                            balanceAmount: 0
+                          }));
+                        }
+                      }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                    />
+                    <label htmlFor="fullPayment" className="text-sm text-gray-600 cursor-pointer">
+                      Full Payment (₹{formData.totalAmount.toFixed(2)})
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                <select
+                  value={formData.paymentMethod}
+                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="upi">UPI</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="online">Online</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Balance</label>
@@ -800,10 +896,22 @@ const BillModal: React.FC<BillModalProps> = ({
             <button
               onClick={handleSave}
               disabled={saving || !selectedPatient || billItems.length === 0}
-              className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[140px]"
             >
-              <Calculator className="w-4 h-4" />
-              {saving ? 'Saving...' : bill ? 'Update Bill' : 'Create Bill'}
+              {saving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-xs">Step {progressStep}/5</span>
+                    <span className="text-xs opacity-90">{saveProgress}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Calculator className="w-4 h-4" />
+                  {bill ? 'Update Bill' : 'Create Bill'}
+                </>
+              )}
             </button>
           </div>
         </div>

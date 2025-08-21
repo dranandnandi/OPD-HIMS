@@ -12,7 +12,8 @@ import {
   LogOut,
   Pill,
   Clock,
-  Star
+  Star,
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 
@@ -27,6 +28,7 @@ const Navigation: React.FC = () => {
     { path: '/follow-ups', icon: Calendar, label: 'Follow-ups', description: 'Track patient follow-ups' },
     { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients' },
     { path: '/billing', icon: CreditCard, label: 'Billing', description: 'Manage bills & payments' },
+    { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', description: 'Daily payment reconciliation' },
     { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory' },
     { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics', description: 'Reports & insights' },

@@ -137,6 +137,28 @@ const BillingDashboard: React.FC = () => {
     setShowBillModal(true);
   };
 
+  // Check if user can edit bills
+  const canEditBills = () => {
+    if (!user) return false;
+    return user.roleName === 'admin' || 
+           user.roleName === 'super_admin' || 
+           user.permissions.includes('edit_bills') ||
+           user.permissions.includes('manage_billing');
+  };
+
+  // Check if user can edit a specific bill (additional checks can be added)
+  const canEditBill = (bill: Bill) => {
+    if (!canEditBills()) return false;
+    
+    // Additional checks can be added here, such as:
+    // - Bill status (e.g., can't edit paid bills)
+    // - Time-based restrictions (e.g., can't edit bills older than X days)
+    // - User role restrictions (e.g., only bill creator can edit)
+    
+    // For now, if user has edit permission, allow editing
+    return true;
+  };
+
   const handleBillSaved = () => {
     setShowBillModal(false);
     setSelectedBill(null);
@@ -406,13 +428,23 @@ const BillingDashboard: React.FC = () => {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleEditBill(bill)}
-                        className="text-green-600 hover:text-green-900"
-                        title="Edit Bill"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
+                      {canEditBill(bill) ? (
+                        <button 
+                          onClick={() => handleEditBill(bill)}
+                          className="text-green-600 hover:text-green-900"
+                          title="Edit Bill"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button 
+                          disabled
+                          className="text-gray-400 cursor-not-allowed"
+                          title="No permission to edit bills"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -438,6 +470,7 @@ const BillingDashboard: React.FC = () => {
             setShowBillModal(false);
             setSelectedBill(null);
           }}
+          isReadOnly={selectedBill ? !canEditBill(selectedBill) : false}
         />
       )}
     </div>

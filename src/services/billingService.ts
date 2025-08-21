@@ -46,6 +46,17 @@ const convertDatabaseBillItem = (dbBillItem: DatabaseBillItem): BillItem => ({
 });
 
 export const billingService = {
+  // Generate a unique bill number
+  generateBillNumber(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const timestamp = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+    
+    return `BILL-${year}${month}${day}-${timestamp}`;
+  },
+
   // Get all bills with optional payment records
   async getBills(includePaymentRecords: boolean = false): Promise<Bill[]> {
     if (!supabase) {
@@ -386,7 +397,6 @@ export const billingService = {
           bill_number: billNumber,
           total_amount: billData.totalAmount,
           paid_amount: 0,
-          balance_amount: billData.totalAmount,
           status: 'pending',
           bill_date: new Date().toISOString(),
           due_date: billData.dueDate?.toISOString(),

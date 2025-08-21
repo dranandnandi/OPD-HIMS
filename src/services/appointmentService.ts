@@ -50,6 +50,7 @@ export const appointmentService = {
         patients (*),
         profiles (*)
       `)
+      .eq('clinic_id', profile.clinicId)
       .order('appointment_date', { ascending: true });
 
     if (error) {
@@ -106,6 +107,7 @@ export const appointmentService = {
         patients (id, name, phone),
         profiles (id, name, specialization)
       `)
+      .eq('clinic_id', profile.clinicId)
       .gte('appointment_date', startDate.toISOString())
       .lte('appointment_date', endDate.toISOString())
       .order('appointment_date', { ascending: true });
@@ -165,6 +167,7 @@ export const appointmentService = {
         patients (id, name, phone),
         profiles (id, name, specialization)
       `)
+      .eq('clinic_id', profile.clinicId)
       .eq('patient_id', patientId)
       .order('appointment_date', { ascending: false });
 
@@ -222,6 +225,7 @@ export const appointmentService = {
         patients (id, name, phone),
         profiles (id, name, specialization)
       `)
+      .eq('clinic_id', profile.clinicId)
       .eq('doctor_id', doctorId)
       .order('appointment_date', { ascending: true });
 
@@ -432,6 +436,7 @@ export const appointmentService = {
         patients (id, name, phone),
         profiles (id, name, specialization)
       `)
+      .eq('clinic_id', profile.clinicId)
       .eq('id', id)
       .single();
 

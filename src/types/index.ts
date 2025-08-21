@@ -214,6 +214,44 @@ export interface DailyPaymentSummary {
   }[];
 }
 
+export interface EnhancedDailyReport {
+  date: Date;
+  totalCollection: number;
+  transactionCount: number;
+  averageTransactionValue: number;
+  outstandingBalance: number;
+  
+  // Payment method breakdown
+  paymentMethods: {
+    method: string;
+    amount: number;
+    count: number;
+    percentage: number;
+  }[];
+  
+  // Service category breakdown
+  serviceCategories: {
+    category: 'consultation' | 'procedure' | 'medicine' | 'test' | 'other';
+    amount: number;
+    count: number;
+    percentage: number;
+  }[];
+  
+  // Peak hours analysis
+  peakHours: {
+    hour: number;
+    amount: number;
+    count: number;
+  }[];
+  
+  // Daily trend
+  hourlyBreakdown: {
+    hour: string;
+    amount: number;
+    transactions: number;
+  }[];
+}
+
 export interface BillItem {
   id: string;
   billId: string;

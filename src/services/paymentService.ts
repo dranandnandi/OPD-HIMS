@@ -329,5 +329,150 @@ export const paymentService = {
       console.error('Error fetching payment summary range:', error);
       throw error;
     }
+  },
+
+  // Get enhanced daily report with service categories and analytics
+  async getEnhancedDailyReport(date: Date): Promise<any> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    try {
+      const dateStr = date.toISOString().split('T')[0];
+
+      // Get payment records with bill details for the day
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payment_records')
+        .select(`
+          *,
+          bills (
+            *,
+            bill_items (*)
+          )
+        `)
+        .eq('clinic_id', profile.clinicId)
+        .gte('payment_date', `${dateStr}T00:00:00.000Z`)
+        .lte('payment_date', `${dateStr}T23:59:59.999Z`)
+        .order('payment_date', { ascending: false });
+
+      if (paymentError) throw paymentError;
+
+      // Get outstanding balances for the clinic
+      const { data: outstandingData, error: outstandingError } = await supabase
+        .from('bills')
+        .select('balance_amount')
+        .eq('clinic_id', profile.clinicId)
+        .gt('balance_amount', 0);
+
+      if (outstandingError) throw outstandingError;
+
+      // Calculate totals
+      const totalCollection = paymentData?.reduce((sum, payment) => sum + Number(payment.amount), 0) || 0;
+      const transactionCount = paymentData?.length || 0;
+      const averageTransactionValue = transactionCount > 0 ? totalCollection / transactionCount : 0;
+      const outstandingBalance = outstandingData?.reduce((sum, bill) => sum + Number(bill.balance_amount), 0) || 0;
+
+      // Payment method breakdown
+      const paymentMethodMap = new Map();
+      paymentData?.forEach((payment) => {
+        const method = payment.payment_method;
+        const amount = Number(payment.amount);
+        
+        if (paymentMethodMap.has(method)) {
+          const existing = paymentMethodMap.get(method);
+          paymentMethodMap.set(method, {
+            amount: existing.amount + amount,
+            count: existing.count + 1
+          });
+        } else {
+          paymentMethodMap.set(method, { amount, count: 1 });
+        }
+      });
+
+      const paymentMethods = Array.from(paymentMethodMap.entries()).map(([method, data]) => ({
+        method,
+        amount: data.amount,
+        count: data.count,
+        percentage: totalCollection > 0 ? (data.amount / totalCollection) * 100 : 0
+      }));
+
+      // Service category breakdown
+      const categoryMap = new Map();
+      paymentData?.forEach((payment) => {
+        payment.bills?.bill_items?.forEach((item: any) => {
+          const category = item.item_type || 'other';
+          const amount = Number(item.total_price) || 0;
+          
+          if (categoryMap.has(category)) {
+            const existing = categoryMap.get(category);
+            categoryMap.set(category, {
+              amount: existing.amount + amount,
+              count: existing.count + 1
+            });
+          } else {
+            categoryMap.set(category, { amount, count: 1 });
+          }
+        });
+      });
+
+      const serviceCategories = Array.from(categoryMap.entries()).map(([category, data]) => ({
+        category,
+        amount: data.amount,
+        count: data.count,
+        percentage: totalCollection > 0 ? (data.amount / totalCollection) * 100 : 0
+      }));
+
+      // Hourly breakdown
+      const hourlyMap = new Map();
+      paymentData?.forEach((payment) => {
+        const hour = new Date(payment.payment_date).getHours();
+        const amount = Number(payment.amount);
+        
+        if (hourlyMap.has(hour)) {
+          const existing = hourlyMap.get(hour);
+          hourlyMap.set(hour, {
+            amount: existing.amount + amount,
+            transactions: existing.transactions + 1
+          });
+        } else {
+          hourlyMap.set(hour, { amount, transactions: 1 });
+        }
+      });
+
+      const hourlyBreakdown = Array.from({ length: 24 }, (_, hour) => {
+        const data = hourlyMap.get(hour) || { amount: 0, transactions: 0 };
+        return {
+          hour: `${hour.toString().padStart(2, '0')}:00`,
+          amount: data.amount,
+          transactions: data.transactions
+        };
+      });
+
+      // Peak hours (top 3)
+      const peakHours = Array.from(hourlyMap.entries())
+        .map(([hour, data]) => ({ hour, ...data }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 3);
+
+      return {
+        date,
+        totalCollection,
+        transactionCount,
+        averageTransactionValue,
+        outstandingBalance,
+        paymentMethods,
+        serviceCategories,
+        peakHours,
+        hourlyBreakdown
+      };
+    } catch (error) {
+      console.error('Error fetching enhanced daily report:', error);
+      throw error;
+    }
   }
 };
