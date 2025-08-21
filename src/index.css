@@ -1,0 +1,395 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Inter font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Color Tokens */
+:root {
+  --color-primary: #0066FF;
+  --color-accent: #00C896;
+  --color-error: #FF4C4C;
+  --color-success: #00C896;
+  --color-warning: #FFB800;
+  --color-gray-50: #F9FAFB;
+  --color-gray-100: #F3F4F6;
+  --color-gray-200: #E5E7EB;
+  --color-gray-300: #D1D5DB;
+  --color-gray-400: #9CA3AF;
+  --color-gray-500: #6B7280;
+  --color-gray-600: #4B5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1F2937;
+  --color-gray-900: #111827;
+}
+
+/* Typography Hierarchy */
+@layer base {
+  h1 {
+    @apply text-2xl font-bold;
+  }
+  
+  h2 {
+    @apply text-xl font-bold;
+  }
+  
+  h3 {
+    @apply text-lg font-semibold;
+  }
+  
+  h4 {
+    @apply text-base font-medium;
+  }
+  
+  label {
+    @apply text-sm font-medium text-gray-700;
+  }
+  
+  p {
+    @apply text-sm;
+  }
+}
+
+/* Consistent Input Styling */
+@layer components {
+  .input-field {
+    @apply w-full px-4 py-3 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  }
+  
+  .primary-button {
+    @apply bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed;
+  }
+  
+  .secondary-button {
+    @apply bg-gray-100 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-md p-6;
+  }
+  
+  .section-spacing {
+    @apply space-y-6;
+  }
+  
+  .status-chip {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg;
+  }
+  
+  .status-chip-open {
+    @apply bg-green-100 text-green-800;
+  }
+  
+  .status-chip-closed {
+    @apply bg-gray-100 text-gray-600;
+  }
+  
+  .card-standard {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200;
+  }
+  
+  .btn-figma {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md;
+  }
+  
+  .btn-figma-primary {
+    @apply btn-figma bg-blue-600 text-white hover:bg-blue-700;
+  }
+  
+  .btn-figma-secondary {
+    @apply btn-figma bg-gray-100 text-gray-700 hover:bg-gray-200;
+  }
+  
+  .btn-figma-success {
+    @apply btn-figma bg-green-600 text-white hover:bg-green-700;
+  }
+  
+  .btn-figma-purple {
+    @apply btn-figma bg-purple-600 text-white hover:bg-purple-700;
+  }
+
+  /* Appointment Status Pills */
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-pill transition-all duration-200;
+  }
+
+  .status-scheduled {
+    @apply status-pill bg-primary-50 text-primary-700 border border-primary-200;
+  }
+
+  .status-confirmed {
+    @apply status-pill bg-secondary-50 text-secondary-700 border border-secondary-200;
+  }
+
+  .status-in-progress {
+    @apply status-pill bg-warning-50 text-warning-700 border border-warning-200;
+  }
+
+  .status-completed {
+    @apply status-pill bg-success-50 text-success-700 border border-success-200;
+  }
+
+  .status-cancelled {
+    @apply status-pill bg-error-50 text-error-700 border border-error-200;
+  }
+
+  .status-no-show {
+    @apply status-pill bg-orange-50 text-orange-700 border border-orange-200;
+  }
+
+  /* Appointment Cards */
+  .appointment-card-time {
+    @apply text-sm font-bold text-gray-900;
+  }
+
+  .appointment-card-patient {
+    @apply text-sm font-semibold text-gray-800 truncate;
+  }
+
+  .appointment-card-contact {
+    @apply text-xs text-gray-600 flex items-center gap-1;
+  }
+
+  .appointment-card-type {
+    @apply text-xs text-gray-500 lowercase;
+  }
+
+  .appointment-card-actions {
+    @apply flex items-center gap-1 mt-2;
+  }
+
+  /* Floating Action Button */
+  .fab {
+    @apply fixed bottom-6 right-6 w-14 h-14 bg-primary-500 text-white rounded-full shadow-fab flex items-center justify-center transition-all duration-200 hover:bg-primary-600 hover:scale-105 z-50;
+  }
+
+  /* Enhanced Status Pills for Appointments */
+  .status-pill-base {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-pill shadow-status-pill transition-all duration-200;
+  }
+
+  .status-scheduled {
+    @apply status-pill-base bg-primary-50 text-primary-700 border border-primary-200;
+  }
+
+  .status-confirmed {
+    @apply status-pill-base bg-secondary-50 text-secondary-700 border border-secondary-200;
+  }
+
+  .status-in-progress {
+    @apply status-pill-base bg-warning-50 text-warning-700 border border-warning-200;
+  }
+
+  .status-completed {
+    @apply status-pill-base bg-success-50 text-success-700 border border-success-200;
+  }
+
+  .status-cancelled {
+    @apply status-pill-base bg-error-50 text-error-700 border border-error-200;
+  }
+
+  .status-no-show {
+    @apply status-pill-base bg-orange-50 text-orange-700 border border-orange-200;
+  }
+
+  .status-rescheduled {
+    @apply status-pill-base bg-orange-50 text-orange-700 border border-orange-200;
+  }
+
+  /* Enhanced Appointment Cards */
+  .appointment-card {
+    @apply bg-white rounded-card border border-gray-200 p-4 shadow-appointment-card transition-all duration-200 cursor-pointer hover:shadow-appointment-card-hover hover:border-primary-200 hover:bg-primary-50/30;
+  }
+
+  .appointment-card-time {
+    @apply text-appointment-time text-gray-900;
+  }
+
+  .appointment-card-patient {
+    @apply text-appointment-patient text-gray-800 truncate;
+  }
+
+  .appointment-card-contact {
+    @apply text-appointment-contact text-gray-600 flex items-center gap-1;
+  }
+
+  .appointment-card-type {
+    @apply text-appointment-type text-gray-500 lowercase;
+  }
+
+  .appointment-card-actions {
+    @apply flex items-center gap-2 mt-3;
+  }
+
+  .appointment-action-btn {
+    @apply flex-1 px-3 py-1.5 text-xs font-medium rounded-button transition-all duration-200 flex items-center justify-center gap-1;
+  }
+
+  .appointment-edit-btn {
+    @apply appointment-action-btn bg-primary-500 text-white hover:bg-primary-600 hover:shadow-md;
+  }
+
+  .appointment-send-btn {
+    @apply appointment-action-btn bg-secondary-500 text-white hover:bg-secondary-600 hover:shadow-md;
+  }
+
+  /* Calendar Navigation */
+  .calendar-nav {
+  @apply bg-white rounded-lg shadow-md p-4 border border-gray-200;
+}
+
+  .calendar-nav-button {
+    @apply px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-button transition-colors font-medium;
+  }
+
+  .calendar-nav-title {
+    @apply text-lg font-bold text-gray-800;
+  }
+
+  /* Week Grid */
+  .week-grid {
+  @apply grid grid-cols-7 gap-0 border border-gray-200 rounded-lg overflow-hidden bg-white shadow-md;
+}
+
+
+  .week-day-header {
+    @apply p-4 border-r border-gray-200 last:border-r-0 bg-gray-50;
+  }
+
+  .week-day-content {
+    @apply p-4 border-r border-gray-200 last:border-r-0 min-h-[300px] bg-white;
+  }
+
+  .week-day-date {
+    @apply text-center mb-3;
+  }
+
+  .week-day-name {
+    @apply text-sm font-medium text-gray-600;
+  }
+
+  .week-day-number {
+    @apply text-lg font-bold text-gray-800 mt-1;
+  }
+
+  .week-day-appointments {
+    @apply space-y-2;
+  }
+
+  /* Mobile Responsive Adjustments */
+  @media (max-width: 768px) {
+    .appointment-card {
+      @apply p-2;
+    }
+    
+    .appointment-card-actions {
+      @apply flex-col gap-2 mt-2;
+    }
+    
+    .appointment-action-btn {
+      @apply w-full;
+    }
+    
+    .week-day-content {
+      @apply min-h-[200px] p-1;
+    }
+    
+    .week-day-header {
+      @apply p-2;
+    }
+  }
+  /* Calendar Navigation */
+  .calendar-nav {
+  @apply bg-white rounded-xl shadow-lg p-4 border border-gray-200;
+}
+
+
+  .calendar-nav-button {
+    @apply px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-button transition-colors font-medium;
+  }
+
+  .calendar-nav-title {
+    @apply text-lg font-bold text-gray-800;
+  }
+
+  /* Week Grid */
+  .week-grid {
+  @apply grid grid-cols-4 gap-0 border border-gray-200 rounded-lg overflow-hidden bg-white shadow-md;
+}
+
+  .week-day-header {
+    @apply p-4 border-r border-gray-200 last:border-r-0 bg-gray-50;
+  }
+
+  .week-day-content {
+    @apply p-4 border-r border-gray-200 last:border-r-0 min-h-[300px] bg-white;
+  }
+
+  .week-day-date {
+    @apply text-center mb-3;
+  }
+
+  .week-day-name {
+    @apply text-sm font-medium text-gray-600;
+  }
+
+  .week-day-number {
+    @apply text-lg font-bold text-gray-800 mt-1;
+  }
+
+  .week-day-appointments {
+    @apply space-y-2;
+  }
+}
+
+/* PDF Print Styles - Page Break Controls */
+@media print {
+  .pdf-page-break-before {
+    page-break-before: always;
+  }
+  
+  .pdf-page-break-after {
+    page-break-after: always;
+  }
+  
+  .pdf-no-break-inside {
+    page-break-inside: avoid;
+  }
+  
+  .pdf-section {
+    page-break-inside: avoid;
+    margin-bottom: 20px;
+  }
+  
+  .pdf-table-row {
+    page-break-inside: avoid;
+  }
+  
+  .pdf-header {
+    page-break-after: avoid;
+  }
+  
+  .pdf-footer {
+    page-break-before: avoid;
+  }
+}
+
+/* General PDF styling improvements */
+.pdf-container {
+  max-width: 210mm;
+  margin: 0 auto;
+  background: white;
+  color: black;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pdf-section-header {
+  font-weight: bold;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+}
