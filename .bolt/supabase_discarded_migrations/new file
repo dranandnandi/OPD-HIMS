@@ -1,0 +1,571 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+-- Create ENUM types
+CREATE TYPE public.gender_enum AS ENUM ('male', 'female', 'other');
+CREATE TYPE public.appointment_status_enum AS ENUM ('scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show');
+CREATE TYPE public.appointment_type_enum AS ENUM ('consultation', 'follow_up', 'emergency', 'routine_checkup');
+CREATE TYPE public.symptom_severity_enum AS ENUM ('mild', 'moderate', 'severe');
+CREATE TYPE public.test_type_enum AS ENUM ('lab', 'radiology', 'other');
+CREATE TYPE public.test_urgency_enum AS ENUM ('routine', 'urgent', 'stat');
+CREATE TYPE public.test_status_enum AS ENUM ('ordered', 'sample_collected', 'in_progress', 'completed', 'cancelled');
+CREATE TYPE public.bill_payment_status_enum AS ENUM ('pending', 'partial', 'paid', 'overdue');
+CREATE TYPE public.bill_item_type_enum AS ENUM ('consultation', 'procedure', 'medicine', 'test', 'other');
+CREATE TYPE public.payment_method_enum AS ENUM ('cash', 'card', 'upi', 'cheque', 'online');
+CREATE TYPE public.ocr_upload_status_enum AS ENUM ('uploaded', 'processing', 'completed', 'failed');
+CREATE TYPE public.ocr_result_status_enum AS ENUM ('success', 'partial', 'failed');
+CREATE TYPE public.medicine_category_enum AS ENUM ('tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment', 'drops', 'powder', 'other');
+CREATE TYPE public.dosage_form_enum AS ENUM ('tablet', 'capsule', 'syrup', 'suspension', 'injection', 'cream', 'ointment', 'drops', 'powder', 'suppository', 'inhaler', 'other');
+CREATE TYPE public.test_category_enum AS ENUM ('blood', 'urine', 'imaging', 'cardiac', 'neurology', 'pathology', 'other');
+
+-- Create Tables
+CREATE TABLE public.roles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  role_name text NOT NULL UNIQUE,
+  description text,
+  created_at timestamp with time zone DEFAULT now(),
+  permissions text[] DEFAULT '{}',
+  CONSTRAINT roles_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.clinic_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clinic_name text NOT NULL,
+  address text,
+  phone text,
+  email text,
+  logo_url text,
+  appointment_config jsonb,
+  consultation_fee numeric,
+  updated_at timestamp with time zone DEFAULT now(),
+  website text,
+  registration_number text,
+  tax_id text,
+  follow_up_fee numeric,
+  emergency_fee numeric,
+  appointment_duration integer,
+  working_hours jsonb,
+  currency text,
+  timezone text,
+  CONSTRAINT clinic_settings_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.profiles (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  full_name text,
+  role_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  old_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clinic_id uuid,
+  user_id uuid,
+  phone text,
+  specialization text,
+  qualification text,
+  registration_no text,
+  is_active boolean DEFAULT TRUE,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE,
+  CONSTRAINT profiles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id),
+  CONSTRAINT profiles_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
+);
+
+CREATE TABLE public.patients (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  phone text NOT NULL UNIQUE,
+  age integer,
+  gender gender_enum CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])),
+  address text,
+  emergency_contact text,
+  blood_group text,
+  allergies text[],
+  created_at timestamp with time zone DEFAULT now(),
+  last_visit timestamp with time zone,
+  CONSTRAINT patients_pkey PRIMARY KEY (id),
+  CONSTRAINT patients_gender_check CHECK ((gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])))
+);
+
+CREATE TABLE public.appointments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid NOT NULL,
+  doctor_id uuid,
+  appointment_date timestamp with time zone NOT NULL,
+  status appointment_status_enum NOT NULL DEFAULT 'scheduled'::appointment_status_enum CHECK (status = ANY (ARRAY['scheduled'::text, 'completed'::text, 'cancelled'::text, 'rescheduled'::text])),
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  duration integer,
+  appointment_type appointment_type_enum DEFAULT 'consultation'::appointment_type_enum,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT appointments_pkey PRIMARY KEY (id),
+  CONSTRAINT appointments_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id) ON DELETE CASCADE,
+  CONSTRAINT appointments_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.profiles(id)
+);
+
+CREATE TABLE public.visits (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid NOT NULL,
+  date timestamp with time zone DEFAULT now(),
+  chief_complaint text,
+  symptoms text[],
+  vitals jsonb,
+  diagnosis text[],
+  prescriptions jsonb[],
+  advice text[],
+  follow_up_date timestamp with time zone,
+  doctor_notes text,
+  case_image_url text,
+  updated_at timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  doctor_id uuid,
+  visit_date timestamp with time zone DEFAULT now(),
+  appointment_id uuid,
+  CONSTRAINT visits_pkey PRIMARY KEY (id),
+  CONSTRAINT visits_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id) ON DELETE CASCADE,
+  CONSTRAINT visits_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.profiles(id),
+  CONSTRAINT visits_appointment_id_fkey FOREIGN KEY (appointment_id) REFERENCES public.appointments(id)
+);
+
+CREATE TABLE public.bills (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  visit_id uuid,
+  patient_id uuid NOT NULL,
+  bill_date timestamp with time zone NOT NULL DEFAULT now(),
+  total_amount numeric NOT NULL DEFAULT 0,
+  paid_amount numeric NOT NULL DEFAULT 0,
+  status bill_payment_status_enum NOT NULL DEFAULT 'pending'::bill_payment_status_enum CHECK (status = ANY (ARRAY['pending'::text, 'paid'::text, 'partially_paid'::text, 'cancelled'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  balance_amount numeric DEFAULT 0,
+  payment_method payment_method_enum,
+  due_date timestamp with time zone,
+  CONSTRAINT bills_pkey PRIMARY KEY (id),
+  CONSTRAINT bills_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE SET NULL,
+  CONSTRAINT bills_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id) ON DELETE CASCADE,
+  CONSTRAINT bills_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'paid'::text, 'partially_paid'::text, 'cancelled'::text])))
+);
+
+CREATE TABLE public.medicines_master (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  generic_name text,
+  unit text,
+  description text,
+  created_at timestamp with time zone DEFAULT now(),
+  brand_name text,
+  category medicine_category_enum,
+  dosage_form dosage_form_enum,
+  strength text,
+  manufacturer text,
+  side_effects text[],
+  contraindications text[],
+  is_active boolean DEFAULT TRUE,
+  CONSTRAINT medicines_master_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.tests_master (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  description text,
+  price numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  category test_category_enum,
+  type test_type_enum DEFAULT 'lab'::test_type_enum,
+  normal_range text,
+  units text,
+  preparation_instructions text,
+  cost numeric,
+  is_active boolean DEFAULT TRUE,
+  CONSTRAINT tests_master_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.symptoms (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  visit_id uuid NOT NULL,
+  name text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  severity symptom_severity_enum,
+  duration text,
+  notes text,
+  CONSTRAINT symptoms_pkey PRIMARY KEY (id),
+  CONSTRAINT symptoms_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE CASCADE
+);
+
+CREATE TABLE public.diagnoses (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  visit_id uuid NOT NULL,
+  name text NOT NULL,
+  icd10_code text,
+  created_at timestamp with time zone DEFAULT now(),
+  is_primary boolean DEFAULT FALSE,
+  notes text,
+  CONSTRAINT diagnoses_pkey PRIMARY KEY (id),
+  CONSTRAINT diagnoses_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE CASCADE
+);
+
+CREATE TABLE public.prescriptions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  visit_id uuid NOT NULL,
+  medicine_id uuid,
+  medicine text NOT NULL,
+  dosage text,
+  frequency text,
+  duration text,
+  instructions text,
+  created_at timestamp with time zone DEFAULT now(),
+  quantity integer,
+  refills integer,
+  CONSTRAINT prescriptions_pkey PRIMARY KEY (id),
+  CONSTRAINT prescriptions_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE CASCADE,
+  CONSTRAINT prescriptions_medicine_id_fkey FOREIGN KEY (medicine_id) REFERENCES public.medicines_master(id) ON DELETE SET NULL
+);
+
+CREATE TABLE public.tests_ordered (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  visit_id uuid NOT NULL,
+  test_id uuid,
+  "testName" text NOT NULL,
+  notes text,
+  ordered_at timestamp with time zone DEFAULT now(),
+  test_type test_type_enum DEFAULT 'lab'::test_type_enum,
+  instructions text,
+  urgency test_urgency_enum DEFAULT 'routine'::test_urgency_enum,
+  status test_status_enum DEFAULT 'ordered'::test_status_enum,
+  ordered_date timestamp with time zone DEFAULT now(),
+  expected_date timestamp with time zone,
+  CONSTRAINT tests_ordered_pkey PRIMARY KEY (id),
+  CONSTRAINT tests_ordered_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE CASCADE,
+  CONSTRAINT tests_ordered_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests_master(id) ON DELETE SET NULL
+);
+
+CREATE TABLE public.test_results (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  test_ordered_id uuid NOT NULL,
+  result text,
+  result_json jsonb,
+  report_url text,
+  result_date timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  normal_range text,
+  is_abnormal boolean DEFAULT FALSE,
+  CONSTRAINT test_results_pkey PRIMARY KEY (id),
+  CONSTRAINT test_results_test_ordered_id_fkey FOREIGN KEY (test_ordered_id) REFERENCES public.tests_ordered(id) ON DELETE CASCADE
+);
+
+CREATE TABLE public.bill_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  bill_id uuid NOT NULL,
+  "itemName" text NOT NULL,
+  quantity integer NOT NULL DEFAULT 1,
+  unit_price numeric NOT NULL DEFAULT 0,
+  amount numeric NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  item_type bill_item_type_enum DEFAULT 'other'::bill_item_type_enum,
+  item_name text,
+  total_price numeric DEFAULT 0,
+  discount numeric DEFAULT 0,
+  tax numeric DEFAULT 0,
+  CONSTRAINT bill_items_pkey PRIMARY KEY (id),
+  CONSTRAINT bill_items_bill_id_fkey FOREIGN KEY (bill_id) REFERENCES public.bills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE public.ocr_uploads (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid,
+  visit_id uuid,
+  file_url text NOT NULL,
+  file_name text NOT NULL,
+  uploaded_by uuid,
+  uploaded_at timestamp with time zone DEFAULT now(),
+  status ocr_upload_status_enum NOT NULL DEFAULT 'pending'::ocr_upload_status_enum CHECK (status = ANY (ARRAY['pending'::text, 'processed'::text, 'failed'::text])),
+  file_size integer,
+  mime_type text,
+  CONSTRAINT ocr_uploads_pkey PRIMARY KEY (id),
+  CONSTRAINT ocr_uploads_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id) ON DELETE SET NULL,
+  CONSTRAINT ocr_uploads_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id) ON DELETE SET NULL,
+  CONSTRAINT ocr_uploads_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.profiles(id),
+  CONSTRAINT ocr_uploads_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processed'::text, 'failed'::text])))
+);
+
+CREATE TABLE public.ocr_results (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ocr_upload_id uuid NOT NULL,
+  raw_text text,
+  extracted_data jsonb,
+  processed_at timestamp with time zone DEFAULT now(),
+  status ocr_result_status_enum NOT NULL DEFAULT 'success'::ocr_result_status_enum CHECK (status = ANY (ARRAY['success'::text, 'partial'::text, 'failed'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  confidence numeric,
+  processing_time integer,
+  CONSTRAINT ocr_results_pkey PRIMARY KEY (id),
+  CONSTRAINT ocr_results_ocr_upload_id_fkey FOREIGN KEY (ocr_upload_id) REFERENCES public.ocr_uploads(id) ON DELETE CASCADE,
+  CONSTRAINT ocr_results_status_check CHECK ((status = ANY (ARRAY['success'::text, 'partial'::text, 'failed'::text])))
+);
+
+-- Create Indexes
+CREATE UNIQUE INDEX patients_phone_key ON public.patients USING btree (phone);
+CREATE UNIQUE INDEX patients_pkey ON public.patients USING btree (id);
+CREATE INDEX idx_patients_name ON public.patients USING btree (name);
+CREATE INDEX idx_patients_phone ON public.patients USING btree (phone);
+
+CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email);
+CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id);
+
+CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (id);
+CREATE UNIQUE INDEX roles_role_name_key ON public.roles USING btree (role_name);
+
+CREATE UNIQUE INDEX appointments_pkey ON public.appointments USING btree (id);
+CREATE INDEX idx_appointments_date ON public.appointments USING btree (appointment_date);
+CREATE INDEX idx_appointments_doctor_id ON public.appointments USING btree (doctor_id);
+CREATE INDEX idx_appointments_patient_id ON public.appointments USING btree (patient_id);
+
+CREATE UNIQUE INDEX visits_pkey ON public.visits USING btree (id);
+CREATE INDEX idx_visits_date ON public.visits USING btree (date);
+CREATE INDEX idx_visits_patient_id ON public.visits USING btree (patient_id);
+
+CREATE UNIQUE INDEX bills_pkey ON public.bills USING btree (id);
+CREATE INDEX idx_bills_date ON public.bills USING btree (bill_date);
+CREATE INDEX idx_bills_patient_id ON public.bills USING btree (patient_id);
+CREATE INDEX idx_bills_visit_id ON public.bills USING btree (visit_id);
+
+CREATE UNIQUE INDEX medicines_master_name_key ON public.medicines_master USING btree (name);
+CREATE UNIQUE INDEX medicines_master_pkey ON public.medicines_master USING btree (id);
+
+CREATE UNIQUE INDEX tests_master_name_key ON public.tests_master USING btree (name);
+CREATE UNIQUE INDEX tests_master_pkey ON public.tests_master USING btree (id);
+
+CREATE UNIQUE INDEX symptoms_pkey ON public.symptoms USING btree (id);
+CREATE INDEX idx_symptoms_visit_id ON public.symptoms USING btree (visit_id);
+
+CREATE UNIQUE INDEX diagnoses_pkey ON public.diagnoses USING btree (id);
+CREATE INDEX idx_diagnoses_visit_id ON public.diagnoses USING btree (visit_id);
+
+CREATE UNIQUE INDEX prescriptions_pkey ON public.prescriptions USING btree (id);
+CREATE INDEX idx_prescriptions_visit_id ON public.prescriptions USING btree (visit_id);
+
+CREATE UNIQUE INDEX tests_ordered_pkey ON public.tests_ordered USING btree (id);
+CREATE INDEX idx_tests_ordered_visit_id ON public.tests_ordered USING btree (visit_id);
+
+CREATE UNIQUE INDEX test_results_pkey ON public.test_results USING btree (id);
+CREATE INDEX idx_test_results_test_ordered_id ON public.test_results USING btree (test_ordered_id);
+
+CREATE UNIQUE INDEX bill_items_pkey ON public.bill_items USING btree (id);
+CREATE INDEX idx_bill_items_bill_id ON public.bill_items USING btree (bill_id);
+
+CREATE UNIQUE INDEX ocr_uploads_pkey ON public.ocr_uploads USING btree (id);
+CREATE INDEX idx_ocr_uploads_patient_id ON public.ocr_uploads USING btree (patient_id);
+CREATE INDEX idx_ocr_uploads_visit_id ON public.ocr_uploads USING btree (visit_id);
+
+CREATE UNIQUE INDEX ocr_results_pkey ON public.ocr_results USING btree (id);
+CREATE INDEX idx_ocr_results_ocr_upload_id ON public.ocr_results USING btree (ocr_upload_id);
+
+CREATE UNIQUE INDEX clinic_settings_pkey ON public.clinic_settings USING btree (id);
+
+-- Create Trigger Functions
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.update_patient_last_visit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    UPDATE public.patients
+    SET last_visit = NEW.date
+    WHERE id = NEW.patient_id;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.calculate_bill_totals()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    v_total_amount numeric;
+    v_paid_amount numeric;
+    v_balance_amount numeric;
+BEGIN
+    -- Calculate total amount from bill_items
+    SELECT COALESCE(SUM(total_price - discount + tax), 0)
+    INTO v_total_amount
+    FROM public.bill_items
+    WHERE bill_id = NEW.bill_id;
+
+    -- Get current paid_amount from the bills table
+    SELECT paid_amount INTO v_paid_amount FROM public.bills WHERE id = NEW.bill_id;
+
+    -- Calculate balance_amount
+    v_balance_amount := v_total_amount - v_paid_amount;
+
+    -- Update the bills table
+    UPDATE public.bills
+    SET
+        total_amount = v_total_amount,
+        balance_amount = v_balance_amount
+    WHERE id = NEW.bill_id;
+
+    RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.update_payment_status()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.paid_amount >= NEW.total_amount THEN
+        NEW.status = 'paid';
+    ELSIF NEW.paid_amount > 0 AND NEW.paid_amount < NEW.total_amount THEN
+        NEW.status = 'partial';
+    ELSE
+        NEW.status = 'pending';
+    END IF;
+    NEW.balance_amount = NEW.total_amount - NEW.paid_amount;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.generate_bill_number()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    bill_seq_val bigint;
+BEGIN
+    -- Get the next value from a sequence (create if not exists)
+    -- This sequence should be created once, e.g., CREATE SEQUENCE bill_number_seq;
+    -- For simplicity, let's assume a simple timestamp-based number for now
+    -- In a real scenario, you'd use a proper sequence or a function to generate unique numbers
+    NEW.bill_number = 'BILL-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(NEXTVAL('bill_number_seq')::text, 5, '0');
+    RETURN NEW;
+END;
+$function$;
+
+-- Create a sequence for bill numbers if it doesn't exist
+CREATE SEQUENCE IF NOT EXISTS bill_number_seq;
+
+CREATE OR REPLACE FUNCTION public.validate_payment_amounts()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.paid_amount > NEW.total_amount THEN
+        RAISE EXCEPTION 'Paid amount cannot be greater than total amount.';
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+-- Create Triggers
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trigger_update_patient_last_visit AFTER INSERT ON public.visits FOR EACH ROW EXECUTE FUNCTION update_patient_last_visit();
+CREATE TRIGGER trigger_generate_bill_number BEFORE INSERT ON public.bills FOR EACH ROW EXECUTE FUNCTION generate_bill_number();
+CREATE TRIGGER trigger_update_payment_status BEFORE UPDATE ON public.bills FOR EACH ROW WHEN (((old.paid_amount IS DISTINCT FROM new.paid_amount) OR (old.total_amount IS DISTINCT FROM new.total_amount))) EXECUTE FUNCTION update_payment_status();
+CREATE TRIGGER trigger_validate_payment_amounts BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION validate_payment_amounts();
+CREATE TRIGGER trigger_calculate_bill_totals AFTER INSERT OR DELETE OR UPDATE ON public.bill_items FOR EACH ROW EXECUTE FUNCTION calculate_bill_totals();
+
+
+-- Enable Row Level Security (RLS) for tables
+ALTER TABLE public.visits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.medicines_master ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tests_master ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.symptoms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.diagnoses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tests_ordered ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.test_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bill_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ocr_uploads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ocr_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clinic_settings ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS Policies
+-- Policies for public.visits
+CREATE POLICY "Allow all operations for authenticated users on visits" ON public.visits
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.patients
+CREATE POLICY "Allow all operations for authenticated users on patients" ON public.patients
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.bills
+CREATE POLICY "Allow all operations for authenticated users on bills" ON public.bills
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.medicines_master
+CREATE POLICY "Allow admin to manage medicines_master" ON public.medicines_master
+  FOR ALL USING (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = uid()) AND (profiles.role_id = ( SELECT roles.id FROM roles WHERE (roles.role_name = 'admin'::text))))));
+CREATE POLICY "Allow all authenticated users to view medicines_master" ON public.medicines_master
+  FOR SELECT USING (role() = 'authenticated'::text);
+
+-- Policies for public.tests_master
+CREATE POLICY "Allow admin to manage tests_master" ON public.tests_master
+  FOR ALL USING (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = uid()) AND (profiles.role_id = ( SELECT roles.id FROM roles WHERE (roles.role_name = 'admin'::text))))));
+CREATE POLICY "Allow all authenticated users to view tests_master" ON public.tests_master
+  FOR SELECT USING (role() = 'authenticated'::text);
+
+-- Policies for public.profiles
+CREATE POLICY "Allow all authenticated users to view profiles" ON public.profiles
+  FOR SELECT USING (role() = 'authenticated'::text);
+CREATE POLICY "Allow authenticated users to insert their own profile" ON public.profiles
+  FOR INSERT WITH CHECK (uid() = id);
+CREATE POLICY "Allow authenticated users to update their own profile" ON public.profiles
+  FOR UPDATE USING (uid() = id);
+
+-- Policies for public.appointments
+CREATE POLICY "Allow all operations for authenticated users on appointments" ON public.appointments
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.symptoms
+CREATE POLICY "Allow all operations for authenticated users on symptoms" ON public.symptoms
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.diagnoses
+CREATE POLICY "Allow all operations for authenticated users on diagnoses" ON public.diagnoses
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.prescriptions
+CREATE POLICY "Allow all operations for authenticated users on prescriptions" ON public.prescriptions
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.tests_ordered
+CREATE POLICY "Allow all operations for authenticated users on tests_ordered" ON public.tests_ordered
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.test_results
+CREATE POLICY "Allow all operations for authenticated users on test_results" ON public.test_results
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.bill_items
+CREATE POLICY "Allow all operations for authenticated users on bill_items" ON public.bill_items
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.ocr_uploads
+CREATE POLICY "Allow all operations for authenticated users on ocr_uploads" ON public.ocr_uploads
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.ocr_results
+CREATE POLICY "Allow all operations for authenticated users on ocr_results" ON public.ocr_results
+  FOR ALL USING (role() = 'authenticated'::text);
+
+-- Policies for public.clinic_settings
+CREATE POLICY "Admin can read clinic settings" ON public.clinic_settings
+  FOR SELECT USING (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = uid()) AND (p.role_id = ( SELECT roles.id FROM roles WHERE (roles.role_name = 'admin'::text))))));
+CREATE POLICY "Admin can write clinic settings" ON public.clinic_settings
+  FOR ALL USING (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = uid()) AND (p.role_id = ( SELECT roles.id FROM roles WHERE (roles.role_name = 'admin'::text))))));
+CREATE POLICY "Allow admin to manage clinic_settings" ON public.clinic_settings
+  FOR ALL USING (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = uid()) AND (profiles.role_id = ( SELECT roles.id FROM roles WHERE (roles.role_name = 'admin'::text))))));
+CREATE POLICY "Allow all authenticated users to view clinic_settings" ON public.clinic_settings
+  FOR SELECT USING (role() = 'authenticated'::text);

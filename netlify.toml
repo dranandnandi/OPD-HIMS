@@ -1,0 +1,52 @@
+[build]
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Don't redirect these patterns - let them pass through to Vite
+[[redirects]]
+  from = "/src/*"
+  to = "http://localhost:5173/src/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/@vite/*"
+  to = "http://localhost:5173/@vite/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/@react-refresh"
+  to = "http://localhost:5173/@react-refresh"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/node_modules/*"
+  to = "http://localhost:5173/node_modules/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/@id/*"
+  to = "http://localhost:5173/@id/:splat"
+  status = 200
+  force = true
+
+# SPA fallback - only for HTML navigation
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false
+
+[dev]
+  command = "npm run dev"
+  port = 8888
+  targetPort = 5173
+  publish = "dist"
+  autoLaunch = false
