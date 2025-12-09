@@ -401,6 +401,13 @@ export interface ClinicSetting {
     label: string;
     timesPerDay: number | null;
   }>;
+  // Appointment Types
+  appointmentTypes?: Array<{
+    id: string;
+    label: string;
+    duration: number;
+    color: string;
+  }>;
 }
 
 export interface Review {

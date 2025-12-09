@@ -45,6 +45,13 @@ const ClinicSettings: React.FC = () => {
     {code: 'PRN', label: 'PRN (As needed)', timesPerDay: null}
   ]);
 
+  const [appointmentTypes, setAppointmentTypes] = useState<Array<{id: string, label: string, duration: number, color: string}>>([
+    {id: 'consultation', label: 'Consultation', duration: 30, color: '#3B82F6'},
+    {id: 'followup', label: 'Follow-up', duration: 20, color: '#10B981'},
+    {id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444'},
+    {id: 'procedure', label: 'Procedure', duration: 60, color: '#8B5CF6'}
+  ]);
+
   useEffect(() => {
     if (user) {
       loadSettings();
@@ -84,6 +91,11 @@ const ClinicSettings: React.FC = () => {
       if (clinicSettings.prescriptionFrequencies) {
         setFrequencies(clinicSettings.prescriptionFrequencies);
       }
+      
+      // Load appointment types if available
+      if (clinicSettings.appointmentTypes) {
+        setAppointmentTypes(clinicSettings.appointmentTypes);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load clinic settings');
       console.error('Error loading clinic settings:', err);
@@ -100,7 +112,8 @@ const ClinicSettings: React.FC = () => {
       const updatedSettings = await clinicSettingsService.updateClinicSettings(settings.id, {
         ...formData,
         workingHours,
-        prescriptionFrequencies: frequencies
+        prescriptionFrequencies: frequencies,
+        appointmentTypes: appointmentTypes
       });
       setSettings(updatedSettings);
       alert('Settings saved successfully!');
@@ -391,6 +404,109 @@ const ClinicSettings: React.FC = () => {
         {frequencies.length === 0 && (
           <p className="text-sm text-gray-500 text-center py-4">
             No frequencies configured. Click "Add Frequency" to add one.
+          </p>
+        )}
+      </div>
+
+      {/* Appointment Types */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-purple-600" />
+            <h3 className="text-lg font-semibold text-gray-800">Appointment Types</h3>
+          </div>
+          <button
+            onClick={() => setAppointmentTypes([...appointmentTypes, {id: '', label: '', duration: 30, color: '#3B82F6'}])}
+            className="flex items-center gap-1 px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Type
+          </button>
+        </div>
+        
+        <p className="text-sm text-gray-600 mb-4">
+          Configure appointment types that will appear when scheduling appointments. Each type can have a different duration and color.
+        </p>
+
+        <div className="space-y-3">
+          {appointmentTypes.map((type, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 border border-gray-200 rounded-lg">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">ID</label>
+                <input
+                  type="text"
+                  value={type.id}
+                  onChange={(e) => {
+                    const updated = [...appointmentTypes];
+                    updated[index].id = e.target.value.toLowerCase().replace(/\s+/g, '_');
+                    setAppointmentTypes(updated);
+                  }}
+                  placeholder="consultation"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Label</label>
+                <input
+                  type="text"
+                  value={type.label}
+                  onChange={(e) => {
+                    const updated = [...appointmentTypes];
+                    updated[index].label = e.target.value;
+                    setAppointmentTypes(updated);
+                  }}
+                  placeholder="Consultation"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Duration (min)</label>
+                <input
+                  type="number"
+                  value={type.duration}
+                  onChange={(e) => {
+                    const updated = [...appointmentTypes];
+                    updated[index].duration = parseInt(e.target.value) || 30;
+                    setAppointmentTypes(updated);
+                  }}
+                  placeholder="30"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Color</label>
+                  <input
+                    type="color"
+                    value={type.color}
+                    onChange={(e) => {
+                      const updated = [...appointmentTypes];
+                      updated[index].color = e.target.value;
+                      setAppointmentTypes(updated);
+                    }}
+                    className="w-full h-10 border border-gray-300 rounded-lg cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={() => setAppointmentTypes(appointmentTypes.filter((_, i) => i !== index))}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Remove type"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {appointmentTypes.length === 0 && (
+          <p className="text-sm text-gray-500 text-center py-4">
+            No appointment types configured. Click "Add Type" to add one.
           </p>
         )}
       </div>

@@ -131,7 +131,7 @@ exports.handler = async (event) => {
       phoneNumber: resolvedPhoneNumber,
       fileUrl: resolvedFileUrl,
       caption: finalCaption,
-      templateData: Object.keys(templateData).length ? JSON.stringify(templateData) : undefined,
+      templateData: Object.keys(templateData).length ? templateData : undefined,
       fileName: fileName || `bill_${billNumber || 'invoice'}.pdf`,
     };
     

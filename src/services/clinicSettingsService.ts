@@ -31,7 +31,8 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   enableAiThankYou: dbSetting.enable_ai_thank_you,
   enableGmbLinkOnly: dbSetting.enable_gmb_link_only,
   gmbLink: dbSetting.gmb_link,
-  prescriptionFrequencies: dbSetting.prescription_frequencies
+  prescriptionFrequencies: dbSetting.prescription_frequencies,
+  appointmentTypes: dbSetting.appointment_types
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -59,7 +60,8 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   enable_ai_thank_you: setting.enableAiThankYou,
   enable_gmb_link_only: setting.enableGmbLinkOnly,
   gmb_link: setting.gmbLink,
-  prescription_frequencies: setting.prescriptionFrequencies
+  prescription_frequencies: setting.prescriptionFrequencies,
+  appointment_types: setting.appointmentTypes
 });
 
 export const clinicSettingsService = {
@@ -165,6 +167,7 @@ export const clinicSettingsService = {
     if (settings.enableGmbLinkOnly !== undefined) dbSettings.enable_gmb_link_only = settings.enableGmbLinkOnly;
     if (settings.gmbLink !== undefined) dbSettings.gmb_link = settings.gmbLink;
     if (settings.prescriptionFrequencies !== undefined) dbSettings.prescription_frequencies = settings.prescriptionFrequencies;
+    if (settings.appointmentTypes !== undefined) dbSettings.appointment_types = settings.appointmentTypes;
 
     const { data, error } = await supabase
       .from('clinic_settings')
