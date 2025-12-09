@@ -16,6 +16,7 @@ import {
   Pill,
   Clock,
   Star,
+  TrendingUp,
   Bot
 } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
@@ -32,6 +33,7 @@ const MobileNav: React.FC = () => {
     { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
     { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' },
     { path: '/billing', icon: CreditCard, label: 'Billing' },
+    { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection' },
     { path: '/pharmacy', icon: Pill, label: 'Pharmacy' },
     { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload' },
     { path: '/chatbots', icon: Bot, label: 'AI Health Assistant' },

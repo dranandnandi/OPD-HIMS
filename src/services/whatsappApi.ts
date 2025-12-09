@@ -78,6 +78,7 @@ const FUNCTION_MAP = {
   sendFileUrl: 'whatsapp-send-file-url',
   sendReport: 'whatsapp-send-report',
   sendReportUrl: 'whatsapp-send-report-url',
+  sendBillPdf: 'whatsapp-send-bill',
   syncUser: 'whatsapp-sync-user',
   proxy: 'whatsapp-proxy'
 } as const;
@@ -153,6 +154,43 @@ export class WhatsAppAPI {
 
   async sendReportUrl(payload: { phone: string; reportUrl: string; caption?: string }, context?: WhatsAppContextInput) {
     return this.post(FUNCTION_MAP.sendReportUrl, payload as unknown as JsonRecord, context);
+  }
+
+  async sendBillPdf(payload: { 
+    phone: string; 
+    fileUrl: string; 
+    caption?: string;
+    fileName?: string;
+    billNumber?: string;
+    patientName?: string;
+    totalAmount?: number;
+  }, context?: WhatsAppContextInput) {
+    // Transform phone to phoneNumber for the backend and ensure country code
+    const { phone, ...rest } = payload;
+    
+    // Ensure phone number has country code
+    let phoneNumber = phone;
+    
+    // Remove any + prefix
+    if (phoneNumber.startsWith('+')) {
+      phoneNumber = phoneNumber.substring(1);
+    }
+    
+    // Remove leading 0 if present (e.g., 08780465286 -> 8780465286)
+    if (phoneNumber.startsWith('0')) {
+      phoneNumber = phoneNumber.substring(1);
+    }
+    
+    // Add 91 if not already present (Indian country code)
+    if (!phoneNumber.startsWith('91')) {
+      phoneNumber = '91' + phoneNumber;
+    }
+    
+    const transformedPayload = {
+      phoneNumber: phoneNumber,
+      ...rest
+    };
+    return this.post(FUNCTION_MAP.sendBillPdf, transformedPayload as unknown as JsonRecord, context);
   }
 
   async syncUser(payload: { user: JsonRecord }, context?: WhatsAppContextInput) {

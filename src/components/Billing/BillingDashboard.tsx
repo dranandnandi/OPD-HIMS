@@ -175,10 +175,11 @@ const BillingDashboard: React.FC = () => {
   // Check if user can edit bills
   const canEditBills = () => {
     if (!user) return false;
-    return user.roleName === 'admin' || 
-           user.roleName === 'super_admin' || 
-           user.permissions.includes('edit_bills') ||
-           user.permissions.includes('manage_billing');
+    const roleName = user.roleName?.toLowerCase();
+    return roleName === 'admin' || 
+           roleName === 'super_admin' || 
+           user.permissions?.includes('edit_bills') ||
+           user.permissions?.includes('manage_billing');
   };
 
   // Check if user can edit a specific bill (additional checks can be added)
@@ -208,13 +209,51 @@ const BillingDashboard: React.FC = () => {
 
     try {
       setWhatsappBillId(bill.id);
-      const clinicName = user?.clinic?.clinicName;
-      const message = buildInvoiceMessage(bill, clinicName);
-      await sendBillMessage(bill, message);
-      alert('WhatsApp message sent successfully.');
+      
+      // Generate PDF directly without fetching clinic settings (use cached data from user context)
+      const { pdfService } = await import('../../services/pdfService');
+      
+      // Use clinic data from user context instead of fetching
+      const clinicSettings = user?.clinic ? {
+        id: user.clinic.id,
+        clinicName: user.clinic.clinicName || 'Clinic',
+        address: user.clinic.address || '',
+        phone: user.clinic.phone || '',
+        email: user.clinic.email || '',
+        logo: user.clinic.logo || null,
+        headerText: user.clinic.headerText || '',
+        footerText: user.clinic.footerText || ''
+      } : null;
+      
+      const pdfUrl = await pdfService.generatePdfFromData('bill', {
+        bill,
+        patient: bill.patient,
+        clinicSettings
+      });
+      
+      // Send PDF via WhatsApp
+      const { whatsappApi } = await import('../../services/whatsappApi');
+      const clinicName = user?.clinic?.clinicName || 'Clinic';
+      const patientName = bill.patient.name;
+      const caption = `Dear ${patientName},\n\nThank you for visiting ${clinicName}.\n\nYour bill #${bill.billNumber} for ₹${bill.totalAmount.toLocaleString('en-IN')} is attached.\n\n${bill.balanceAmount > 0 ? `Balance due: ₹${bill.balanceAmount.toLocaleString('en-IN')}\n\n` : ''}Regards,\n${clinicName}`;
+      
+      await whatsappApi.sendBillPdf({
+        phone: bill.patient.phone,
+        fileUrl: pdfUrl,
+        caption,
+        fileName: `bill_${bill.billNumber}.pdf`,
+        billNumber: bill.billNumber,
+        patientName: bill.patient.name,
+        totalAmount: bill.totalAmount
+      }, {
+        userId: user?.id,
+        clinicId: user?.clinicId
+      });
+      
+      alert('Bill PDF sent via WhatsApp successfully.');
     } catch (error) {
-      console.error('Failed to send WhatsApp message', error);
-      alert(error instanceof Error ? error.message : 'Failed to send WhatsApp message');
+      console.error('Failed to send bill PDF via WhatsApp', error);
+      alert(error instanceof Error ? error.message : 'Failed to send bill PDF via WhatsApp');
     } finally {
       setWhatsappBillId(null);
     }
@@ -521,7 +560,7 @@ const BillingDashboard: React.FC = () => {
                       <button
                         onClick={() => handleSendWhatsApp(bill)}
                         className="text-green-600 hover:text-green-900"
-                        title="Send WhatsApp"
+                        title="Send Bill PDF via WhatsApp"
                         disabled={whatsappBillId === bill.id}
                       >
                         {whatsappBillId === bill.id ? (
