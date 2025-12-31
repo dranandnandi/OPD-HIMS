@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +14,9 @@ serve(async (req) => {
   }
 
   try {
-    const { type, data } = await req.json()
+    const { type, data, printVersion } = await req.json()
+
+    console.log('[PDF GEN] Request received:', { type, printVersion: printVersion || false })
 
     if (!type || !data) {
       return new Response(
@@ -23,6 +27,55 @@ serve(async (req) => {
         }
       )
     }
+
+    // Initialize Supabase Admin Client for checking existing PDFs
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const supabaseAdmin = createClient(supabaseUrl, supabaseKey)
+
+    // === PDF EXISTENCE CHECK - Return cached PDF if available ===
+    if (type === 'visit' && data.visit?.id) {
+      const column = printVersion ? 'print_pdf_url' : 'pdf_url'
+      const { data: existingVisit, error } = await supabaseAdmin
+        .from('visits')
+        .select(column)
+        .eq('id', data.visit.id)
+        .single()
+
+      if (!error && existingVisit) {
+        const existingPdfUrl = existingVisit[column]
+
+        if (existingPdfUrl) {
+          console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
+          return new Response(
+            JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+      console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
+    } else if (type === 'bill' && data.bill?.id) {
+      const column = printVersion ? 'printPdfUrl' : 'pdfUrl'
+      const { data: existingBill, error } = await supabaseAdmin
+        .from('bills')
+        .select(column)
+        .eq('id', data.bill.id)
+        .single()
+
+      if (!error && existingBill) {
+        const existingPdfUrl = existingBill[column]
+
+        if (existingPdfUrl) {
+          console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
+          return new Response(
+            JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+      console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
+    }
+    // === END PDF EXISTENCE CHECK ===
 
     const pdfCoApiKey = Deno.env.get('PDF_CO_API')
     if (!pdfCoApiKey) {
@@ -35,19 +88,111 @@ serve(async (req) => {
       )
     }
 
+    // Helper to convert image URL to base64 with optimization
+    const imageUrlToBase64 = async (url: string): Promise<string> => {
+      try {
+        // If already base64, return as is
+        if (url.startsWith('data:image')) return url;
+
+        let fetchUrl = url;
+
+        // Optimization for ImageKit URLs
+        if (url.includes('ik.imagekit.io')) {
+          console.log('[PDF GEN] Optimizing ImageKit URL for smaller Base64');
+          // If URL already contains a transformation path (tr:...), replace it or append to it
+          if (url.includes('/tr:')) {
+            // Existing transformation found, replace the specific transformation block
+            fetchUrl = url.replace(/\/tr:[^/]+/, '/tr:w-1200,q-75,f-webp');
+          } else {
+            // No transformation found, insert it after the ID
+            const urlParts = url.split('/');
+            // Typically: https://ik.imagekit.io/your_id/path/to/image.jpg
+            // We want: https://ik.imagekit.io/your_id/tr:w-800,q-70,f-webp/path/to/image.jpg
+            if (urlParts.length > 4) {
+              urlParts.splice(4, 0, 'tr:w-1200,q-75,f-webp');
+              fetchUrl = urlParts.join('/');
+            }
+          }
+        }
+
+        console.log(`[PDF GEN] Fetching image: ${fetchUrl.substring(0, 100)}...`);
+        const response = await fetch(fetchUrl);
+
+        // Fallback to original URL if optimized fails
+        if (!response.ok && fetchUrl !== url) {
+          console.warn(`[PDF GEN] Optimized fetch failed (${response.status}), trying original URL...`);
+          const fallbackResponse = await fetch(url);
+          if (!fallbackResponse.ok) throw new Error(`Failed to fetch original image: ${fallbackResponse.statusText}`);
+
+          const arrayBuffer = await fallbackResponse.arrayBuffer();
+          const base64String = encode(new Uint8Array(arrayBuffer));
+          const contentType = fallbackResponse.headers.get('content-type') || 'image/png';
+          return `data:${contentType};base64,${base64String}`;
+        }
+
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+
+        const arrayBuffer = await response.arrayBuffer();
+        const base64String = encode(new Uint8Array(arrayBuffer));
+        const contentType = response.headers.get('content-type') || 'image/png';
+
+        console.log(`[PDF GEN] ✅ Image converted to Base64 (${contentType})`);
+        return `data:${contentType};base64,${base64String}`;
+      } catch (e) {
+        console.error('[PDF GEN] ❌ Failed to convert image to base64:', e);
+        // Fallback to original URL if conversion fails - PDF.co might still try to fetch it
+        return url;
+      }
+    };
+
+
     let htmlContent = '';
     let filename = 'document.pdf';
 
     // Dynamic HTML Generation based on type
     if (type === 'bill') {
       const { bill, patient, doctor, clinicSettings } = data;
-      filename = `Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      filename = printVersion
+        ? `Print_Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+        : `Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
       htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Bill #${bill.billNumber}</title>
+          <title>Bill #${bill.billNumber}${printVersion ? ' (Print Version)' : ''}</title>
           <style>
+            /* === PRINT VERSION STYLING === */
+            ${printVersion ? `
+            html, body {
+              filter: grayscale(100%) !important;
+              -webkit-filter: grayscale(100%) !important;
+              print-color-adjust: exact !important;
+            }
+            
+            /* Hide headers and footers */
+            .custom-header, .custom-footer, .header, .footer {
+              display: none !important;
+            }
+            
+            /* Force black text */
+            body, p, div, span, h1, h2, h3 {
+              color: #000 !important;
+            }
+            
+            /* Remove backgrounds */
+            .status, th {
+              background: #ddd !important;
+              color: #000 !important;
+            }
+            
+            /* Simplify borders */
+            .header, .details-section > div, table, th, td {
+              border-color: #000 !important;
+            }
+            ` : ''}
+            /* === END PRINT VERSION STYLING === */
+            
             body { font-family: Arial, sans-serif; margin: 20px; color: #333; line-height: 1.4; }
             .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
             .header h1 { margin: 0; font-size: 24px; color: #0066FF; }
@@ -70,13 +215,6 @@ serve(async (req) => {
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>${clinicSettings.clinicName}</h1>
-            <p>${clinicSettings.address}</p>
-            <p>Phone: ${clinicSettings.phone}${clinicSettings.email ? ` | Email: ${clinicSettings.email}` : ''}</p>
-            ${clinicSettings.registrationNumber ? `<p>Registration No: ${clinicSettings.registrationNumber}</p>` : ''}
-          </div>
-
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <div>
               <h2 style="margin: 0;">BILL / INVOICE</h2>
@@ -117,6 +255,8 @@ serve(async (req) => {
                 <th>Type</th>
                 <th>Qty</th>
                 <th>Unit Price (₹)</th>
+                <th>Disc (%)</th>
+                <th>Tax (%)</th>
                 <th>Total (₹)</th>
               </tr>
             </thead>
@@ -128,6 +268,8 @@ serve(async (req) => {
                   <td style="text-transform: capitalize;">${item.itemType}</td>
                   <td style="text-align: center;">${item.quantity}</td>
                   <td style="text-align: right;">${item.unitPrice.toFixed(2)}</td>
+                  <td style="text-align: center;">${item.discount ? item.discount + '%' : '-'}</td>
+                  <td style="text-align: center;">${item.tax ? item.tax + '%' : '-'}</td>
                   <td style="text-align: right;">${item.totalPrice.toFixed(2)}</td>
                 </tr>
               `).join('')}
@@ -148,70 +290,434 @@ serve(async (req) => {
           </div>
           ` : ''}
 
-          <div class="footer">
-            <p>This is a computer-generated bill and does not require a signature.</p>
-            <p>Generated on ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}</p>
-            ${clinicSettings.taxId ? `<p>Tax ID: ${clinicSettings.taxId}</p>` : ''}
-          </div>
         </body>
         </html>
       `;
     } else if (type === 'visit') {
       const { visit, patient, doctor, clinicSettings } = data;
       filename = `VisitDetails_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(visit.date).toLocaleDateString('en-IN').replace(/\//g, '-')}.pdf`;
+
+      // Get Gemini API key for translation
+      const geminiApiKey = Deno.env.get('ALLGOOGLE_KEY');
+
+      // Determine if we need regional language (support both camelCase and snake_case)
+      const adviceLanguage = visit.adviceLanguage || visit.advice_language || 'english';
+      const visitAdviceRegional = visit.adviceRegional || visit.advice_regional || '';
+      const isRegionalLanguage = adviceLanguage !== 'english';
+
+      // Debug logging
+      console.log('Advice Language Fields:', {
+        adviceLanguage_camelCase: visit.adviceLanguage,
+        advice_language_snake: visit.advice_language,
+        adviceRegional_camelCase: visit.adviceRegional,
+        advice_regional_snake: visit.advice_regional,
+        resolved_language: adviceLanguage,
+        resolved_regional: visitAdviceRegional,
+        isRegionalLanguage
+      });
+
+      // Language names map for prompts
+      const languageNames: Record<string, string> = {
+        'hindi': 'Hindi (हिंदी)',
+        'bengali': 'Bengali (বাংলা)',
+        'gujarati': 'Gujarati (ગુજરાતી)',
+        'tamil': 'Tamil (தமிழ்)',
+        'telugu': 'Telugu (తెలుగు)',
+        'kannada': 'Kannada (ಕನ್ನಡ)',
+        'malayalam': 'Malayalam (മലയാളം)',
+        'marathi': 'Marathi (मराठी)',
+        'punjabi': 'Punjabi (ਪੰਜਾਬੀ)',
+        'oriya': 'Oriya (ଓଡ଼ିଆ)'
+      };
+
+      // AI Translation function
+      const translateWithAI = async (content: {
+        advice?: string[],
+        diagnoses?: string[],
+        prescriptions?: Array<{ medicine: string, dosage?: string, frequency?: string, duration?: string, instructions?: string }>
+      }, targetLanguage: string): Promise<{
+        translatedAdvice: string,
+        translatedDiagnoses: Array<{ original: string, translated: string }>,
+        translatedPrescriptions: Array<{ medicine: string, instructions: string }>
+      }> => {
+        if (!geminiApiKey || targetLanguage === 'english') {
+          return { translatedAdvice: '', translatedDiagnoses: [], translatedPrescriptions: [] };
+        }
+
+        try {
+          const prompt = `You are a medical translator. Translate the following medical advice and prescription instructions to ${languageNames[targetLanguage] || targetLanguage}.
+
+IMPORTANT RULES:
+1. Keep medical terms accurate
+2. Use simple, patient-friendly language
+3. Maintain the meaning precisely
+4. Output ONLY valid JSON, no explanation
+
+INPUT:
+${JSON.stringify({
+            advice: content.advice || [],
+            diagnoses: content.diagnoses || [],
+            prescriptions: content.prescriptions?.map(p => ({
+              medicine: p.medicine,
+              instructions: p.instructions || '',
+              frequency: p.frequency || '',
+              duration: p.duration || ''
+            })) || []
+          }, null, 2)}
+
+OUTPUT JSON FORMAT:
+{
+  "translatedAdvice": "All advice combined in ${targetLanguage} as a single paragraph, using bullet points (•) to separate items",
+  "translatedDiagnoses": [
+    {
+      "original": "Original diagnosis name in English",
+      "translated": "Translated diagnosis name in ${targetLanguage}"
+    }
+  ],
+  "translatedPrescriptions": [
+    {
+      "medicine": "Original medicine name (keep in English)",
+      "instructions": "Translated instructions including frequency, duration, and special instructions in ${targetLanguage}"
+    }
+  ]
+}
+
+Translate now:`;
+
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  temperature: 0.3,
+                  maxOutputTokens: 2048,
+                }
+              })
+            }
+          );
+
+          if (!response.ok) {
+            console.error('Gemini translation failed:', await response.text());
+            return { translatedAdvice: '', translatedDiagnoses: [], translatedPrescriptions: [] };
+          }
+
+          const result = await response.json();
+          const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+          // Extract JSON from response
+          const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return {
+              translatedAdvice: parsed.translatedAdvice || '',
+              translatedDiagnoses: parsed.translatedDiagnoses || [],
+              translatedPrescriptions: parsed.translatedPrescriptions || []
+            };
+          }
+
+          return { translatedAdvice: '', translatedDiagnoses: [], translatedPrescriptions: [] };
+        } catch (error) {
+          console.error('Translation error:', error);
+          return { translatedAdvice: '', translatedDiagnoses: [], translatedPrescriptions: [] };
+        }
+      };
+
+      // Perform AI translation if regional language is selected
+      let aiTranslation = { translatedAdvice: '', translatedDiagnoses: [] as Array<{ original: string, translated: string }>, translatedPrescriptions: [] as Array<{ medicine: string, instructions: string }> };
+
+      // Helper to check if text contains non-English characters (Hindi, Gujarati, etc.)
+      const isAlreadyRegionalText = (text: string): boolean => {
+        if (!text) return false;
+        // Check for Devanagari (Hindi, Marathi), Gujarati, Bengali, Tamil, Telugu, Kannada, Malayalam, Punjabi, Oriya scripts
+        const regionalPattern = /[\u0900-\u097F\u0A80-\u0AFF\u0980-\u09FF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F\u0A00-\u0A7F]/;
+        return regionalPattern.test(text);
+      };
+
+      // Translate if regional language selected AND (there's content to translate OR regional advice is in English)
+      const needsTranslation = isRegionalLanguage && (
+        // Translate advice if it exists and isn't already in regional script
+        (visit.advice?.length > 0) ||
+        // Translate diagnoses if they exist
+        (visit.diagnoses?.length > 0) ||
+        // Translate prescriptions if they exist
+        (visit.prescriptions?.length > 0) ||
+        // Translate regional advice if it's in English (not already regional script)
+        (visitAdviceRegional && !isAlreadyRegionalText(visitAdviceRegional))
+      );
+
+      // Track original English text for showing both in PDF
+      let originalAdviceText = '';
+      if (visitAdviceRegional && !isAlreadyRegionalText(visitAdviceRegional)) {
+        originalAdviceText = visitAdviceRegional; // Store original English
+      }
+
+      if (needsTranslation) {
+        console.log(`Translating content to ${adviceLanguage}...`);
+
+        // Include regional advice for translation if it's in English
+        const adviceToTranslate = [...(visit.advice || [])];
+        if (visitAdviceRegional && !isAlreadyRegionalText(visitAdviceRegional)) {
+          adviceToTranslate.push(visitAdviceRegional); // Add the English regional advice for translation
+        }
+
+        aiTranslation = await translateWithAI({
+          advice: adviceToTranslate,
+          diagnoses: visit.diagnoses?.map(d => d.name) || [],
+          prescriptions: visit.prescriptions
+        }, adviceLanguage);
+        console.log('Translation complete:', aiTranslation.translatedAdvice ? 'Success' : 'No translation');
+      }
+
+      // Use AI translation if available, otherwise use manual regional advice
+      // If regional advice was in English and we translated it, it's now in the translatedAdvice
+      const regionalAdviceText = aiTranslation.translatedAdvice || visitAdviceRegional;
+
+      // Helper function to format frequency codes to patient-friendly text
+      const formatFrequency = (freq: string): string => {
+        const freqMap: Record<string, string> = {
+          'OD': 'Once Daily',
+          'BD': 'Twice Daily (Morning & Evening)',
+          'TDS': 'Three Times Daily',
+          'QID': 'Four Times Daily',
+          'QDS': 'Four Times Daily',
+          'HS': 'At Bedtime',
+          'SOS': 'As Needed',
+          'PRN': 'As Needed',
+          'STAT': 'Immediately',
+          'AC': 'Before Meals',
+          'PC': 'After Meals',
+          'CC': 'With Meals',
+          'BBF': 'Before Breakfast',
+          'ABF': 'After Breakfast'
+        };
+        return freqMap[freq?.toUpperCase()] || freq;
+      };
+
+      // Helper function to format timing instructions with AI translation fallback
+      const formatInstructions = (instructions: string, medicineName?: string): string => {
+        if (!instructions) return '';
+
+        // Check if we have AI-translated instructions for this medicine
+        if (isRegionalLanguage && medicineName && aiTranslation.translatedPrescriptions.length > 0) {
+          const translated = aiTranslation.translatedPrescriptions.find(
+            p => p.medicine.toLowerCase() === medicineName.toLowerCase()
+          );
+          if (translated?.instructions) {
+            return translated.instructions;
+          }
+        }
+
+        // Language-specific instruction translations
+        const instrByLanguage: Record<string, Record<string, string>> = {
+          'hindi': {
+            'before food': '🍽️ Take BEFORE meals (खाने से पहले)',
+            'after food': '🍽️ Take AFTER meals (खाने के बाद)',
+            'with food': '🍽️ Take WITH meals (खाने के साथ)',
+            'before meal': '🍽️ Take BEFORE meals (खाने से पहले)',
+            'after meal': '🍽️ Take AFTER meals (खाने के बाद)',
+            'empty stomach': '⏰ On EMPTY stomach (खाली पेट)',
+            'morning': '🌅 Morning (सुबह)',
+            'evening': '🌆 Evening (शाम)',
+            'night': '🌙 Night/Before bed (रात को)',
+            'bedtime': '🌙 Before bed (सोने से पहले)'
+          },
+          'gujarati': {
+            'before food': '🍽️ Take BEFORE meals (જમતા પહેલા)',
+            'after food': '🍽️ Take AFTER meals (જમ્યા પછી)',
+            'with food': '🍽️ Take WITH meals (જમવાની સાથે)',
+            'before meal': '🍽️ Take BEFORE meals (જમતા પહેલા)',
+            'after meal': '🍽️ Take AFTER meals (જમ્યા પછી)',
+            'empty stomach': '⏰ On EMPTY stomach (ખાલી પેટે)',
+            'morning': '🌅 Morning (સવારે)',
+            'evening': '🌆 Evening (સાંજે)',
+            'night': '🌙 Night/Before bed (રાત્રે)',
+            'bedtime': '🌙 Before bed (સૂતા પહેલા)'
+          },
+          'bengali': {
+            'before food': '🍽️ Take BEFORE meals (খাওয়ার আগে)',
+            'after food': '🍽️ Take AFTER meals (খাওয়ার পরে)',
+            'with food': '🍽️ Take WITH meals (খাওয়ার সাথে)',
+            'before meal': '🍽️ Take BEFORE meals (খাওয়ার আগে)',
+            'after meal': '🍽️ Take AFTER meals (খাওয়ার পরে)',
+            'empty stomach': '⏰ On EMPTY stomach (খালি পেটে)',
+            'morning': '🌅 Morning (সকালে)',
+            'evening': '🌆 Evening (সন্ধ্যায়)',
+            'night': '🌙 Night/Before bed (রাতে)',
+            'bedtime': '🌙 Before bed (ঘুমানোর আগে)'
+          },
+          'marathi': {
+            'before food': '🍽️ Take BEFORE meals (जेवणापूर्वी)',
+            'after food': '🍽️ Take AFTER meals (जेवणानंतर)',
+            'with food': '🍽️ Take WITH meals (जेवणासोबत)',
+            'before meal': '🍽️ Take BEFORE meals (जेवणापूर्वी)',
+            'after meal': '🍽️ Take AFTER meals (जेवणानंतर)',
+            'empty stomach': '⏰ On EMPTY stomach (रिकाम्या पोटी)',
+            'morning': '🌅 Morning (सकाळी)',
+            'evening': '🌆 Evening (संध्याकाळी)',
+            'night': '🌙 Night/Before bed (रात्री)',
+            'bedtime': '🌙 Before bed (झोपण्यापूर्वी)'
+          },
+          'tamil': {
+            'before food': '🍽️ Take BEFORE meals (சாப்பிடுவதற்கு முன்)',
+            'after food': '🍽️ Take AFTER meals (சாப்பிட்ட பின்)',
+            'with food': '🍽️ Take WITH meals (உணவுடன்)',
+            'empty stomach': '⏰ On EMPTY stomach (வெறும் வயிற்றில்)',
+            'morning': '🌅 Morning (காலை)',
+            'evening': '🌆 Evening (மாலை)',
+            'night': '🌙 Night/Before bed (இரவு)',
+            'bedtime': '🌙 Before bed (தூங்குவதற்கு முன்)'
+          },
+          'telugu': {
+            'before food': '🍽️ Take BEFORE meals (భోజనానికి ముందు)',
+            'after food': '🍽️ Take AFTER meals (భోజనం తర్వాత)',
+            'with food': '🍽️ Take WITH meals (భోజనంతో)',
+            'empty stomach': '⏰ On EMPTY stomach (ఖాళీ కడుపుతో)',
+            'morning': '🌅 Morning (ఉదయం)',
+            'evening': '🌆 Evening (సాయంత్రం)',
+            'night': '🌙 Night/Before bed (రాత్రి)',
+            'bedtime': '🌙 Before bed (నిద్రకు ముందు)'
+          }
+        };
+
+        // Get language-specific map or fallback to Hindi
+        const instrMap = instrByLanguage[adviceLanguage] || instrByLanguage['hindi'] || {};
+
+        let result = instructions;
+        Object.entries(instrMap).forEach(([key, val]) => {
+          if (instructions.toLowerCase().includes(key)) {
+            result = val;
+          }
+        });
+        return result;
+      };
+
       htmlContent = `
         <!DOCTYPE html>
-        <html>
+        <html lang="${adviceLanguage === 'hindi' ? 'hi' : adviceLanguage === 'bengali' ? 'bn' : 'en'}">
         <head>
+          <meta charset="UTF-8">
           <title>Visit Details for ${patient.name}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&family=Noto+Sans+Bengali:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Gujarati:wght@400;700&family=Noto+Sans+Gurmukhi:wght@400;700&family=Noto+Sans+Kannada:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Oriya:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&display=swap" rel="stylesheet">
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; color: #333; line-height: 1.4; }
-            .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
-            .header h1 { margin: 0; font-size: 24px; color: #0066FF; }
-            .header p { margin: 5px 0; font-size: 12px; }
-            .section { margin-bottom: 20px; border: 1px solid #eee; padding: 15px; border-radius: 5px; }
-            .section h3 { margin-top: 0; font-size: 16px; color: #0066FF; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-            .details-section { display: flex; justify-content: space-between; margin-bottom: 20px; }
-            .details-section > div { width: 48%; border: 1px solid #eee; padding: 15px; border-radius: 5px; }
+            /* === PRINT VERSION STYLING === */
+            ${printVersion ? `
+            html, body {
+              filter: grayscale(100%) !important;
+              -webkit-filter: grayscale(100%) !important;
+              print-color-adjust: exact !important;
+              -webkit-print-color-adjust: exact !important;
+            }
+            
+            /* Hide headers and footers for letterhead */
+            /* Hide headers and footers for letterhead */
+            .custom-header, .custom-footer, .header, .footer, .prescription-header {
+              display: none !important;
+            }
+            
+            /* Force black text for readability */
+            body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 {
+              color: #000 !important;
+            }
+            
+            /* Remove colored backgrounds */
+            .section, .details-section > div, .vital-item, .patient-friendly-instr,
+            .regional-advice, .warning-box, .signature-section {
+              background: white !important;
+            }
+            
+            /* Simplify borders to black */
+            .header, .section, .details-section > div, table, th, td {
+              border-color: #000 !important;
+            }
+            
+            /* Remove gradients from table headers */
+            th {
+              background: #ddd !important;
+              color: #000 !important;
+            }
+            ` : ''}
+            /* === END PRINT VERSION STYLING === */
+            
+            * { box-sizing: border-box; }
+            body { 
+              font-family: 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Bengali', 'Noto Sans Gujarati', 'Noto Sans Tamil', 'Noto Sans Telugu', 'Noto Sans Kannada', 'Noto Sans Malayalam', 'Noto Sans Oriya', 'Noto Sans Gurmukhi', Arial, sans-serif; 
+              margin: 20px; 
+              color: #333; 
+              line-height: 1.6; 
+              font-size: 14px;
+            }
+            .hindi-text { font-family: 'Noto Sans Devanagari', sans-serif; }
+            .bengali-text { font-family: 'Noto Sans Bengali', sans-serif; }
+            .gujarati-text { font-family: 'Noto Sans Gujarati', sans-serif; }
+            .tamil-text { font-family: 'Noto Sans Tamil', sans-serif; }
+            .telugu-text { font-family: 'Noto Sans Telugu', sans-serif; }
+            .kannada-text { font-family: 'Noto Sans Kannada', sans-serif; }
+            .malayalam-text { font-family: 'Noto Sans Malayalam', sans-serif; }
+            .oriya-text { font-family: 'Noto Sans Oriya', sans-serif; }
+            .punjabi-text { font-family: 'Noto Sans Gurmukhi', sans-serif; }
+            .header { text-align: center; border-bottom: 3px solid #0066FF; padding-bottom: 20px; margin-bottom: 20px; }
+            .header h1 { margin: 0; font-size: 26px; color: #0066FF; }
+            .header p { margin: 5px 0; font-size: 12px; color: #666; }
+            .prescription-header { background: linear-gradient(135deg, #0066FF 0%, #00AA55 100%); color: white; padding: 15px; text-align: center; margin: 20px 0; border-radius: 8px; }
+            .prescription-header h2 { margin: 0; font-size: 20px; }
+            .section { margin-bottom: 20px; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: #fafafa; }
+            .section h3 { margin-top: 0; font-size: 16px; color: #0066FF; border-bottom: 2px solid #0066FF; padding-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+            .section-icon { font-size: 18px; }
+            .details-section { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 15px; }
+            .details-section > div { flex: 1; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: white; }
+            .details-section h3 { margin-top: 0; font-size: 14px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 8px; }
             ul { list-style-type: none; padding: 0; margin: 0; }
-            li { margin-bottom: 5px; font-size: 12px; padding: 5px; background-color: #f8f9fa; border-radius: 3px; }
+            li { margin-bottom: 8px; font-size: 13px; padding: 10px; background-color: white; border-radius: 5px; border-left: 3px solid #0066FF; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #eee; padding: 8px; text-align: left; font-size: 12px; }
-            th { background-color: #f9f9f9; font-weight: bold; }
-            .vitals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-            .vital-item { border: 1px solid #eee; padding: 10px; border-radius: 5px; text-align: center; }
-            .footer { text-align: center; font-size: 10px; color: #777; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px; }
-            .signature-section { display: flex; justify-content: space-between; margin-top: 30px; }
-            .signature-box { text-align: center; }
-            .signature-line { border-bottom: 1px solid #333; width: 150px; margin: 20px auto; }
+            th, td { border: 1px solid #ddd; padding: 12px 8px; text-align: left; font-size: 13px; }
+            th { background: linear-gradient(135deg, #0066FF 0%, #0088FF 100%); color: white; font-weight: 600; }
+            tr:nth-child(even) { background-color: #f8f9fa; }
+            tr:hover { background-color: #e9f5ff; }
+            .vitals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+            .vital-item { border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; text-align: center; background: white; }
+            .vital-item strong { color: #0066FF; font-size: 12px; display: block; margin-bottom: 5px; }
+            .vital-value { font-size: 18px; font-weight: bold; color: #333; }
+            .footer { text-align: center; font-size: 10px; color: #999; margin-top: 30px; border-top: 2px solid #eee; padding-top: 15px; }
+            .signature-section { display: flex; justify-content: space-between; margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+            .signature-box { text-align: center; width: 200px; }
+            .signature-line { border-bottom: 2px solid #333; width: 150px; margin: 30px auto 10px; }
+            .rx-symbol { font-size: 28px; font-weight: bold; color: #0066FF; margin-right: 10px; }
+            .medicine-name { font-weight: bold; color: #0066FF; font-size: 14px; }
+            .timing-badge { display: inline-block; background: #fff3cd; color: #856404; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px; }
+            .patient-friendly-instr { background: #e8f5e9; padding: 8px 12px; border-radius: 5px; margin-top: 8px; font-size: 12px; color: #2e7d32; }
+            .regional-advice { margin-top: 15px; padding: 15px; background: #fff8e1; border-radius: 8px; border-left: 4px solid #ff9800; }
+            .regional-advice h4 { margin: 0 0 10px 0; color: #e65100; font-size: 14px; }
+            .warning-box { background: #ffebee; border: 1px solid #ef5350; border-radius: 5px; padding: 10px; margin-top: 10px; }
+            .warning-box p { margin: 0; color: #c62828; font-size: 12px; }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>${clinicSettings.clinicName}</h1>
-            <p>${clinicSettings.address}</p>
-            <p>Phone: ${clinicSettings.phone}${clinicSettings.email ? ` | Email: ${clinicSettings.email}` : ''}</p>
-            ${clinicSettings.registrationNumber ? `<p>Registration No: ${clinicSettings.registrationNumber}</p>` : ''}
-          </div>
-
-          <div style="text-align: center; margin-bottom: 20px;">
-            <h2>PATIENT VISIT DETAILS</h2>
-            <p>Visit Date: ${new Date(visit.date).toLocaleDateString('en-IN')} at ${new Date(visit.date).toLocaleTimeString('en-IN')}</p>
+          <div class="prescription-header">
+            <h2>📋 PATIENT PRESCRIPTION</h2>
+            <p style="margin: 5px 0; font-size: 12px;">Visit Date: ${new Date(visit.date).toLocaleDateString('en-IN')} at ${new Date(visit.date).toLocaleTimeString('en-IN')}</p>
           </div>
 
           <div class="details-section">
             <div>
-              <h3>PATIENT DETAILS</h3>
+              <h3>👤 PATIENT DETAILS</h3>
               <p><strong>Name:</strong> ${patient.name}</p>
               <p><strong>Phone:</strong> ${patient.phone}</p>
-              <p><strong>Age:</strong> ${patient.age} years</p>
-              <p><strong>Gender:</strong> ${patient.gender}</p>
+              <p><strong>Age:</strong> ${patient.age} years | <strong>Gender:</strong> ${patient.gender}</p>
               ${patient.bloodGroup ? `<p><strong>Blood Group:</strong> ${patient.bloodGroup}</p>` : ''}
               <p><strong>Address:</strong> ${patient.address}</p>
-              ${patient.allergies && patient.allergies.length > 0 ? `<p><strong>Allergies:</strong> ${patient.allergies.join(', ')}</p>` : ''}
+              ${patient.allergies && patient.allergies.length > 0 ? `
+                <div class="warning-box">
+                  <p>⚠️ <strong>ALLERGIES:</strong> ${patient.allergies.join(', ')}</p>
+                </div>
+              ` : ''}
             </div>
             <div>
-              <h3>ATTENDING DOCTOR</h3>
+              <h3>👨‍⚕️ ATTENDING DOCTOR</h3>
               <p><strong>Name:</strong> Dr. ${doctor?.name || 'Not specified'}</p>
               ${doctor?.specialization ? `<p><strong>Specialization:</strong> ${doctor.specialization}</p>` : ''}
               ${doctor?.qualification ? `<p><strong>Qualification:</strong> ${doctor.qualification}</p>` : ''}
@@ -222,31 +728,56 @@ serve(async (req) => {
 
           ${visit.chiefComplaint ? `
           <div class="section">
-            <h3>CHIEF COMPLAINT</h3>
-            <p>${visit.chiefComplaint}</p>
+            <h3><span class="section-icon">📝</span> CHIEF COMPLAINT</h3>
+            <p style="font-size: 15px; font-weight: 500;">${visit.chiefComplaint}</p>
           </div>
           ` : ''}
 
-          ${Object.values(visit.vitals).some(v => v) ? `
+          ${Object.values(visit.vitals || {}).some(v => v) ? `
           <div class="section">
-            <h3>VITALS</h3>
+            <h3><span class="section-icon">💓</span> VITALS</h3>
             <div class="vitals-grid">
-              ${visit.vitals.temperature ? `<div class="vital-item"><strong>Temperature</strong><br>${visit.vitals.temperature}°F</div>` : ''}
-              ${visit.vitals.bloodPressure ? `<div class="vital-item"><strong>Blood Pressure</strong><br>${visit.vitals.bloodPressure}</div>` : ''}
-              ${visit.vitals.pulse ? `<div class="vital-item"><strong>Pulse</strong><br>${visit.vitals.pulse} BPM</div>` : ''}
-              ${visit.vitals.weight ? `<div class="vital-item"><strong>Weight</strong><br>${visit.vitals.weight} kg</div>` : ''}
-              ${visit.vitals.height ? `<div class="vital-item"><strong>Height</strong><br>${visit.vitals.height} cm</div>` : ''}
-              ${visit.vitals.oxygenSaturation ? `<div class="vital-item"><strong>Oxygen Saturation</strong><br>${visit.vitals.oxygenSaturation}%</div>` : ''}
+              ${visit.vitals.temperature ? `<div class="vital-item"><strong>🌡️ Temperature</strong><span class="vital-value">${visit.vitals.temperature}°F</span></div>` : ''}
+              ${visit.vitals.bloodPressure ? `<div class="vital-item"><strong>🩸 Blood Pressure</strong><span class="vital-value">${visit.vitals.bloodPressure}</span></div>` : ''}
+              ${visit.vitals.pulse ? `<div class="vital-item"><strong>❤️ Pulse</strong><span class="vital-value">${visit.vitals.pulse} BPM</span></div>` : ''}
+              ${visit.vitals.weight ? `<div class="vital-item"><strong>⚖️ Weight</strong><span class="vital-value">${visit.vitals.weight} kg</span></div>` : ''}
+              ${visit.vitals.height ? `<div class="vital-item"><strong>📏 Height</strong><span class="vital-value">${visit.vitals.height} cm</span></div>` : ''}
+              ${visit.vitals.oxygenSaturation ? `<div class="vital-item"><strong>🫁 SpO2</strong><span class="vital-value">${visit.vitals.oxygenSaturation}%</span></div>` : ''}
             </div>
+          </div>
+          ` : ''}
+
+          ${visit.physicalExamination?.sections && visit.physicalExamination.sections.length > 0 ? `
+          <div class="section">
+            <h3><span class="section-icon">🔍</span> PHYSICAL EXAMINATION</h3>
+            ${visit.physicalExamination.sections.map(section => `
+              <div style="margin-bottom: 15px;">
+                <h4 style="font-size: 13px; color: #666; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;">${section.title}</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                  ${section.fields.filter(f => f.value).map(field => `
+                    <div style="background: white; padding: 8px; border-radius: 4px; border: 1px solid #eee;">
+                      <p style="font-size: 10px; color: #666; margin: 0 0 3px 0;">${field.label}</p>
+                      <p style="font-size: 12px; font-weight: bold; margin: 0;">${typeof field.value === 'boolean' ? (field.value ? '✓ Present' : '✗ Absent') : field.value}</p>
+                    </div>
+                  `).join('')}
+                </div>
+                ${section.fields.filter(f => f.value).length === 0 ? '<p style="color: #999; font-size: 11px; font-style: italic;">No findings recorded</p>' : ''}
+              </div>
+            `).join('')}
           </div>
           ` : ''}
 
           ${visit.symptoms && visit.symptoms.length > 0 ? `
           <div class="section">
-            <h3>SYMPTOMS</h3>
+            <h3><span class="section-icon">🤒</span> SYMPTOMS</h3>
             <ul>
               ${visit.symptoms.map((symptom, index) => `
-                <li><strong>${index + 1}. ${symptom.name}</strong>${symptom.severity ? ` (${symptom.severity})` : ''}${symptom.duration ? ` - Duration: ${symptom.duration}` : ''}</li>
+                <li>
+                  <strong>${index + 1}. ${symptom.name}</strong>
+                  ${symptom.severity ? ` <span style="background: ${symptom.severity === 'severe' ? '#ffcdd2' : symptom.severity === 'moderate' ? '#fff9c4' : '#c8e6c9'}; padding: 2px 8px; border-radius: 3px; font-size: 11px;">${symptom.severity}</span>` : ''}
+                  ${symptom.duration ? ` - Duration: ${symptom.duration}` : ''}
+                  ${symptom.notes ? `<br><em style="color: #666; font-size: 12px;">${symptom.notes}</em>` : ''}
+                </li>
               `).join('')}
             </ul>
           </div>
@@ -254,29 +785,42 @@ serve(async (req) => {
 
           ${visit.diagnoses && visit.diagnoses.length > 0 ? `
           <div class="section">
-            <h3>DIAGNOSIS</h3>
+            <h3><span class="section-icon">🏥</span> DIAGNOSIS</h3>
             <ul>
-              ${visit.diagnoses.map((diagnosis, index) => `
+              ${visit.diagnoses.map((diagnosis, index) => {
+        // Find translation if available
+        let displayName = diagnosis.name;
+        if (isRegionalLanguage && aiTranslation.translatedDiagnoses.length > 0) {
+          const translated = aiTranslation.translatedDiagnoses.find(
+            d => d.original.toLowerCase() === diagnosis.name.toLowerCase()
+          );
+          if (translated?.translated) {
+            displayName = `${diagnosis.name} <span class="hindi-text" style="color: #666; font-size: 0.9em;">(${translated.translated})</span>`;
+          }
+        }
+
+        return `
                 <li>
-                  <strong>${index + 1}. ${diagnosis.name}</strong>${diagnosis.isPrimary ? ' (Primary)' : ''}
-                  ${diagnosis.icd10Code ? `<br>ICD-10: ${diagnosis.icd10Code}` : ''}
-                  ${diagnosis.notes ? `<br>Notes: ${diagnosis.notes}` : ''}
+                  <strong>${index + 1}. ${displayName}</strong>
+                  ${diagnosis.isPrimary ? ' <span style="background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 3px; font-size: 11px;">Primary</span>' : ''}
+                  ${diagnosis.icd10Code ? `<br><span style="color: #666; font-size: 11px;">ICD-10: ${diagnosis.icd10Code}</span>` : ''}
+                  ${diagnosis.notes ? `<br><em style="color: #666; font-size: 12px;">${diagnosis.notes}</em>` : ''}
                 </li>
-              `).join('')}
+              `}).join('')}
             </ul>
           </div>
           ` : ''}
 
           ${visit.prescriptions && visit.prescriptions.length > 0 ? `
-          <div class="section">
-            <h3>PRESCRIPTIONS</h3>
+          <div class="section" style="border: 2px solid #0066FF;">
+            <h3><span class="rx-symbol">℞</span> MEDICATIONS</h3>
             <table>
               <thead>
                 <tr>
-                  <th>S.No</th>
+                  <th style="width: 30px;">#</th>
                   <th>Medicine</th>
                   <th>Dosage</th>
-                  <th>Frequency</th>
+                  <th>When to Take</th>
                   <th>Duration</th>
                   <th>Instructions</th>
                 </tr>
@@ -284,53 +828,83 @@ serve(async (req) => {
               <tbody>
                 ${visit.prescriptions.map((prescription, index) => `
                   <tr>
-                    <td>${index + 1}</td>
-                    <td style="font-weight: bold;">${prescription.medicine}</td>
-                    <td>${prescription.dosage}</td>
-                    <td>${prescription.frequency}</td>
-                    <td>${prescription.duration}</td>
-                    <td>${prescription.instructions}</td>
+                    <td style="text-align: center; font-weight: bold;">${index + 1}</td>
+                    <td>
+                      <span class="medicine-name">${prescription.medicine}</span>
+                    </td>
+                    <td>${prescription.dosage || '-'}</td>
+                    <td>
+                      <strong>${formatFrequency(prescription.frequency)}</strong>
+                    </td>
+                    <td>${prescription.duration || '-'}</td>
+                    <td>
+                      ${prescription.instructions ? `<div class="patient-friendly-instr">${formatInstructions(prescription.instructions, prescription.medicine)}</div>` : '-'}
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
+            <div style="margin-top: 15px; padding: 12px; background: #e3f2fd; border-radius: 5px;">
+              <p style="margin: 0; font-size: 12px; color: #1565c0;">
+                <strong>📌 Important:</strong> Take medications as prescribed. Consult your doctor if you experience any side effects.
+              </p>
+            </div>
           </div>
           ` : ''}
 
           ${visit.testsOrdered && visit.testsOrdered.length > 0 ? `
           <div class="section">
-            <h3>TESTS ORDERED</h3>
+            <h3><span class="section-icon">🧪</span> TESTS ORDERED</h3>
             <ul>
               ${visit.testsOrdered.map((test, index) => `
                 <li>
-                  <strong>${index + 1}. ${test.testName}</strong> (${test.testType} • ${test.urgency})
-                  ${test.instructions ? `<br>Instructions: ${test.instructions}` : ''}
+                  <strong>${index + 1}. ${test.testName}</strong>
+                  <span style="background: ${test.urgency === 'urgent' ? '#ffcdd2' : '#e8f5e9'}; color: ${test.urgency === 'urgent' ? '#c62828' : '#2e7d32'}; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-left: 8px;">${test.urgency || 'Routine'}</span>
+                  <span style="color: #666; font-size: 11px; margin-left: 8px;">(${test.testType})</span>
+                  ${test.instructions ? `<br><em style="color: #666; font-size: 12px;">→ ${test.instructions}</em>` : ''}
                 </li>
               `).join('')}
             </ul>
           </div>
           ` : ''}
 
-          ${visit.advice && visit.advice.length > 0 ? `
-          <div class="section">
-            <h3>ADVICE</h3>
+          ${(visit.advice && visit.advice.length > 0) || regionalAdviceText ? `
+          <div class="section" style="background: #f0f7ff;">
+            <h3><span class="section-icon">💡</span> ADVICE FOR PATIENT</h3>
+            ${visit.advice && visit.advice.length > 0 ? `
             <ul>
-              ${visit.advice.map(advice => `<li>• ${advice}</li>`).join('')}
+              ${visit.advice.map(advice => `<li style="border-left-color: #4caf50;">✓ ${advice}</li>`).join('')}
             </ul>
+            ` : ''}
+            ${originalAdviceText && regionalAdviceText && originalAdviceText !== regionalAdviceText ? `
+            <div style="background: #f5f5f5; padding: 10px 15px; border-radius: 5px; margin-bottom: 10px; border-left: 3px solid #9e9e9e;">
+              <p style="margin: 0; font-size: 12px; color: #666;">
+                <strong>📝 Original (English):</strong> ${originalAdviceText}
+              </p>
+            </div>
+            ` : ''}
+            ${regionalAdviceText ? `
+            <div class="regional-advice ${adviceLanguage === 'hindi' ? 'hindi-text' : adviceLanguage === 'bengali' ? 'bengali-text' : adviceLanguage === 'gujarati' ? 'gujarati-text' : adviceLanguage === 'tamil' ? 'tamil-text' : adviceLanguage === 'telugu' ? 'telugu-text' : adviceLanguage === 'marathi' ? 'hindi-text' : adviceLanguage === 'kannada' ? 'kannada-text' : adviceLanguage === 'malayalam' ? 'malayalam-text' : adviceLanguage === 'oriya' ? 'oriya-text' : adviceLanguage === 'punjabi' ? 'punjabi-text' : ''}">
+              <h4>🗣️ ${adviceLanguage.charAt(0).toUpperCase() + adviceLanguage.slice(1)} Translation</h4>
+              <p style="font-size: 14px; line-height: 1.8;">${regionalAdviceText}</p>
+            </div>
+            ` : ''}
           </div>
           ` : ''}
 
           ${visit.followUpDate ? `
-          <div class="section">
-            <h3>FOLLOW-UP</h3>
-            <p>Next visit scheduled for: <strong>${new Date(visit.followUpDate).toLocaleDateString('en-IN')}</strong></p>
+          <div class="section" style="background: #fff3e0;">
+            <h3><span class="section-icon">📅</span> FOLLOW-UP APPOINTMENT</h3>
+            <p style="font-size: 16px; font-weight: bold; color: #e65100;">
+              Please visit again on: <span style="background: #ff9800; color: white; padding: 5px 15px; border-radius: 5px;">${new Date(visit.followUpDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            </p>
           </div>
           ` : ''}
 
           ${visit.doctorNotes ? `
           <div class="section">
-            <h3>DOCTOR'S NOTES</h3>
-            <p style="font-style: italic;">${visit.doctorNotes}</p>
+            <h3><span class="section-icon">📋</span> DOCTOR'S NOTES</h3>
+            <p style="font-style: italic; color: #555; background: white; padding: 12px; border-radius: 5px; border-left: 3px solid #9c27b0;">${visit.doctorNotes}</p>
           </div>
           ` : ''}
 
@@ -338,19 +912,16 @@ serve(async (req) => {
             <div class="signature-box">
               <p><strong>Patient Signature</strong></p>
               <div class="signature-line"></div>
+              <p style="font-size: 10px; color: #666;">${patient.name}</p>
             </div>
             <div class="signature-box">
-              <p><strong>Doctor Signature</strong></p>
+              <p><strong>Doctor's Signature</strong></p>
               <div class="signature-line"></div>
-              <p style="font-size: 10px;">Dr. ${doctor?.name || ''}</p>
+              <p style="font-size: 10px; color: #666;">Dr. ${doctor?.name || ''}</p>
+              ${doctor?.registrationNo ? `<p style="font-size: 9px; color: #999;">Reg: ${doctor.registrationNo}</p>` : ''}
             </div>
           </div>
 
-          <div class="footer">
-            <p>This is a computer-generated visit report.</p>
-            <p>Generated on ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}</p>
-            ${clinicSettings.taxId ? `<p>Tax ID: ${clinicSettings.taxId}</p>` : ''}
-          </div>
         </body>
         </html>
       `;
@@ -364,7 +935,37 @@ serve(async (req) => {
       )
     }
 
-    // Call PDF.co API
+    // Get clinic PDF margins (default to letterhead margins for print, regular for display)
+    const clinicMargins = printVersion
+      ? (data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px")
+      : (data.clinicSettings?.pdfMargins || "20px");
+
+
+    // Prepare header/footer for PDF.co (only for display version)
+    // Convert to Base64 because some URLs might be private
+    let pdfHeader = "";
+    let pdfFooter = "";
+
+    if (!printVersion) {
+      if (data.clinicSettings?.pdfHeaderUrl) {
+        const headerBase64 = await imageUrlToBase64(data.clinicSettings.pdfHeaderUrl);
+        pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${headerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+      }
+
+      if (data.clinicSettings?.pdfFooterUrl) {
+        const footerBase64 = await imageUrlToBase64(data.clinicSettings.pdfFooterUrl);
+        pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${footerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+      }
+    }
+
+    console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
+    console.log(`[PDF GEN] Header: ${pdfHeader ? 'Base64 image included' : 'None'}`);
+    console.log(`[PDF GEN] Footer: ${pdfFooter ? 'Base64 image included' : 'None'}`);
+    if (pdfHeader) console.log(`[PDF GEN] Header length: ${pdfHeader.length} chars`);
+    if (pdfFooter) console.log(`[PDF GEN] Footer length: ${pdfFooter.length} chars`);
+
+
+    // Call PDF.co API with proper parameters
     const pdfCoResponse = await fetch('https://api.pdf.co/v1/pdf/convert/from/html', {
       method: 'POST',
       headers: {
@@ -372,9 +973,19 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        html: htmlContent,
         name: filename,
-        inline: true,
+        html: htmlContent,
+        async: true,
+        margins: clinicMargins,
+        papersize: "A4",
+        displayheaderfooter: !printVersion, // Only show header/footer for display version
+        header: pdfHeader,
+        footer: pdfFooter,
+        headerheight: printVersion ? "0px" : "120px",
+        footerheight: printVersion ? "0px" : "80px",
+        scale: 1,
+        mediatype: "print",
+        printbackground: !printVersion, // Colors only for display version
       }),
     })
 
@@ -384,16 +995,188 @@ serve(async (req) => {
     }
 
     const pdfCoData = await pdfCoResponse.json()
+    console.log(`[PDF GEN] PDF.co initial response:`, JSON.stringify(pdfCoData));
 
-    if (!pdfCoData.url) {
-      throw new Error('PDF.co did not return a URL for the generated PDF.')
+    let pdfUrl: string | null = null;
+
+    // Handle synchronous response - URL returned directly (like LIMS app)
+    if (pdfCoData.url && pdfCoData.error === false) {
+      console.log(`[PDF GEN] ✅ PDF generated synchronously!`);
+      pdfUrl = pdfCoData.url;
+    }
+    // Handle async response - need to poll for completion
+    else if (pdfCoData.jobId) {
+      console.log(`[PDF GEN] PDF.co async job started: ${pdfCoData.jobId}`);
+
+      // --- Poll PDF.co job status until complete ---
+      const PDFCO_JOB_STATUS_URL = 'https://api.pdf.co/v1/job/check';
+      const maxPollAttempts = 60; // 60 attempts = ~2 minutes max
+      const pollInterval = 2000; // 2 seconds
+
+      for (let pollAttempt = 1; pollAttempt <= maxPollAttempts; pollAttempt++) {
+        console.log(`[PDF GEN] Polling job status (attempt ${pollAttempt}/${maxPollAttempts})...`);
+
+        try {
+          const statusResponse = await fetch(`${PDFCO_JOB_STATUS_URL}?jobid=${pdfCoData.jobId}`, {
+            method: 'GET',
+            headers: {
+              'x-api-key': pdfCoApiKey,
+            }
+          });
+
+          if (!statusResponse.ok) {
+            throw new Error(`Job status check failed: ${statusResponse.status}`);
+          }
+
+          const statusData = await statusResponse.json();
+          console.log(`[PDF GEN] Job status:`, JSON.stringify(statusData));
+
+          // Check for success (polling returns status: "success")
+          if (statusData.status === 'success' && statusData.url) {
+            pdfUrl = statusData.url;
+            console.log(`[PDF GEN] ✅ Job complete! PDF URL: ${pdfUrl}`);
+            break;
+          } else if (statusData.status === 'error' || statusData.status === 'failed') {
+            throw new Error(`PDF.co job failed: ${statusData.message || 'Unknown error'}`);
+          }
+
+          // Job still processing, wait before next poll
+          if (pollAttempt < maxPollAttempts) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+          }
+
+        } catch (error) {
+          console.error(`[PDF GEN] Polling error:`, error);
+          if (pollAttempt >= maxPollAttempts) {
+            throw error;
+          }
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+      }
+    } else {
+      throw new Error('PDF.co did not return a URL or jobId');
     }
 
-    return new Response(
-      JSON.stringify({ success: true, url: pdfCoData.url, filename }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    if (!pdfUrl) {
+      throw new Error('PDF.co job did not complete within timeout period (2 minutes)');
+    }
+
+    // --- Reliability Logic: Verify file availability before returning (Avoid "Broken" PDF) ---
+    // This addresses the issue where PDF.co returns a URL but the file is not yet available on S3
+    console.log(`[PDF GEN] ⏳ Applying safety delay (3s) for file stabilization...`);
+    await new Promise(r => setTimeout(r, 3000));
+
+    let isFileActuallyReady = false;
+    const verificationAttempts = 10;
+    console.log(`[PDF GEN] Verifying file availability at: ${pdfUrl}`);
+
+    for (let i = 1; i <= verificationAttempts; i++) {
+      try {
+        console.log(`[PDF GEN] Polling job status (attempt ${i})...`);
+        const checkRes = await fetch(pdfUrl);
+        const contentType = checkRes.headers.get('content-type');
+
+        if (checkRes.ok && contentType && contentType.includes('application/pdf')) {
+          isFileActuallyReady = true;
+          console.log(`[PDF GEN] ✅ Job status: success (verified at attempt ${i})`);
+          break;
+        }
+        console.warn(`[PDF GEN] Job status: pending (Attempt ${i}/10 - Status: ${checkRes.status}, Content: ${contentType})`);
+      } catch (e) {
+        console.error(`[PDF GEN] Job status: failed (Attempt ${i}):`, e.message);
       }
+
+      if (i < verificationAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    if (!isFileActuallyReady) {
+      console.error('[PDF GEN] Job status: failed (Verification timed out after 10 attempts)');
+      // If verification fails, we throw an error so the user knows to retry instead of getting a broken tab
+      throw new Error('PDF file failed to stabilize on PDF.co servers. Please try again in a few seconds.');
+    }
+
+    // --- Return temp URL only after verification passes ---
+    console.log('[PDF GEN] ✅ Returning verified URL to user');
+
+    // Background persistence task
+    const persistToStorage = async () => {
+      try {
+        console.log('[PDF GEN] Background: Waiting 6s for S3...');
+        await new Promise(resolve => setTimeout(resolve, 6000));
+
+        let pdfBlob: Blob | null = null;
+        const maxRetries = 5;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[PDF GEN] Background: Download ${attempt}/${maxRetries}...`);
+            const res = await fetch(pdfUrl!);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            pdfBlob = await res.blob();
+            if (pdfBlob.size === 0) throw new Error('Empty');
+            console.log(`[PDF GEN] Background: ✅ Downloaded (${pdfBlob.size} bytes)`);
+            break;
+          } catch (e) {
+            if (attempt < maxRetries) await new Promise(r => setTimeout(r, 2000 * attempt));
+          }
+        }
+
+        if (!pdfBlob) {
+          console.error('[PDF GEN] Background: ❌ Download failed');
+          return;
+        }
+
+        const bucketName = 'pdfs';
+        let storagePath = '';
+        if (type === 'bill' && data.bill?.id) {
+          storagePath = `bills/${data.bill.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+        } else if (type === 'visit' && data.visit?.id) {
+          storagePath = `visits/${data.visit.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+        } else {
+          storagePath = `temp/${crypto.randomUUID()}/${filename}`;
+        }
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from(bucketName)
+          .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+        if (uploadError) {
+          console.error('[PDF GEN] Background: ❌ Upload failed:', uploadError.message);
+          return;
+        }
+
+        const { data: { publicUrl } } = supabaseAdmin.storage.from(bucketName).getPublicUrl(storagePath);
+        console.log('[PDF GEN] Background: ✅ Persisted:', publicUrl);
+
+        const table = type === 'bill' ? 'bills' : 'visits';
+        const recordId = type === 'bill' ? data.bill?.id : data.visit?.id;
+        if (recordId) {
+          const column = printVersion
+            ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
+            : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
+          await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
+          console.log('[PDF GEN] Background: ✅ DB updated');
+        }
+      } catch (err) {
+        console.error('[PDF GEN] Background error:', err);
+      }
+    };
+
+    // Start background task (fire and forget)
+    persistToStorage().catch(e => console.error('[PDF GEN] Background task error:', e));
+
+    // Return temp URL immediately
+    return new Response(
+      JSON.stringify({
+        success: true,
+        url: pdfUrl,
+        filename,
+        temporary: true,
+        message: 'PDF ready! Storage sync in progress...'
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
@@ -401,7 +1184,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         error: 'Failed to generate PDF',
-        details: error.message
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       {
         status: 500,

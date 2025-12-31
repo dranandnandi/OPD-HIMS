@@ -104,7 +104,7 @@ export const clinicSettingsService = {
     }
 
     const dbSettings = convertToDatabase(settings);
-    
+
     const { data, error } = await supabase
       .from('clinic_settings')
 
@@ -141,7 +141,7 @@ export const clinicSettingsService = {
     }
 
     const dbSettings: any = {};
-    
+
     if (settings.clinicName) dbSettings.clinic_name = settings.clinicName;
     if (settings.address) dbSettings.address = settings.address;
 
@@ -168,6 +168,10 @@ export const clinicSettingsService = {
     if (settings.gmbLink !== undefined) dbSettings.gmb_link = settings.gmbLink;
     if (settings.prescriptionFrequencies !== undefined) dbSettings.prescription_frequencies = settings.prescriptionFrequencies;
     if (settings.appointmentTypes !== undefined) dbSettings.appointment_types = settings.appointmentTypes;
+    if (settings.pdfHeaderUrl !== undefined) dbSettings.pdf_header_url = settings.pdfHeaderUrl;
+    if (settings.pdfFooterUrl !== undefined) dbSettings.pdf_footer_url = settings.pdfFooterUrl;
+    if (settings.pdfMargins !== undefined) dbSettings.pdf_margins = settings.pdfMargins;
+
 
     const { data, error } = await supabase
       .from('clinic_settings')
@@ -214,7 +218,7 @@ export const clinicSettingsService = {
         enableGmbLinkOnly: settings.enableGmbLinkOnly ?? true,
         gmbLink: settings.gmbLink || ''
       };
-      
+
       return await this.createClinicSettings(createSettings);
     }
     return convertDatabaseClinicSetting(data[0]);
@@ -228,7 +232,7 @@ export const clinicSettingsService = {
     }
 
     let settings = await this.getClinicSettings();
-    
+
     if (!settings) {
       // Create default settings
       const defaultSettings: Omit<ClinicSetting, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -263,17 +267,17 @@ export const clinicSettingsService = {
         enableGmbLinkOnly: true,
         gmbLink: ''
       };
-      
+
       settings = await this.createClinicSettings(defaultSettings);
     }
-    
+
     return settings;
   },
 
   // Get consultation fees
   async getConsultationFees(): Promise<{ consultation: number; followUp: number; emergency: number }> {
     const settings = await this.getOrCreateClinicSettings();
-    
+
     return {
       consultation: settings.consultationFee,
       followUp: settings.followUpFee,
@@ -284,13 +288,13 @@ export const clinicSettingsService = {
   // Update consultation fees
   async updateConsultationFees(fees: { consultation?: number; followUp?: number; emergency?: number }): Promise<ClinicSetting> {
     const settings = await this.getOrCreateClinicSettings();
-    
+
     const updates: Partial<Omit<ClinicSetting, 'id' | 'createdAt' | 'updatedAt'>> = {};
-    
+
     if (fees.consultation !== undefined) updates.consultationFee = fees.consultation;
     if (fees.followUp !== undefined) updates.followUpFee = fees.followUp;
     if (fees.emergency !== undefined) updates.emergencyFee = fees.emergency;
-    
+
     return await this.updateClinicSettings(settings.id, updates);
   },
 
@@ -310,27 +314,27 @@ export const clinicSettingsService = {
   isClinicOpen(day: string, time: string): Promise<boolean> {
     return this.getWorkingHours().then(workingHours => {
       const daySchedule = workingHours[day.toLowerCase()];
-      
+
       if (!daySchedule || !daySchedule.isOpen) {
         return false;
       }
-      
+
       const currentTime = new Date(`2000-01-01T${time}:00`);
       const startTime = new Date(`2000-01-01T${daySchedule.startTime}:00`);
       const endTime = new Date(`2000-01-01T${daySchedule.endTime}:00`);
-      
+
       let isOpen = currentTime >= startTime && currentTime <= endTime;
-      
+
       // Check if it's during break time
       if (isOpen && daySchedule.breakStart && daySchedule.breakEnd) {
         const breakStart = new Date(`2000-01-01T${daySchedule.breakStart}:00`);
         const breakEnd = new Date(`2000-01-01T${daySchedule.breakEnd}:00`);
-        
+
         if (currentTime >= breakStart && currentTime <= breakEnd) {
           isOpen = false;
         }
       }
-      
+
       return isOpen;
     });
   }

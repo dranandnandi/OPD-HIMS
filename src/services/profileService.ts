@@ -1,4 +1,3 @@
-import { supabase } from '../lib/supabaseClient';
 import { Profile, Role } from '../types';
 import type { DatabaseProfile, DatabaseRole } from '../lib/supabaseClient';
 import { supabase as supabaseClient } from '../lib/supabase';
@@ -79,29 +78,65 @@ export const convertDatabaseProfile = (
   role: role ? convertDatabaseRole(role) : undefined,
   clinic: clinic
     ? {
-        id: clinic.id,
-        clinicName: clinic.clinic_name,
-        address: clinic.address,
-        phone: clinic.phone,
-        email: clinic.email,
-        website: clinic.website,
-        logoUrl: clinic.logo_url,
-        registrationNumber: clinic.registration_number,
-        taxId: clinic.tax_id,
-        consultationFee: clinic.consultation_fee,
-        followUpFee: clinic.follow_up_fee,
-        emergencyFee: clinic.emergency_fee,
-        appointmentDuration: clinic.appointment_duration,
-        workingHours: clinic.working_hours,
-        currency: clinic.currency,
-        timezone: clinic.timezone,
-        createdAt: clinic.created_at ? new Date(clinic.created_at) : undefined,
-        updatedAt: clinic.updated_at ? new Date(clinic.updated_at) : undefined,
-      }
+      id: clinic.id,
+      clinicName: clinic.clinic_name,
+      address: clinic.address,
+      phone: clinic.phone,
+      email: clinic.email,
+      website: clinic.website,
+      logoUrl: clinic.logo_url,
+      registrationNumber: clinic.registration_number,
+      taxId: clinic.tax_id,
+      consultationFee: clinic.consultation_fee,
+      followUpFee: clinic.follow_up_fee,
+      emergencyFee: clinic.emergency_fee,
+      appointmentDuration: clinic.appointment_duration,
+      workingHours: clinic.working_hours,
+      currency: clinic.currency,
+      timezone: clinic.timezone,
+      createdAt: clinic.created_at ? new Date(clinic.created_at) : undefined,
+      updatedAt: clinic.updated_at ? new Date(clinic.updated_at) : undefined,
+      pdfHeaderUrl: clinic.pdf_header_url,
+      pdfFooterUrl: clinic.pdf_footer_url,
+      pdfMargins: clinic.pdf_margins,
+      pdfPrintMargins: clinic.pdf_print_margins,
+    }
     : undefined,
 });
 
+// --- In-Memory Profile Cache with TTL ---
+let cachedProfile: Profile | null = null;
+let cacheTimestamp: number = 0;
+const CACHE_TTL_MS = 30000; // 30 seconds - profile rarely changes during a session
+
+export function getCachedProfile(): Profile | null {
+  if (cachedProfile && (Date.now() - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedProfile;
+  }
+  return null;
+}
+
+export function setCachedProfile(profile: Profile | null): void {
+  cachedProfile = profile;
+  cacheTimestamp = Date.now();
+}
+
+export function invalidateProfileCache(): void {
+  cachedProfile = null;
+  cacheTimestamp = 0;
+}
+// --- End Cache ---
+
 export async function getCurrentProfile(providedUserId?: string, providedAccessToken?: string): Promise<Profile | null> {
+  // Check in-memory cache first (fast path)
+  const cached = getCachedProfile();
+  if (cached && !providedUserId && !providedAccessToken) {
+    if (import.meta.env.DEV) {
+      console.log('⚡ [getCurrentProfile] Using in-memory cached profile');
+    }
+    return cached;
+  }
+
   if (import.meta.env.DEV) {
     console.log('🔍 [getCurrentProfile] Starting Edge Function approach...');
   }
@@ -130,7 +165,7 @@ export async function getCurrentProfile(providedUserId?: string, providedAccessT
       token = token || session.access_token;
       userId = userId || session.user.id;
     }
-    
+
     if (import.meta.env.DEV) {
       console.log('👤 [User] Using userId:', userId);
       console.log('🔐 [Auth] Token available:', !!token);
@@ -152,7 +187,7 @@ export async function getCurrentProfile(providedUserId?: string, providedAccessT
     if (import.meta.env.DEV) {
       console.log('📡 [Edge Function] Response status:', response.status);
     }
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       if (import.meta.env.DEV) {
@@ -187,6 +222,8 @@ export async function getCurrentProfile(providedUserId?: string, providedAccessT
 
     // Save to local storage for caching
     saveProfileToLocalStorage(profile);
+    // Also update in-memory cache
+    setCachedProfile(profile);
     if (import.meta.env.DEV) {
       console.log('✅ [Edge Function] Profile loaded successfully:', profile.name);
     }

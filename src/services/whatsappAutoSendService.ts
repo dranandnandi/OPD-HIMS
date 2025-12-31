@@ -6,7 +6,7 @@ import type { Appointment, Bill, Patient, Review } from '../types';
 
 // Template variables replacement
 function replaceTemplateVariables(
-  template: string, 
+  template: string,
   variables: Record<string, string>
 ): string {
   let message = template;
@@ -35,7 +35,7 @@ function formatCurrency(amount: number): string {
 export class WhatsAppAutoSendService {
   // Check if auto-send is enabled for an event type
   static async isAutoSendEnabled(
-    clinicId: string, 
+    clinicId: string,
     eventType: WhatsAppEventType
   ): Promise<boolean> {
     const { data, error } = await supabase
@@ -43,17 +43,58 @@ export class WhatsAppAutoSendService {
       .select('enabled')
       .eq('clinic_id', clinicId)
       .eq('event_type', eventType)
-      .single();
+      .maybeSingle(); // Use maybeSingle to avoid error when no rule exists
 
     if (error || !data) return false;
     return data.enabled;
   }
 
-  // Get template for event type
+  // Default templates as fallback
+  static defaultTemplates: Record<string, string> = {
+    'appointment_confirmed': 'Dear {{patientName}}, your appointment with Dr. {{doctorName}} is confirmed for {{appointmentDate}}. Please arrive 10 minutes early. - {{clinicName}}',
+    'appointment_reminder': 'Reminder: You have an appointment tomorrow at {{appointmentDate}} with Dr. {{doctorName}}. Please confirm your attendance. - {{clinicName}}',
+    'bill_created': 'Dear {{patientName}}, your bill #{{billNumber}} for {{totalAmount}} has been generated at {{clinicName}}. Balance: {{balanceAmount}}',
+    'payment_received': 'Thank you {{patientName}}! Payment of {{amountPaid}} received for bill #{{billNumber}}. Balance: {{balanceAmount}} - {{clinicName}}',
+    'visit_prescription': 'Dear {{patientName}}, your prescription is ready. Download here: {{pdfUrl}} - {{clinicName}}',
+    'invoice_generated': 'Dear {{patientName}}, your invoice #{{billNumber}} for {{totalAmount}} is ready. Download: {{pdfUrl}} - {{clinicName}}',
+    'gmb_review_request': 'Thank you for visiting {{clinicName}}! We hope you are feeling better. Please share your experience: {{reviewLink}}',
+    'thank_you': 'Thank you for visiting {{clinicName}} today! We hope you feel better soon.'
+  };
+
+  // Get template for event type - uses clinic_settings.whatsapp_templates with fallback
   static async getTemplate(
-    clinicId: string, 
+    clinicId: string,
     eventType: WhatsAppEventType
   ): Promise<string | null> {
+    // First try to get from clinic_settings.whatsapp_templates (new unified approach)
+    const { data: clinicSettings, error: settingsError } = await supabase
+      .from('clinic_settings')
+      .select('whatsapp_templates')
+      .eq('id', clinicId)
+      .single();
+
+    if (!settingsError && clinicSettings?.whatsapp_templates) {
+      // Map event type to template key (handle naming differences)
+      const templateKeyMap: Record<string, string> = {
+        'appointment_confirmed': 'appointment_confirmation',
+        'appointment_reminder': 'appointment_reminder',
+        'bill_created': 'invoice_generated',
+        'payment_received': 'payment_received',
+        'visit_prescription': 'visit_prescription',
+        'invoice_generated': 'invoice_generated',
+        'gmb_review_request': 'thank_you',
+        'thank_you': 'thank_you'
+      };
+
+      const templateKey = templateKeyMap[eventType] || eventType;
+      const template = clinicSettings.whatsapp_templates[templateKey];
+
+      if (template) {
+        return template;
+      }
+    }
+
+    // Fallback to old whatsapp_message_templates table for backwards compatibility
     const { data, error } = await supabase
       .from('whatsapp_message_templates')
       .select('message_content')
@@ -63,8 +104,12 @@ export class WhatsAppAutoSendService {
       .limit(1)
       .single();
 
-    if (error || !data) return null;
-    return data.message_content;
+    if (!error && data) {
+      return data.message_content;
+    }
+
+    // Final fallback to default templates
+    return this.defaultTemplates[eventType] || null;
   }
 
   // Queue a message for sending
@@ -304,10 +349,106 @@ export class WhatsAppAutoSendService {
     });
   }
 
+  // Send Prescription PDF
+  static async sendPrescriptionPdf(
+    visitId: string,
+    pdfUrl: string,
+    _userId: string,
+    clinicId: string
+  ): Promise<void> {
+    if (!supabase) return;
+    const enabled = await this.isAutoSendEnabled(clinicId, 'visit_prescription');
+    if (!enabled) return;
+
+    // Fetch visit details to get patient info
+    const { data: visit, error } = await supabase
+      .from('visits')
+      .select('*, patient:patients(*), doctor:profiles(*)')
+      .eq('id', visitId)
+      .single();
+
+    if (error || !visit || !visit.patient?.phone) {
+      console.warn('Cannot send prescription WhatsApp: Missing visit/patient/phone');
+      return;
+    }
+
+    // Prepare message
+    const template = await this.getTemplate(clinicId, 'visit_prescription');
+    // Fallback message if no template found (though getTemplate handles default)
+    const baseMessage = template || this.defaultTemplates['visit_prescription'];
+
+    const message = replaceTemplateVariables(baseMessage, {
+      patientName: visit.patient.name,
+      clinicName: 'our clinic', // TODO: Fetch actual clinic name if available in context or pass it in
+      pdfUrl: pdfUrl,
+      pdfLink: pdfUrl, // Support both variable names
+      doctorName: visit.doctor?.name || 'Doctor'
+    });
+
+    // We can use sendReportUrl for this which sends a message with a link
+    // Or if we specifically want to send the file + caption, we can Queue it.
+    // For consistency with this service's design, we'll QUEUE a message that contains the link.
+    // However, the WhatsApp API 'sendReportUrl' might be better suited if we want the actual file attachment experience if supported.
+    // For now, adhering to the 'text message with link' approach used in the templates:
+
+    await this.queueMessage({
+      clinicId,
+      patientId: visit.patient.id,
+      phoneNumber: visit.patient.phone,
+      eventType: 'visit_prescription',
+      messageContent: message,
+      metadata: { visitId, pdfUrl }
+    });
+  }
+
+  // Send Bill/Invoice PDF
+  static async sendBillPdf(
+    billId: string,
+    pdfUrl: string,
+    _userId: string,
+    clinicId: string
+  ): Promise<void> {
+    if (!supabase) return;
+    const enabled = await this.isAutoSendEnabled(clinicId, 'invoice_generated');
+    if (!enabled) return;
+
+    const { data: bill, error } = await supabase
+      .from('bills')
+      .select('*, patient:patients(*)')
+      .eq('id', billId)
+      .single();
+
+    if (error || !bill || !bill.patient?.phone) {
+      console.warn('Cannot send bill WhatsApp: Missing bill/patient/phone');
+      return;
+    }
+
+    const template = await this.getTemplate(clinicId, 'invoice_generated');
+    const baseMessage = template || this.defaultTemplates['invoice_generated'];
+
+    const message = replaceTemplateVariables(baseMessage, {
+      patientName: bill.patient.name,
+      clinicName: 'our clinic',
+      billNumber: bill.bill_number || bill.billNumber, // handle both casing if needed
+      totalAmount: formatCurrency(bill.total_amount || bill.totalAmount),
+      pdfUrl: pdfUrl,
+      pdfLink: pdfUrl
+    });
+
+    await this.queueMessage({
+      clinicId,
+      patientId: bill.patient.id,
+      phoneNumber: bill.patient.phone,
+      eventType: 'invoice_generated',
+      messageContent: message,
+      metadata: { billId, pdfUrl }
+    });
+  }
+
   // Process pending messages (called by background job)
   static async processPendingMessages(userId: string, clinicId: string): Promise<number> {
     const now = new Date().toISOString();
-    
+
     const { data: pendingMessages, error } = await supabase
       .from('whatsapp_message_queue')
       .select('*')

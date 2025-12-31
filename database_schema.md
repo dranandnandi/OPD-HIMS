@@ -20,7 +20,7 @@ CREATE TABLE public.appointments (
   notes text,
   created_at timestamp with time zone DEFAULT now(),
   duration integer,
-  appointment_type USER-DEFINED DEFAULT 'Consultation'::appointment_type_enum,
+  appointment_type text DEFAULT 'Consultation'::appointment_type_enum,
   updated_at timestamp with time zone DEFAULT now(),
   clinic_id uuid,
   CONSTRAINT appointments_pkey PRIMARY KEY (id),
@@ -56,7 +56,7 @@ CREATE TABLE public.bills (
   visit_id uuid,
   bill_number text UNIQUE,
   paid_amount numeric NOT NULL DEFAULT 0,
-  balance_amount numeric DEFAULT (total_amount - paid_amount),
+  balance_amount numeric DEFAULT 0,
   status USER-DEFINED NOT NULL DEFAULT 'pending'::bill_payment_status_enum,
   notes text,
   payment_method text,
@@ -66,6 +66,8 @@ CREATE TABLE public.bills (
   refund_status USER-DEFINED NOT NULL DEFAULT 'not_requested'::refund_status_enum,
   last_refund_at timestamp with time zone,
   refund_notes text,
+  pdf_url text,
+  pdf_generated_at timestamp with time zone,
   CONSTRAINT bills_pkey PRIMARY KEY (id),
   CONSTRAINT bills_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id),
   CONSTRAINT bills_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
@@ -111,6 +113,11 @@ CREATE TABLE public.clinic_settings (
   gmb_link text,
   blueticks_api_key text,
   enable_gmb_link_only boolean DEFAULT true,
+  prescription_frequencies jsonb DEFAULT '[{"code": "OD", "label": "OD (Once daily)", "timesPerDay": 1}, {"code": "BD", "label": "BD (Twice daily)", "timesPerDay": 2}, {"code": "TID", "label": "TID (Three times daily)", "timesPerDay": 3}, {"code": "QID", "label": "QID (Four times daily)", "timesPerDay": 4}, {"code": "PRN", "label": "PRN (As needed)", "timesPerDay": null}]'::jsonb,
+  appointment_types jsonb DEFAULT '[{"id": "consultation", "color": "#3B82F6", "label": "Consultation", "duration": 30}, {"id": "followup", "color": "#10B981", "label": "Follow-up", "duration": 20}, {"id": "emergency", "color": "#EF4444", "label": "Emergency", "duration": 15}, {"id": "procedure", "color": "#8B5CF6", "label": "Procedure", "duration": 60}]'::jsonb,
+  pdf_header_url text,
+  pdf_footer_url text,
+  whatsapp_templates jsonb DEFAULT '{"thank_you": "Thank you for visiting {{clinicName}} today! We hope you feel better soon. Please leave us a review: {{reviewLink}}", "invoice_generated": "Dear {{patientName}}, your invoice #{{billNumber}} for {{totalAmount}} is ready. Download: {{pdfUrl}} - {{clinicName}}", "visit_prescription": "Dear {{patientName}}, your prescription is ready. Download here: {{pdfUrl}} - {{clinicName}}", "appointment_reminder": "Reminder: You have an appointment tomorrow at {{appointmentDate}} with Dr. {{doctorName}}. Please confirm your attendance. - {{clinicName}}", "appointment_confirmation": "Dear {{patientName}}, your appointment with Dr. {{doctorName}} is confirmed for {{appointmentDate}}. Please arrive 10 minutes early. - {{clinicName}}"}'::jsonb,
   CONSTRAINT clinic_settings_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.clinic_test_prices (
@@ -124,6 +131,19 @@ CREATE TABLE public.clinic_test_prices (
   CONSTRAINT clinic_test_prices_pkey PRIMARY KEY (id),
   CONSTRAINT clinic_test_prices_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id),
   CONSTRAINT clinic_test_prices_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests_master(id)
+);
+CREATE TABLE public.device_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  fcm_token text NOT NULL UNIQUE,
+  platform text NOT NULL CHECK (platform = ANY (ARRAY['android'::text, 'ios'::text, 'web'::text])),
+  device_info jsonb DEFAULT '{}'::jsonb,
+  is_active boolean DEFAULT true,
+  last_used_at timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT device_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.diagnoses (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -294,6 +314,23 @@ CREATE TABLE public.pharmacy_inward_receipts (
   CONSTRAINT pharmacy_inward_receipts_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id),
   CONSTRAINT pharmacy_inward_receipts_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.profiles(id),
   CONSTRAINT pharmacy_inward_receipts_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
+);
+CREATE TABLE public.prescription_presets (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clinic_id uuid NOT NULL,
+  name text NOT NULL,
+  description text,
+  condition text,
+  tags ARRAY DEFAULT '{}'::text[],
+  preset_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+  is_active boolean DEFAULT true,
+  usage_count integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  created_by uuid,
+  CONSTRAINT prescription_presets_pkey PRIMARY KEY (id),
+  CONSTRAINT prescription_presets_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id),
+  CONSTRAINT prescription_presets_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.prescriptions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -519,11 +556,28 @@ CREATE TABLE public.visits (
   visit_date timestamp with time zone DEFAULT now(),
   appointment_id uuid,
   clinic_id uuid,
+  physical_examination jsonb DEFAULT '{}'::jsonb,
+  advice_language text DEFAULT 'english'::text,
+  advice_regional text,
+  pdf_url text,
+  pdf_generated_at timestamp with time zone,
   CONSTRAINT visits_pkey PRIMARY KEY (id),
   CONSTRAINT visits_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
   CONSTRAINT visits_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.profiles(id),
   CONSTRAINT visits_appointment_id_fkey FOREIGN KEY (appointment_id) REFERENCES public.appointments(id),
   CONSTRAINT visits_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
+);
+CREATE TABLE public.voice_transcripts (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  visit_id uuid,
+  transcript text NOT NULL,
+  extracted_data jsonb,
+  sync_status text DEFAULT 'pending'::text CHECK (sync_status = ANY (ARRAY['pending'::text, 'synced'::text, 'failed'::text])),
+  device_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  synced_at timestamp with time zone,
+  CONSTRAINT voice_transcripts_pkey PRIMARY KEY (id),
+  CONSTRAINT voice_transcripts_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id)
 );
 CREATE TABLE public.whatsapp_auto_send_rules (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

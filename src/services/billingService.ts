@@ -5,10 +5,10 @@ import type { DatabaseBill, DatabaseBillItem } from '../lib/supabase';
 
 // Convert database bill to app bill type
 const convertDatabaseBill = (
-  dbBill: DatabaseBill, 
-  billItems: BillItem[] = [], 
+  dbBill: DatabaseBill,
+  billItems: BillItem[] = [],
   paymentRecords: PaymentRecord[] = [],
-  patient?: Patient, 
+  patient?: Patient,
   visit?: Visit
 ): Bill => ({
   id: dbBill.id,
@@ -27,6 +27,7 @@ const convertDatabaseBill = (
   refundStatus: dbBill.refund_status || 'not_requested',
   lastRefundAt: dbBill.last_refund_at ? new Date(dbBill.last_refund_at) : undefined,
   refundNotes: dbBill.refund_notes || undefined,
+  pdfUrl: dbBill.pdf_url || undefined, // Map stored PDF URL
   createdAt: new Date(dbBill.created_at),
   updatedAt: new Date(dbBill.updated_at),
   billItems,
@@ -60,7 +61,7 @@ export const billingService = {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const timestamp = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
-    
+
     return `BILL-${year}${month}${day}-${timestamp}`;
   },
 

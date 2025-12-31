@@ -5,23 +5,23 @@ import { useAuth } from '../Auth/useAuth';
 const SystemSettings: React.FC = () => {
   const { user, hasPermission } = useAuth();
   const [saving, setSaving] = useState(false);
-  
+
   const [settings, setSettings] = useState({
     // Database Settings
     autoBackup: true,
     backupFrequency: 'daily',
     retentionDays: 30,
-    
+
     // Security Settings
     sessionTimeout: 60,
     passwordExpiry: 90,
     twoFactorAuth: false,
-    
+
     // Notification Settings
     emailNotifications: true,
     smsNotifications: true,
     systemAlerts: true,
-    
+
     // System Settings
     timezone: 'Asia/Kolkata',
     dateFormat: 'DD/MM/YYYY',
@@ -157,9 +157,7 @@ const SystemSettings: React.FC = () => {
             </div>
 
             <div className="text-sm text-gray-600">
-              <p>Last backup: 2 hours ago</p>
-              <p>Next backup: Today at 11:00 PM</p>
-              <p>Backup size: 45.2 MB</p>
+              <p>Backup configuration active.</p>
             </div>
           </div>
         </div>

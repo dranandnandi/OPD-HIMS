@@ -99,10 +99,18 @@ const VisitDetails: React.FC = () => {
     try {
       setExportingPDF(true);
       
+      // Use doctor from visit if available, otherwise fetch all doctors
+      let doctor = visit.doctor;
+      if (!doctor && visit.doctorId) {
+        const { authService } = await import('../../services/authService');
+        const allDoctors = await authService.getAllDoctors();
+        doctor = allDoctors.find(d => d.id === visit.doctorId);
+      }
+      
       const pdfUrl = await pdfService.generatePdfFromData('visit', {
         visit: visit,
         patient: visit.patient,
-        doctor: visit.doctor,
+        doctor: doctor,
         clinicSettings: user.clinic
       });
       

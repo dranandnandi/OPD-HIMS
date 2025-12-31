@@ -1,5 +1,6 @@
-import { OCRResult } from '../types';
+import { OcrResult } from '../types';
 import { supabase } from '../lib/supabase';
+import { getCurrentProfile } from './profileService';
 
 
 // Convert File to base64 string
@@ -12,21 +13,26 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-export const processCasePaperWithAI = async (imageFile: File, patientId?: string, visitId?: string): Promise<OCRResult> => {
+export const processCasePaperWithAI = async (imageFile: File, patientId?: string, visitId?: string): Promise<OcrResult> => {
   let ocrUploadId: string = '';
   const startTime = Date.now();
 
   try {
     if (!supabase) throw new Error('Supabase client not initialized');
 
-    // Note: Progress updates would need to be passed via callback
-    // For now, we'll add console logs that could be used for progress tracking
-    console.log('🔄 [OCR] Step 1/5: Getting user profile and session...');
-    
+    console.log('🔄 [OCR] Step 1/3: Getting configuration...');
+
     // ✅ Get current user & session token
     const profile = await getCurrentProfile();
+    console.log('👤 [OCR] Profile loaded:', { 
+      id: profile?.id, 
+      name: profile?.name, 
+      clinicId: profile?.clinicId,
+      hasClinicId: !!profile?.clinicId 
+    });
+    
     if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
+      throw new Error('User not assigned to a clinic. Please contact your administrator.');
     }
 
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -34,11 +40,11 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
     const user = session.user;
     const token = session.access_token;
 
-    console.log('🔄 [OCR] Step 2/5: Uploading image to storage...');
-    
+    console.log('🔄 [OCR] Step 2/3: Uploading image to storage...');
+
     // Step 1: Upload image to Supabase storage
     const fileName = `${Date.now()}_${imageFile.name}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('ocruploads')
       .upload(fileName, imageFile);
 
@@ -49,6 +55,7 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
       .getPublicUrl(fileName);
 
     // Step 2: Insert entry in `ocr_uploads` table
+    console.log('📝 [OCR] Inserting upload record with clinic_id:', profile.clinicId);
     const { data: ocrUpload, error: dbError } = await supabase
       .from('ocr_uploads')
       .insert([{
@@ -65,18 +72,23 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
       .select()
       .single();
 
-    if (dbError) throw new Error(`Failed to save to ocr_uploads table: ${dbError.message}`);
+    if (dbError) {
+      console.error('❌ [OCR] Database error:', dbError);
+      console.error('❌ [OCR] Error details:', JSON.stringify(dbError, null, 2));
+      throw new Error(`Failed to save to ocr_uploads table: ${dbError.message}`);
+    }
     ocrUploadId = ocrUpload.id;
 
-    console.log('🔄 [OCR] Step 3/5: Converting image to base64...');
-    
+    console.log('🔄 [OCR] Step 3/3: Converting and Analyzing with Vision API...');
+
     // Step 3: Convert image to base64
     const imageBase64 = await fileToBase64(imageFile);
 
-    console.log('🔄 [OCR] Step 4/5: Extracting text with Vision AI...');
-    
-    // Step 4: Call Vision OCR function ✅ with Authorization
-    const visionResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-ocr`, {
+    // Step 4: Call Vision OCR function (supports images only - PDFs converted client-side)
+    const visionOcrUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-ocr`;
+    console.log('🔮 Calling Vision OCR URL:', visionOcrUrl);
+
+    const visionResponse = await fetch(visionOcrUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -92,9 +104,9 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
     const rawText = visionData.extractedText || '';
     if (!rawText.trim()) throw new Error('No text could be extracted from the image');
 
-    console.log('🔄 [OCR] Step 5/5: Cleaning and analyzing medical text...');
-    
-    // Step 5: Call Gemini Clean Medical Text function ✅ with Authorization
+    console.log('🔄 [OCR] Step 4/6: Cleaning medical text with Gemini AI...');
+
+    // Step 5: Call Gemini Clean Medical Text function
     const cleanResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-clean-medical-text`, {
       method: 'POST',
       headers: {
@@ -111,7 +123,9 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
     const cleanedMedicalText = cleanData.cleanedMedicalText || '';
     if (!cleanedMedicalText.trim()) throw new Error('No medical content could be extracted from the text');
 
-    // Step 6: Call Gemini NLP function ✅ with Authorization (now using cleaned text)
+    console.log('🔄 [OCR] Step 5/6: Extracting structured medical data with Gemini NLP...');
+
+    // Step 6: Call Gemini NLP function (now using cleaned text)
     const geminiResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-nlp`, {
       method: 'POST',
       headers: {
@@ -125,7 +139,9 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
     const geminiData = await geminiResponse.json();
     if (geminiData.error) throw new Error(`Gemini API error: ${geminiData.error}`);
 
-    // Step 7: Call Validation and Refinement function ✅ with Authorization
+    console.log('🔄 [OCR] Step 6/6: Validating and refining extracted data...');
+
+    // Step 7: Call Validation and Refinement function
     const validationResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-extracted-data`, {
       method: 'POST',
       headers: {
@@ -147,9 +163,9 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
     const finalExtractedData = validationData.refinedData || geminiData.extractedData;
 
     console.log('✅ [OCR] Processing completed successfully!');
-    
+
     // Step 8: Build OCRResult object
-    const result: OCRResult = {
+    const result: OcrResult = {
       id: ocrUploadId || `temp_${Date.now()}`,
       ocrUploadId,
       rawText,
@@ -200,7 +216,7 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
       console.error('OCR Processing Error:', error);
     }
 
-    if (ocrUploadId) {
+    if (ocrUploadId && supabase) {
       await supabase
         .from('ocr_uploads')
         .update({ status: 'failed' })
@@ -217,6 +233,7 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
         vitals: {},
         diagnoses: [],
         prescriptions: [],
+        testsOrdered: [],
         advice: ['Please try uploading the image again or contact support.']
       },
       confidence: 0,
@@ -227,20 +244,19 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
 };
 
 // OCR History
-export const getOcrHistory = async (): Promise<OCRResult[]> => {
-  const { data, error } = await supabase
-    .from('ocr_results')
-    .select(`*, clinic_id, ocr_uploads (*)`)
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error('Failed to fetch OCR history');
-
+export const getOcrHistory = async (): Promise<OcrResult[]> => {
   const profile = await getCurrentProfile();
   if (!profile?.clinicId) {
     throw new Error('User not assigned to a clinic.');
   }
-  query = query.eq('clinic_id', profile.clinicId);
 
+  const { data, error } = await supabase
+    .from('ocr_results')
+    .select(`*, clinic_id, ocr_uploads (*)`)
+    .eq('clinic_id', profile.clinicId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error('Failed to fetch OCR history');
 
   return data.map(result => ({
     id: result.id,

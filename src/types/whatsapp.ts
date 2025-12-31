@@ -1,6 +1,6 @@
 // WhatsApp Auto-Send Management Types
 
-export type WhatsAppEventType = 
+export type WhatsAppEventType =
   | 'appointment_confirmed'
   | 'appointment_reminder'
   | 'appointment_cancelled'
@@ -9,7 +9,9 @@ export type WhatsAppEventType =
   | 'gmb_review_request'
   | 'prescription_ready'
   | 'test_result_ready'
-  | 'follow_up_reminder';
+  | 'follow_up_reminder'
+  | 'visit_prescription'
+  | 'invoice_generated';
 
 export interface WhatsAppAutoSendRule {
   id: string;

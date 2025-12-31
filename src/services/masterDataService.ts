@@ -105,7 +105,7 @@ export const masterDataService = {
     return data.map(medicine => {
       const baseMedicine = convertDatabaseMedicineMaster(medicine);
       const priceData = medicine.clinic_medicine_prices?.[0];
-      
+
       return {
         ...baseMedicine,
         sellingPrice: priceData?.selling_price,
@@ -197,7 +197,7 @@ export const masterDataService = {
 
     const baseMedicine = convertDatabaseMedicineMaster(data);
     const priceData = data.clinic_medicine_prices?.[0];
-    
+
     return {
       ...baseMedicine,
       sellingPrice: priceData?.selling_price,
@@ -219,7 +219,7 @@ export const masterDataService = {
       ...convertMedicineToDatabase(medicine),
       clinic_id: profile.clinicId
     };
-    
+
     const { data, error } = await supabase
       .from('medicines_master')
       .insert([dbMedicine])
@@ -244,7 +244,7 @@ export const masterDataService = {
     }
 
     const dbMedicine: any = {};
-    
+
     if (medicine.name) dbMedicine.name = medicine.name;
     if (medicine.genericName !== undefined) dbMedicine.generic_name = medicine.genericName;
     if (medicine.brandName !== undefined) dbMedicine.brand_name = medicine.brandName;
@@ -274,6 +274,27 @@ export const masterDataService = {
     }
 
     return convertDatabaseMedicineMaster(data);
+  },
+
+  async deleteMedicine(id: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    const { error } = await supabase
+      .from('medicines_master')
+      .delete()
+      .eq('id', id)
+      .eq('clinic_id', profile.clinicId);
+
+    if (error) {
+      throw new Error('Failed to delete medicine: ' + error.message);
+    }
   },
 
   // Test Master Methods
@@ -312,7 +333,7 @@ export const masterDataService = {
     return data.map(test => {
       const baseTest = convertDatabaseTestMaster(test);
       const priceData = test.clinic_test_prices?.[0];
-      
+
       return {
         ...baseTest,
         price: priceData?.price,
@@ -428,7 +449,7 @@ export const masterDataService = {
 
     const baseTest = convertDatabaseTestMaster(data);
     const priceData = data.clinic_test_prices?.[0];
-    
+
     return {
       ...baseTest,
       price: priceData?.price,
@@ -447,7 +468,7 @@ export const masterDataService = {
     }
 
     const dbTest = convertTestToDatabase(test);
-    
+
     const { data, error } = await supabase
       .from('tests_master')
       .insert([dbTest])
@@ -472,7 +493,7 @@ export const masterDataService = {
     }
 
     const dbTest: any = {};
-    
+
     if (test.name) dbTest.name = test.name;
     if (test.category) dbTest.category = test.category;
     if (test.type) dbTest.type = test.type;
@@ -494,6 +515,26 @@ export const masterDataService = {
     }
 
     return convertDatabaseTestMaster(data);
+  },
+
+  async deleteTest(id: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    const { error } = await supabase
+      .from('tests_master')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw new Error('Failed to delete test: ' + error.message);
+    }
   },
 
   // Clinic-specific pricing methods
@@ -708,7 +749,7 @@ export const masterDataService = {
       if (itemType === 'medicine') {
         // Check if medicine exists
         const existingMedicines = await this.searchMedicines(masterData.name);
-        
+
         if (existingMedicines.length > 0) {
           // Use existing medicine (no updates to master data allowed)
           const existingMedicine = existingMedicines[0];
@@ -747,7 +788,7 @@ export const masterDataService = {
       } else if (itemType === 'test') {
         // Check if test exists
         const existingTests = await this.searchTests(masterData.name);
-        
+
         if (existingTests.length > 0) {
           // Use existing test (no updates to master data allowed)
           const existingTest = existingTests[0];

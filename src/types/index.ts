@@ -71,6 +71,107 @@ export interface Appointment {
   doctor?: Profile;
 }
 
+// Physical Examination Types
+export interface ExaminationField {
+  key: string;
+  label: string;
+  type: 'text' | 'select' | 'toggle' | 'textarea';
+  value: string | boolean;
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface ExaminationSection {
+  id: string;
+  title: string;
+  fields: ExaminationField[];
+}
+
+export interface PhysicalExamination {
+  sections: ExaminationSection[];
+  aiGenerated?: boolean;
+  specialization?: string;
+  generatedAt?: Date;
+}
+
+// Voice Transcript Types
+export interface VoiceTranscript {
+  id: string;
+  visitId: string;
+  transcript: string;
+  extractedData?: {
+    symptoms?: Array<{
+      name: string;
+      location?: string | null;
+      duration?: string | null;
+      severity?: 'mild' | 'moderate' | 'severe' | null;
+      pattern?: string | null;
+      character?: string | null;
+      associatedSymptoms?: string[] | null;
+      aggravatingFactors?: string | null;
+      relievingFactors?: string | null;
+    }>;
+    vitals?: {
+      temperature?: string | null;
+      bloodPressure?: string | null;
+      pulse?: string | null;
+      weight?: string | null;
+      height?: string | null;
+      oxygenSaturation?: string | null;
+      respiratoryRate?: string | null;
+    };
+    examination?: {
+      general?: string | null;
+      abdomen?: string | null;
+      cardiovascular?: string | null;
+      respiratory?: string | null;
+      neurological?: string | null;
+      localExamination?: string | null;
+      other?: Record<string, string>;
+    };
+    diagnoses?: Array<{
+      name: string;
+      icd10Code?: string | null;
+      isPrimary?: boolean;
+      notes?: string | null;
+    } | string>;
+    prescriptions?: Array<{
+      medicine: string;
+      dosage?: string | null;
+      frequency?: string | null;
+      duration?: string | null;
+      instructions?: string | null;
+      route?: string | null;
+    }>;
+    testsOrdered?: Array<{
+      testName: string;
+      testType?: 'lab' | 'imaging' | 'procedure';
+      urgency?: 'routine' | 'urgent';
+      instructions?: string | null;
+    }>;
+    advice?: string[];
+    followUp?: {
+      duration?: string | null;
+      instructions?: string | null;
+      warningSignsToWatch?: string[] | null;
+    };
+  };
+  suggestedDiagnoses?: Array<{
+    name: string;
+    likelihood?: 'high' | 'medium' | 'low';
+    reasoning?: string;
+  }>;
+  chiefComplaint?: string;
+  confidence?: {
+    transcription?: number;
+    extraction?: number;
+  };
+  syncStatus: 'pending' | 'synced' | 'failed';
+  deviceId?: string;
+  createdAt: Date;
+  syncedAt?: Date;
+}
+
 export interface Visit {
   id: string;
   patientId: string;
@@ -88,14 +189,21 @@ export interface Visit {
     respiratoryRate?: number;
     oxygenSaturation?: number;
   };
+  physicalExamination?: PhysicalExamination;
   diagnoses: Diagnosis[];
   prescriptions: Prescription[];
   testsOrdered: TestOrdered[];
   testResults: TestResult[];
   advice: string[];
+  adviceLanguage?: string;
+  adviceRegional?: string;
   followUpDate?: Date;
   doctorNotes: string;
   caseImageUrl?: string;
+  pdf_url?: string; // URL to the stored display PDF in Supabase Storage
+  pdf_generated_at?: Date; // Timestamp of display PDF generation
+  print_pdf_url?: string; // URL to grayscale print version for letterhead
+  print_pdf_generated_at?: Date; // Timestamp of print PDF generation
   createdAt: Date;
   updatedAt: Date;
   patient?: Patient;
@@ -201,6 +309,8 @@ export interface Bill {
   refundStatus: 'not_requested' | 'pending' | 'partial' | 'refunded';
   lastRefundAt?: Date;
   refundNotes?: string;
+  pdfUrl?: string; // URL to the stored display PDF in Supabase Storage
+  printPdfUrl?: string; // URL to grayscale print version for letterhead
   createdAt: Date;
   updatedAt: Date;
   billItems: BillItem[];
@@ -233,7 +343,7 @@ export interface EnhancedDailyReport {
   transactionCount: number;
   averageTransactionValue: number;
   outstandingBalance: number;
-  
+
   // Payment method breakdown
   paymentMethods: {
     method: string;
@@ -241,7 +351,7 @@ export interface EnhancedDailyReport {
     count: number;
     percentage: number;
   }[];
-  
+
   // Service category breakdown
   serviceCategories: {
     category: 'consultation' | 'procedure' | 'medicine' | 'test' | 'other';
@@ -249,14 +359,14 @@ export interface EnhancedDailyReport {
     count: number;
     percentage: number;
   }[];
-  
+
   // Peak hours analysis
   peakHours: {
     hour: number;
     amount: number;
     count: number;
   }[];
-  
+
   // Daily trend
   hourlyBreakdown: {
     hour: string;
@@ -387,6 +497,11 @@ export interface ClinicSetting {
   createdAt: Date;
   updatedAt: Date;
   blueticksApiKey?: string;
+  // PDF Settings
+  pdfHeaderUrl?: string;
+  pdfFooterUrl?: string;
+  pdfMargins?: string;
+  pdfPrintMargins?: string;
   // WhatsApp and AI Review Settings
   enableManualWhatsappSend?: boolean;
   enableBlueticksApiSend?: boolean;
@@ -395,6 +510,14 @@ export interface ClinicSetting {
   enableAiThankYou?: boolean;
   enableGmbLinkOnly?: boolean;
   gmbLink?: string;
+  // WhatsApp Message Templates
+  whatsappTemplates?: {
+    visit_prescription?: string;
+    invoice_generated?: string;
+    appointment_reminder?: string;
+    appointment_confirmation?: string;
+    thank_you?: string;
+  };
   // Prescription Frequencies
   prescriptionFrequencies?: Array<{
     code: string;
@@ -407,6 +530,7 @@ export interface ClinicSetting {
     label: string;
     duration: number;
     color: string;
+    fee?: number;
   }>;
 }
 
@@ -617,4 +741,13 @@ export interface SentMessageLog {
   errorDetails?: string;
   sentBy?: string;
   createdAt: Date;
+}
+
+export interface AppointmentType {
+  id: string;
+  label: string;
+  duration: number;
+  color: string;
+  feeType: 'consultation' | 'followup' | 'emergency' | 'custom';
+  customFee?: number; // Only used when feeType is 'custom'
 }

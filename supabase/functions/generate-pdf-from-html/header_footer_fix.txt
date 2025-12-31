@@ -1,0 +1,20 @@
+// Prepare header/footer for PDF.co (only for display version)
+// Use direct URLs instead of Base64 to avoid "Argument list too long" error  
+let pdfHeader = "";
+let pdfFooter = "";
+
+if (!printVersion) {
+  if (data.clinicSettings?.pdfHeaderUrl) {
+    pdfHeader = `<div style="text-align: center; margin: 0; padding: 10px;"><img src="${data.clinicSettings.pdfHeaderUrl}" style="max-height: 100px; width: auto;" /></div>`;
+  }
+  
+  if (data.clinicSettings?.pdfFooterUrl) {
+    pdfFooter = `<div style="text-align: center; margin: 0; padding: 10px;"><img src="${data.clinicSettings.pdfFooterUrl}" style="max-height: 80px; width: auto;" /></div>`;
+  }
+}
+
+console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
+console.log(`[PDF GEN] Header: ${pdfHeader ? 'Direct URL included' : 'None'}`);
+console.log(`[PDF GEN] Footer: ${pdfFooter ? 'Direct URL included' : 'None'}`);
+if (pdfHeader) console.log(`[PDF GEN] Header length: ${pdfHeader.length} chars`);
+if (pdfFooter) console.log(`[PDF GEN] Footer length: ${pdfFooter.length} chars`);

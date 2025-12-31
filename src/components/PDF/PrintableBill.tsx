@@ -16,8 +16,8 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
       {/* Clinic Header */}
       <div className="pdf-header text-center border-b-2 border-gray-300 pb-6 mb-6">
         {clinicSettings.logoUrl && clinicSettings.logoUrl.trim() && !clinicSettings.logoUrl.includes('example.com') && (
-          <img 
-            src={clinicSettings.logoUrl} 
+          <img
+            src={clinicSettings.logoUrl}
             alt={clinicSettings.clinicName}
             className="mx-auto mb-4 h-16 object-contain"
             onError={(e) => {
@@ -53,12 +53,11 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
           </div>
         </div>
         <div className="text-right">
-          <div className={`inline-block px-3 py-1 rounded text-sm font-medium ${
-            bill.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
-            bill.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-            bill.paymentStatus === 'partial' ? 'bg-blue-100 text-blue-800' :
-            'bg-red-100 text-red-800'
-          }`}>
+          <div className={`inline-block px-3 py-1 rounded text-sm font-medium ${bill.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
+              bill.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                bill.paymentStatus === 'partial' ? 'bg-blue-100 text-blue-800' :
+                  'bg-red-100 text-red-800'
+            }`}>
             {bill.paymentStatus.toUpperCase()}
           </div>
         </div>
@@ -160,8 +159,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
 
       {/* Footer */}
       <div className="pdf-footer pdf-page-break-before border-t-2 border-gray-300 pt-4 text-center text-xs text-gray-500">
-        <p>This is a computer-generated bill and does not require a signature.</p>
-        <p className="mt-1">Generated on {format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+
         {clinicSettings.taxId && (
           <p className="mt-1">Tax ID: {clinicSettings.taxId}</p>
         )}

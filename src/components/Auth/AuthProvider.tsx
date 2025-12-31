@@ -92,15 +92,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!sessionResult) throw new Error('No session response received from Supabase.');
 
         const { session, error: sessionError } = sessionResult;
-        
+
         // Log detailed session information for initial check
         if (import.meta.env.DEV) {
           console.log('🔐 [InitialSession] Session user ID:', session?.user?.id);
           console.log('🔐 [InitialSession] Session access token present:', !!session?.access_token);
           console.log('⚠️ [InitialSession] sessionError details:', sessionError);
         }
-        
-        if (sessionError) throw new Error(sessionError.message);
 
         if (!session?.user) {
           const localProfile = getProfileFromLocalStorage();
@@ -123,7 +121,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (import.meta.env.DEV) {
           console.log('🔄 [InitialSession] Calling getCurrentProfile with userId from session:', session.user.id);
         }
-        
+
         // Use setTimeout to defer profile fetching until after hydration
         setTimeout(async () => {
           try {
@@ -131,23 +129,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (profile) {
               updateUserIfChanged(profile);
               setAuthError(null);
-              
+
               // Sync user to WhatsApp backend database
               try {
                 await WhatsAppUserSyncService.syncCurrentUser({
                   id: profile.id,
                   email: profile.email,
                   user_metadata: {
-                    full_name: profile.fullName,
-                    name: profile.fullName
+                    full_name: profile.name,
+                    name: profile.name
                   },
                   clinic: profile.clinic ? {
                     clinicName: profile.clinic.clinicName,
-                    clinicAddress: profile.clinic.clinicAddress,
-                    contactPhone: profile.clinic.contactPhone,
-                    contactEmail: profile.clinic.contactEmail
+                    clinicAddress: profile.clinic.address,
+                    contactPhone: profile.clinic.phone,
+                    contactEmail: profile.clinic.email || profile.email
                   } : undefined,
-                  role: profile.role
+                  role: profile.roleName
                 });
                 if (import.meta.env.DEV) {
                   console.log('✅ User synced to WhatsApp backend');
@@ -180,7 +178,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setLoading(false);
           }
         }, 0);
-        
+
         // Don't set loading to false here since we're deferring the actual work
         return;
       } catch (error) {
@@ -212,7 +210,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setAuthError(errorMessage);
           }
         }
-      } finally {
         setLoading(false);
       }
     };
@@ -225,7 +222,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('🔄 [AuthStateChange] Session present:', !!session);
         console.log('🔄 [AuthStateChange] Session user ID:', session?.user?.id);
       }
-      
+
       const now = Date.now();
       if (event === 'SIGNED_IN' && session?.user) {
         if (now - lastHandledAt.current < 1000) {
@@ -285,7 +282,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setTimeout(async () => {
           try {
             // For user updates, use fallback method or session userId if available
-            const profile = session?.user?.id 
+            const profile = session?.user?.id
               ? await getCurrentProfile(session.user.id, session.access_token)
               : await getCurrentProfile();
             if (profile) {

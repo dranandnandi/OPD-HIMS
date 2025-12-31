@@ -173,7 +173,7 @@ try {
       auth: {
         debug: true,
         persistSession: true,
-        autoRefreshToken: false,
+        autoRefreshToken: true,
         detectSessionInUrl: true
       },
       global: {
@@ -279,6 +279,23 @@ export interface DatabaseVisit {
     respiratoryRate?: number;
     oxygenSaturation?: number;
   };
+  physical_examination?: {
+    sections?: Array<{
+      id: string;
+      title: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        type: 'text' | 'select' | 'toggle' | 'textarea';
+        value: string | boolean;
+        options?: string[];
+        placeholder?: string;
+      }>;
+    }>;
+    aiGenerated?: boolean;
+    specialization?: string;
+    generatedAt?: string;
+  };
   advice?: string[];
   follow_up_date?: string;
   doctor_notes?: string;
@@ -365,6 +382,7 @@ export interface DatabaseBill {
   refund_status: 'not_requested' | 'pending' | 'partial' | 'refunded';
   last_refund_at?: string;
   refund_notes?: string;
+  pdf_url?: string; // URL to stored PDF in Supabase Storage
   created_at: string;
   updated_at: string;
   clinic_id?: string;

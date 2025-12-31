@@ -49,6 +49,9 @@ const EVENT_TYPES: { type: WhatsAppEventType; label: string; icon: React.Element
   }
 ];
 
+// Define formatBalanceMessage before using it in DEFAULT_TEMPLATES
+const formatBalanceMessage = '{{#if balanceAmount}}Balance: {{balanceAmount}} - Please pay at the reception.{{else}}Fully paid. Thank you!{{/if}}';
+
 const DEFAULT_TEMPLATES: Record<WhatsAppEventType, string> = {
   appointment_confirmed: `Dear {{patientName}},
 
@@ -120,7 +123,7 @@ Your test results from {{clinicName}} are ready.
 Please visit us to collect your reports or call us for details.
 
 Thank you!`,
-  
+
   appointment_cancelled: `Dear {{patientName}},
 
 Your appointment at {{clinicName}} has been cancelled.
@@ -128,7 +131,7 @@ Your appointment at {{clinicName}} has been cancelled.
 If you would like to reschedule, please contact us.
 
 Thank you!`,
-  
+
   follow_up_reminder: `Dear {{patientName}},
 
 This is a reminder for your follow-up visit at {{clinicName}}.
@@ -347,14 +350,12 @@ const WhatsAppAutoSendSettings: React.FC = () => {
                   </button>
                   <button
                     onClick={() => toggleRule(type)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      enabled ? 'bg-green-600' : 'bg-gray-300'
-                    }`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-green-600' : 'bg-gray-300'
+                      }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        enabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
                     />
                   </button>
                 </div>
@@ -427,11 +428,10 @@ const WhatsAppAutoSendSettings: React.FC = () => {
       {/* Feedback Message */}
       {message && (
         <div
-          className={`fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg ${
-            message.type === 'success'
+          className={`fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg ${message.type === 'success'
               ? 'bg-green-50 text-green-700 border border-green-200'
               : 'bg-red-50 text-red-700 border border-red-200'
-          }`}
+            }`}
         >
           {message.text}
         </div>
@@ -441,5 +441,3 @@ const WhatsAppAutoSendSettings: React.FC = () => {
 };
 
 export default WhatsAppAutoSendSettings;
-
-const formatBalanceMessage = '{{#if balanceAmount}}Balance: {{balanceAmount}} - Please pay at the reception.{{else}}Fully paid. Thank you!{{/if}}';

@@ -27,7 +27,10 @@ const convertDatabaseVisit = (
   testsOrdered,
   testResults,
   advice: dbVisit.advice || [],
+  adviceLanguage: (dbVisit as any).advice_language || 'english',
+  adviceRegional: (dbVisit as any).advice_regional || '',
   followUpDate: dbVisit.follow_up_date ? new Date(dbVisit.follow_up_date) : undefined,
+  physicalExamination: dbVisit.physical_examination || undefined,
   doctorNotes: dbVisit.doctor_notes || '',
   caseImageUrl: dbVisit.case_image_url,
   createdAt: new Date(dbVisit.created_at),
@@ -343,7 +346,8 @@ export const visitService = {
       // Insert the main visit record
       const { data: visitData, error: visitError } = await supabase
         .from('visits')
-        .insert([{ clinic_id: profile.clinicId,
+        .insert([{
+          clinic_id: profile.clinicId,
           patient_id: visit.patientId,
           doctor_id: visit.doctorId,
           appointment_id: visit.appointmentId,
@@ -351,7 +355,10 @@ export const visitService = {
           chief_complaint: visit.chiefComplaint,
           vitals: visit.vitals,
           advice: visit.advice,
+          advice_language: visit.adviceLanguage || 'english',
+          advice_regional: visit.adviceRegional || '',
           follow_up_date: visit.followUpDate?.toISOString(),
+          physical_examination: visit.physicalExamination || {},
           doctor_notes: visit.doctorNotes,
           case_image_url: visit.caseImageUrl
         }])
@@ -396,12 +403,12 @@ export const visitService = {
         const prescriptionsToInsert = visit.prescriptions.map(prescription => ({
           visit_id: visitId,
           medicine: prescription.medicine,
-          dosage: prescription.dosage,
-          frequency: prescription.frequency,
-          duration: prescription.duration,
-          instructions: prescription.instructions,
-          quantity: prescription.quantity,
-          refills: prescription.refills
+          dosage: prescription.dosage || null,
+          frequency: prescription.frequency || null,
+          duration: prescription.duration || null,
+          instructions: prescription.instructions || null,
+          quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
+          refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0
         }));
         insertPromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
       }
@@ -410,7 +417,7 @@ export const visitService = {
       if (visit.testsOrdered.length > 0) {
         const testsToInsert = visit.testsOrdered.map(test => ({
           visit_id: visitId,
-         clinic_id: profile.clinicId,
+          clinic_id: profile.clinicId,
           test_name: test.testName,
           test_type: test.testType,
           instructions: test.instructions,
@@ -553,7 +560,7 @@ export const visitService = {
     try {
       // First update the main visit record
       const dbVisit: any = {};
-      
+
       if (visit.patientId) dbVisit.patient_id = visit.patientId;
       if (visit.doctorId) dbVisit.doctor_id = visit.doctorId;
       dbVisit.clinic_id = profile.clinicId;
@@ -563,8 +570,11 @@ export const visitService = {
       if (visit.chiefComplaint !== undefined) dbVisit.chief_complaint = visit.chiefComplaint;
       if (visit.vitals) dbVisit.vitals = visit.vitals;
       if (visit.advice) dbVisit.advice = visit.advice;
+      if (visit.adviceLanguage !== undefined) dbVisit.advice_language = visit.adviceLanguage;
+      if (visit.adviceRegional !== undefined) dbVisit.advice_regional = visit.adviceRegional;
       if (visit.followUpDate !== undefined) dbVisit.follow_up_date = visit.followUpDate?.toISOString();
       if (visit.doctorNotes !== undefined) dbVisit.doctor_notes = visit.doctorNotes;
+      if (visit.physicalExamination !== undefined) dbVisit.physical_examination = visit.physicalExamination;
       if (visit.caseImageUrl !== undefined) dbVisit.case_image_url = visit.caseImageUrl;
 
       const { error } = await supabase
@@ -584,7 +594,7 @@ export const visitService = {
       if (visit.symptoms) {
         // Delete existing symptoms and insert new ones
         await supabase.from('symptoms').delete().eq('visit_id', id);
-        
+
         if (visit.symptoms.length > 0) {
           const symptomsToInsert = visit.symptoms.map(symptom => ({
             visit_id: id,
@@ -602,7 +612,7 @@ export const visitService = {
       if (visit.diagnoses) {
         // Delete existing diagnoses and insert new ones
         await supabase.from('diagnoses').delete().eq('visit_id', id);
-        
+
         if (visit.diagnoses.length > 0) {
           const diagnosesToInsert = visit.diagnoses.map(diagnosis => ({
             visit_id: id,
@@ -620,18 +630,18 @@ export const visitService = {
       if (visit.prescriptions) {
         // Delete existing prescriptions and insert new ones
         await supabase.from('prescriptions').delete().eq('visit_id', id);
-        
+
         if (visit.prescriptions.length > 0) {
           const prescriptionsToInsert = visit.prescriptions.map(prescription => ({
             visit_id: id,
             clinic_id: profile.clinicId,
             medicine: prescription.medicine,
-            dosage: prescription.dosage,
-            frequency: prescription.frequency,
-            duration: prescription.duration,
-            instructions: prescription.instructions,
-            quantity: prescription.quantity,
-            refills: prescription.refills
+            dosage: prescription.dosage || null,
+            frequency: prescription.frequency || null,
+            duration: prescription.duration || null,
+            instructions: prescription.instructions || null,
+            quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
+            refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0
           }));
           updatePromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
         }
@@ -641,7 +651,7 @@ export const visitService = {
       if (visit.testsOrdered) {
         // Delete existing tests ordered and insert new ones
         await supabase.from('tests_ordered').delete().eq('visit_id', id);
-        
+
         if (visit.testsOrdered.length > 0) {
           const testsToInsert = visit.testsOrdered.map(test => ({
             visit_id: id,

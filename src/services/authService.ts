@@ -183,10 +183,29 @@ export const authService = {
       .select(`*, clinic_id, clinic_settings:clinic_id (*)`)
       .eq('clinic_id', profile.clinicId)
       .eq('is_open_for_consultation', true)
-      .eq('is_active', true)
       .order('name');
 
     if (error) throw new Error('Failed to fetch doctors');
+    return data.map(p => convertDatabaseProfile(p, undefined, p.clinic_settings));
+  },
+
+  async getAllDoctors(): Promise<Profile[]> {
+    if (!supabase) throw new Error('Supabase client not initialized');
+
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(`*, clinic_id, clinic_settings:clinic_id (*)`)
+      .eq('clinic_id', profile.clinicId)
+      .eq('is_active', true)
+      .not('specialization', 'is', null) // Only users with specialization (doctors)
+      .order('name');
+
+    if (error) throw new Error('Failed to fetch all doctors');
     return data.map(p => convertDatabaseProfile(p, undefined, p.clinic_settings));
   },
 

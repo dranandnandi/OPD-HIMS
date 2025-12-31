@@ -12,6 +12,7 @@ export interface WhatsAppContextInput {
   clinicId?: string;
   labId?: string;
   userId?: string;
+  email?: string;
   channel?: string;
 }
 
@@ -218,6 +219,7 @@ export class WhatsAppAPI {
     if (labId) merged.labId = labId;
     if (context?.clinicId) merged.clinicId = context.clinicId;
     if (context?.userId && !merged.userId) merged.userId = context.userId;
+    if (context?.email && !merged.email) merged.email = context.email;
 
     return merged;
   }

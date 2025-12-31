@@ -14,7 +14,7 @@ serve(async (req) => {
 
   try {
     console.log('🔍 [Edge Function] Starting profile fetch...')
-    
+
     // Get the authorization header
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -28,12 +28,12 @@ serve(async (req) => {
     // Simple rate limiting (in-memory for demo - use Redis/Upstash in production)
     const clientIP = req.headers.get('x-forwarded-for') || 'unknown'
     const rateLimitKey = `rate_limit_${clientIP}_${token.slice(-8)}`
-    
+
     // Basic rate limiting logic (60 requests per minute per user)
     const now = Date.now()
     const windowMs = 60 * 1000 // 1 minute
     const maxRequests = 60
-    
+
     // In production, this should use Redis/Upstash for persistent storage
     // For now, we'll log rate limiting attempts
     console.log(`🚦 [Rate Limit] Request from ${clientIP} at ${new Date(now).toISOString()}`)
@@ -45,7 +45,7 @@ serve(async (req) => {
 
     // Verify the JWT token and get user info
     const { data: { user }, error: userError } = await supabase.auth.getUser(token)
-    
+
     if (userError || !user) {
       console.error('❌ [Edge Function] Auth error:', userError)
       throw new Error('Invalid or expired token')
@@ -93,7 +93,12 @@ serve(async (req) => {
           email,
           website,
           logo_url,
-          tax_id
+          logo_url,
+          tax_id,
+          pdf_header_url,
+          pdf_footer_url,
+          pdf_margins,
+          pdf_print_margins
         )
       `)
       .eq('id', user.id)
@@ -110,23 +115,23 @@ serve(async (req) => {
 
     if (!dbProfile) {
       console.warn('⚠️ [Edge Function] No profile found for user ID:', user.id)
-      
+
       // Check if user exists in auth.users but not in profiles table
       console.log('🔍 [Edge Function] Checking auth user details...')
       console.log('👤 [Edge Function] Auth user email:', user.email)
       console.log('👤 [Edge Function] Auth user created_at:', user.created_at)
-      
+
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error: 'Profile not found',
           details: 'User exists in auth but no profile record found',
           userId: user.id,
           userEmail: user.email
         }),
-        { 
+        {
           status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -170,6 +175,10 @@ serve(async (req) => {
         timezone: dbProfile.clinic_settings.timezone,
         createdAt: dbProfile.clinic_settings.created_at,
         updatedAt: dbProfile.clinic_settings.updated_at,
+        pdfHeaderUrl: dbProfile.clinic_settings.pdf_header_url,
+        pdfFooterUrl: dbProfile.clinic_settings.pdf_footer_url,
+        pdfMargins: dbProfile.clinic_settings.pdf_margins,
+        pdfPrintMargins: dbProfile.clinic_settings.pdf_print_margins,
       } : undefined
     }
 
@@ -178,26 +187,26 @@ serve(async (req) => {
     console.log('🏥 [Edge Function] Clinic:', profile.clinic?.clinicName || 'No clinic')
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         profile: profile
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
 
   } catch (error) {
     console.error('💥 [Edge Function] Error:', error)
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: 'Failed to fetch user profile',
-        details: error.message 
+        details: error.message
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
   }

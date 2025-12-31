@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Plus, User, Phone, Edit, Trash2, Stethoscope, UserCheck, AlertTriangle, Heart, MessageCircle, Filter, ChevronLeft, ChevronRight, Activity, CheckCircle, XCircle } from 'lucide-react';
-import { Appointment, Patient, Profile } from '../../types';
+import { Appointment, Patient, Profile, AppointmentType } from '../../types';
 import { appointmentService } from '../../services/appointmentService';
 import { patientService } from '../../services/patientService';
+import { clinicSettingsService } from '../../services/clinicSettingsService';
+import { authService } from '../../services/authService';
 import { useAuth } from '../Auth/useAuth';
 import { supabase } from '../../lib/supabase';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, addWeeks, subWeeks } from 'date-fns';
@@ -17,6 +19,7 @@ const AppointmentCalendar: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Profile[]>([]);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentType[]>([]);
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,64 +44,55 @@ const AppointmentCalendar: React.FC = () => {
   useEffect(() => {
     if (user) {
       loadData();
+      loadAppointmentTypes();
     }
   }, [user, currentWeek]);
+
+  const loadAppointmentTypes = async () => {
+    try {
+      if (user?.clinicId) {
+        const settings = await clinicSettingsService.getClinicSettings(user.clinicId);
+        if (settings?.appointmentTypes && settings.appointmentTypes.length > 0) {
+          setAppointmentTypes(settings.appointmentTypes);
+        } else {
+          // Default appointment types if not configured
+          setAppointmentTypes([
+            { id: 'consultation', label: 'Consultation', duration: 30, color: '#3B82F6', fee: 300 },
+            { id: 'followup', label: 'Follow-up', duration: 20, color: '#10B981', fee: 200 },
+            { id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444', fee: 800 },
+            { id: 'procedure', label: 'Procedure', duration: 60, color: '#8B5CF6', fee: 500 }
+          ]);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading appointment types:', err);
+      // Use defaults on error
+      setAppointmentTypes([
+        { id: 'consultation', label: 'Consultation', duration: 30, color: '#3B82F6', fee: 300 },
+        { id: 'followup', label: 'Follow-up', duration: 20, color: '#10B981', fee: 200 },
+        { id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444', fee: 800 },
+        { id: 'procedure', label: 'Procedure', duration: 60, color: '#8B5CF6', fee: 500 }
+      ]);
+    }
+  };
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const [appointmentsData, patientsData] = await Promise.all([
         appointmentService.getAppointmentsByDateRange(fourDayStart, fourDayEnd),
         patientService.getPatients()
       ]);
-      
+
       setAppointments(appointmentsData);
       setPatients(patientsData);
-      
-      // Load doctors separately with better error handling
-      try {
-        const { data: doctorsData, error: doctorsError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('is_open_for_consultation', true)
-          .eq('is_active', true)
-          .order('name');
 
-        if (doctorsError) {
-          console.error('Error loading doctors:', doctorsError);
-          setDoctors([]);
-        } else {
-          const convertedDoctors = doctorsData.map(profile => ({
-            id: profile.id,
-            userId: profile.user_id,
-            roleId: profile.role_id,
-            clinicId: profile.clinic_id,
-            name: profile.name,
-            email: profile.email,
-            phone: profile.phone,
-            specialization: profile.specialization,
-            qualification: profile.qualification,
-            registrationNo: profile.registration_no,
-            roleName: profile.role_name,
-            permissions: profile.permissions,
-            consultationFee: profile.consultation_fee,
-            followUpFee: profile.follow_up_fee,
-            emergencyFee: profile.emergency_fee,
-            isActive: profile.is_active,
-            isOpenForConsultation: profile.is_open_for_consultation,
-            doctorAvailability: profile.doctor_availability,
-            createdAt: new Date(profile.created_at),
-            updatedAt: new Date(profile.updated_at)
-          }));
-          
-          // Filter doctors by current user's clinic ID
-          const filteredDoctors = convertedDoctors.filter(doctor => 
-            doctor.clinicId === user?.clinicId
-          );
-          setDoctors(filteredDoctors);
-        }
+      // Load doctors using authService to ensure clinic filtering
+      try {
+        const doctorsData = await authService.getDoctors();
+        setDoctors(doctorsData);
       } catch (doctorLoadError) {
         console.error('Failed to load doctors:', doctorLoadError);
         setDoctors([]);
@@ -144,7 +138,7 @@ const AppointmentCalendar: React.FC = () => {
 
   const handleDeleteAppointment = async (appointmentId: string) => {
     if (!confirm('Are you sure you want to delete this appointment?')) return;
-    
+
     try {
       await appointmentService.deleteAppointment(appointmentId);
       setAppointments(appointments.filter(a => a.id !== appointmentId));
@@ -208,7 +202,7 @@ const AppointmentCalendar: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-800">Appointments</h2>
             <p className="text-sm text-gray-600 mt-1">Manage patient appointments and schedules</p>
           </div>
-          
+
           {/* Desktop Filters */}
           <div className="hidden lg:flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -227,7 +221,7 @@ const AppointmentCalendar: React.FC = () => {
                 <option value="No_Show">No Show</option>
               </select>
             </div>
-            
+
             <select
               value={doctorFilter}
               onChange={(e) => setDoctorFilter(e.target.value)}
@@ -240,7 +234,7 @@ const AppointmentCalendar: React.FC = () => {
                 </option>
               ))}
             </select>
-            
+
             {(statusFilter !== 'all' || doctorFilter) && (
               <button
                 onClick={clearFilters}
@@ -250,7 +244,7 @@ const AppointmentCalendar: React.FC = () => {
               </button>
             )}
           </div>
-          
+
           {/* Desktop New Appointment Button */}
           <button
             onClick={handleNewAppointment}
@@ -265,30 +259,30 @@ const AppointmentCalendar: React.FC = () => {
       {/* Enhanced Week Navigation */}
       <div className="calendar-nav">
         <div className="flex items-center justify-between">
-        <button
-          onClick={handlePreviousWeek}
-          className="calendar-nav-button flex items-center gap-2"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Previous
-        </button>
-        
-        <div className="text-center">
-          <h3 className="calendar-nav-title">
-            {format(fourDayStart, 'MMM dd')} - {format(fourDayEnd, 'MMM dd, yyyy')}
-          </h3>
-          <p className="text-sm text-gray-600 mt-1">4-Day View</p>
+          <button
+            onClick={handlePreviousWeek}
+            className="calendar-nav-button flex items-center gap-2"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+
+          <div className="text-center">
+            <h3 className="calendar-nav-title">
+              {format(fourDayStart, 'MMM dd')} - {format(fourDayEnd, 'MMM dd, yyyy')}
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">4-Day View</p>
+          </div>
+
+          <button
+            onClick={handleNextWeek}
+            className="calendar-nav-button flex items-center gap-2"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
-        
-        <button
-          onClick={handleNextWeek}
-          className="calendar-nav-button flex items-center gap-2"
-        >
-          Next
-          <ChevronRight className="w-4 h-4" />
-        </button>
-        </div>
-        
+
         {/* Mobile Filters */}
         <div className="lg:hidden mt-4 pt-4 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-3">
@@ -305,7 +299,7 @@ const AppointmentCalendar: React.FC = () => {
               <option value="Cancelled">Cancelled</option>
               <option value="No_Show">No Show</option>
             </select>
-            
+
             <select
               value={doctorFilter}
               onChange={(e) => setDoctorFilter(e.target.value)}
@@ -319,7 +313,7 @@ const AppointmentCalendar: React.FC = () => {
               ))}
             </select>
           </div>
-          
+
           {(statusFilter !== 'all' || doctorFilter) && (
             <button
               onClick={clearFilters}
@@ -348,12 +342,12 @@ const AppointmentCalendar: React.FC = () => {
             </div>
           ))}
         </div>
-        
+
         {/* Week Day Content */}
         <div className="contents">
           {weekDays.map(day => (
-            <div 
-              key={`content-${day.toISOString()}`} 
+            <div
+              key={`content-${day.toISOString()}`}
               className="p-2 md:p-4 border-r border-gray-200 last:border-r-0 min-h-[250px] md:min-h-[300px] bg-white hover:bg-blue-50 cursor-pointer transition-colors"
               onClick={() => {
                 setSelectedDateForDetails(day);
@@ -371,7 +365,7 @@ const AppointmentCalendar: React.FC = () => {
                     className="text-xs md:text-sm"
                   />
                 ))}
-                
+
                 {/* Empty state for days with no appointments */}
                 {getAppointmentsForDay(day).length === 0 && (
                   <div className="text-center py-4 md:py-8 text-gray-400">
@@ -384,7 +378,7 @@ const AppointmentCalendar: React.FC = () => {
           ))}
         </div>
       </div>
-      
+
       {/* Mobile FAB */}
       <button
         onClick={handleNewAppointment}
@@ -400,6 +394,7 @@ const AppointmentCalendar: React.FC = () => {
           appointment={selectedAppointment}
           patients={patients}
           doctors={doctors}
+          appointmentTypes={appointmentTypes}
           onSave={(appointmentData) => {
             // Handle save logic here
             setShowModal(false);
@@ -455,6 +450,7 @@ interface AppointmentModalProps {
   appointment: Appointment | null;
   patients: Patient[];
   doctors: Profile[];
+  appointmentTypes: AppointmentType[];
   onSave: (appointment: any) => void;
   onPatientAdded: () => void;
   onClose: () => void;
@@ -464,6 +460,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   appointment,
   patients,
   doctors,
+  appointmentTypes,
   onSave,
   onPatientAdded,
   onClose
@@ -476,7 +473,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(
     appointment ? patients.find(p => p.id === appointment.patientId) || null : null
   );
-  
+
   // Generate time slots starting from 9:00 AM
   const generateTimeSlots = () => {
     const slots = [];
@@ -505,9 +502,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     }
     return slots;
   };
-  
+
   const timeSlots = generateTimeSlots();
-  
+
   // Extract date and time from appointment if editing
   const getInitialDateTime = () => {
     if (appointment) {
@@ -522,16 +519,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
       time: '09:00'
     };
   };
-  
+
   const initialDateTime = getInitialDateTime();
-  
+
+  // Get default appointment type from available types
+  const getDefaultAppointmentType = () => {
+    if (appointment?.appointmentType) return appointment.appointmentType;
+    if (appointmentTypes.length > 0) return appointmentTypes[0].label as Appointment['appointmentType'];
+    return 'Consultation' as Appointment['appointmentType'];
+  };
+
   const [formData, setFormData] = useState({
     patientId: selectedPatient?.id || '',
     doctorId: appointment?.doctorId || user?.id || '',
     selectedDate: initialDateTime.date,
     selectedTime: initialDateTime.time,
     duration: appointment?.duration || 30,
-    appointmentType: appointment?.appointmentType || 'Consultation' as Appointment['appointmentType'],
+    appointmentType: getDefaultAppointmentType(),
     status: appointment?.status || 'Scheduled' as Appointment['status'],
     notes: appointment?.notes || ''
   });
@@ -583,7 +587,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     try {
       // Combine date and time into a single Date object
       const appointmentDateTime = new Date(`${formData.selectedDate}T${formData.selectedTime}`);
-      
+
       const appointmentData = {
         patientId: formData.patientId,
         doctorId: formData.doctorId,
@@ -625,14 +629,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
         </div>
 
 
-      {/* New Patient Modal */}
-      {showNewPatientModal && (
-        <PatientModal
-          patient={null}
-          onSave={handleSaveNewPatient}
-          onClose={() => setShowNewPatientModal(false)}
-        />
-      )}
+        {/* New Patient Modal */}
+        {showNewPatientModal && (
+          <PatientModal
+            patient={null}
+            onSave={handleSaveNewPatient}
+            onClose={() => setShowNewPatientModal(false)}
+          />
+        )}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -648,7 +652,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 Add New Patient
               </button>
             </div>
-            
+
             {/* Selected Patient Display */}
             {selectedPatient ? (
               <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -678,7 +682,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required={!selectedPatient}
                 />
-                
+
                 {/* Search Results */}
                 {showPatientSearchResults && filteredPatients.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -695,7 +699,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     ))}
                   </div>
                 )}
-                
+
                 {/* No Results */}
                 {showPatientSearchResults && patientSearchTerm && filteredPatients.length === 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3">
@@ -743,7 +747,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Time *
@@ -782,13 +786,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
             </label>
             <select
               value={formData.appointmentType}
-              onChange={(e) => setFormData({ ...formData, appointmentType: e.target.value as Appointment['appointmentType'] })}
+              onChange={(e) => {
+                const selectedType = appointmentTypes.find(t => t.label === e.target.value);
+                setFormData({
+                  ...formData,
+                  appointmentType: e.target.value as Appointment['appointmentType'],
+                  duration: selectedType?.duration || formData.duration
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="Consultation">Consultation</option>
-              <option value="Follow_Up">Follow-up</option>
-              <option value="Emergency">Emergency</option>
-              <option value="Routine_Checkup">Routine Checkup</option>
+              {appointmentTypes && appointmentTypes.length > 0 ? (
+                appointmentTypes.map(type => (
+                  <option key={type.id} value={type.label}>{type.label}</option>
+                ))
+              ) : (
+                <option value="Consultation">Consultation</option>
+              )}
             </select>
           </div>
 

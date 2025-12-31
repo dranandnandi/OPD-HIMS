@@ -247,6 +247,7 @@ const BillingDashboard: React.FC = () => {
         totalAmount: bill.totalAmount
       }, {
         userId: user?.id,
+        email: user?.email,
         clinicId: user?.clinicId
       });
       

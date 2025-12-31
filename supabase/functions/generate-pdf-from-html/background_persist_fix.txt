@@ -1,0 +1,92 @@
+// === REPLACE LINES 1026-1145 WITH THIS CODE ===
+// This returns the temp URL immediately and persists to storage in background
+
+    if (!pdfUrl) {
+      throw new Error('PDF.co job did not complete within timeout period (2 minutes)');
+    }
+
+    // --- Return temp URL immediately for faster user experience ---
+    // PDF.co temp URLs are valid for 1 hour
+    console.log('[PDF GEN] ✅ Returning temp URL immediately to user');
+    
+    // Define background persistence task
+    const persistToStorage = async () => {
+      try {
+        console.log('[PDF GEN] Background: Waiting 2s for S3 finalize...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        let pdfBlob: Blob | null = null;
+        const maxRetries = 5;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[PDF GEN] Background: Download attempt ${attempt}/${maxRetries}...`);
+            const res = await fetch(pdfUrl!);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            pdfBlob = await res.blob();
+            if (pdfBlob.size === 0) throw new Error('Empty PDF');
+            console.log(`[PDF GEN] Background: ✅ Downloaded (${pdfBlob.size} bytes)`);
+            break;
+          } catch (e) {
+            console.log(`[PDF GEN] Background: Attempt ${attempt} failed`);
+            if (attempt < maxRetries) await new Promise(r => setTimeout(r, 2000 * attempt));
+          }
+        }
+
+        if (!pdfBlob) {
+          console.error('[PDF GEN] Background: ❌ Download failed after retries');
+          return;
+        }
+
+        // Upload to Supabase Storage
+        const bucketName = 'pdfs';
+        let storagePath = '';
+        if (type === 'bill' && data.bill?.id) {
+          storagePath = `bills/${data.bill.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+        } else if (type === 'visit' && data.visit?.id) {
+          storagePath = `visits/${data.visit.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+        } else {
+          storagePath = `temp/${crypto.randomUUID()}/${filename}`;
+        }
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from(bucketName)
+          .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+        if (uploadError) {
+          console.error('[PDF GEN] Background: ❌ Upload failed:', uploadError.message);
+          return;
+        }
+
+        const { data: { publicUrl } } = supabaseAdmin.storage.from(bucketName).getPublicUrl(storagePath);
+        console.log('[PDF GEN] Background: ✅ Persisted:', publicUrl);
+
+        // Update database with permanent URL
+        const table = type === 'bill' ? 'bills' : 'visits';
+        const recordId = type === 'bill' ? data.bill?.id : data.visit?.id;
+        if (recordId) {
+          const column = printVersion 
+            ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
+            : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
+          await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
+          console.log('[PDF GEN] Background: ✅ DB updated');
+        }
+      } catch (err) {
+        console.error('[PDF GEN] Background error:', err);
+      }
+    };
+
+    // Start background task without awaiting (fire and forget)
+    persistToStorage().catch(e => console.error('[PDF GEN] Background task error:', e));
+
+    // Return temp URL immediately
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        url: pdfUrl,
+        filename,
+        temporary: true,
+        message: 'PDF ready! Storage sync in progress...'
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )

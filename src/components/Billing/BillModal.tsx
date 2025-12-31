@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, Calculator, Search, User, Download, RotateCcw } from 'lucide-react';
-import { Patient, BillItem, Profile, Visit, RefundRequest } from '../../types';
+import { X, Plus, Trash2, Calculator, Search, User, Download, RotateCcw, Eye, RefreshCw, MessageCircle } from 'lucide-react';
+import { Patient, BillItem, Profile, Visit, RefundRequest, AppointmentType, Appointment, ClinicSetting } from '../../types';
 import { getCurrentProfile } from '../../services/profileService';
 import { billingService } from '../../services/billingService';
 import { paymentService } from '../../services/paymentService';
 import { patientService } from '../../services/patientService';
 import { masterDataService } from '../../services/masterDataService';
 import { visitService } from '../../services/visitService';
+import { clinicSettingsService } from '../../services/clinicSettingsService';
+import { resolveFeeForAppointment } from '../../utils/feeResolver';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
+import { authService } from '../../services/authService';
 import { toTitleCase } from '../../utils/stringUtils';
 import { pdfService } from '../../services/pdfService';
+import { WhatsAppAutoSendService } from '../../services/whatsappAutoSendService';
 import { refundService } from '../../services/refundService';
 import RefundRequestModal from './RefundRequestModal';
 import { format } from 'date-fns';
@@ -37,18 +41,18 @@ const BillModal: React.FC<BillModalProps> = ({
   patients: patientsProp
 }) => {
   const { user } = useAuth();
-  
+
   // Ref to prevent double-clicking save button
   const isSavingRef = useRef(false);
-  
+
   // Check if user can edit bills
   const canEditBills = () => {
     if (isReadOnly) return false;
     if (!user) return false;
-    return user.roleName === 'admin' || 
-           user.roleName === 'super_admin' || 
-           user.permissions.includes('edit_bills') ||
-           user.permissions.includes('manage_billing');
+    return user.roleName === 'admin' ||
+      user.roleName === 'super_admin' ||
+      user.permissions.includes('edit_bills') ||
+      user.permissions.includes('manage_billing');
   };
 
   const canManageRefunds = () => {
@@ -62,17 +66,20 @@ const BillModal: React.FC<BillModalProps> = ({
       permissions.includes('approve_refunds')
     );
   };
-  
+
   const isEditMode = canEditBills();
-  
+
   // Data states
   const [patients, setPatients] = useState<Patient[]>(patientsProp || []);
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [medicines, setMedicines] = useState<any[]>([]);
   const [tests, setTests] = useState<any[]>([]);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentType[]>([]);
+  const [currentAppointment, setCurrentAppointment] = useState<Appointment | null>(null);
   const [medicinesLoaded, setMedicinesLoaded] = useState(false);
   const [testsLoaded, setTestsLoaded] = useState(false);
-  
+  const [clinicSettings, setClinicSettings] = useState<ClinicSetting | null>(null);
+
   // UI states
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
@@ -81,6 +88,8 @@ const BillModal: React.FC<BillModalProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [generatingPrintPdf, setGeneratingPrintPdf] = useState(false);
+  const [sendingWhatsAppInvoice, setSendingWhatsAppInvoice] = useState(false);
   const [fullPayment, setFullPayment] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
   const [progressStep, setProgressStep] = useState(0);
@@ -109,6 +118,20 @@ const BillModal: React.FC<BillModalProps> = ({
   };
 
   const formatRefundRequestStatus = (status: RefundRequest['status']) => status.replace(/_/g, ' ');
+
+  // Normalize phone number: remove leading zeros and spaces
+  const normalizePhoneNumber = (phone: string): string => {
+    if (!phone) return phone;
+    // Remove spaces, dashes, parentheses
+    let normalized = phone.replace(/[\s\-\(\)]/g, '');
+    // Remove + prefix if present
+    if (normalized.startsWith('+')) {
+      normalized = normalized.substring(1);
+    }
+    // Remove leading zeros (e.g., 08780465286 -> 8780465286)
+    normalized = normalized.replace(/^0+/, '');
+    return normalized;
+  };
 
   const [formData, setFormData] = useState({
     billNumber: '',
@@ -166,6 +189,13 @@ const BillModal: React.FC<BillModalProps> = ({
     }
   }, [selectedPatient]);
 
+  // Update consultation fee when appointment or appointment types change
+  useEffect(() => {
+    if (currentAppointment && selectedDoctorId && appointmentTypes.length > 0) {
+      updateConsultationFee(selectedDoctorId);
+    }
+  }, [currentAppointment, appointmentTypes]);
+
   // Handle full payment checkbox when total amount changes
   useEffect(() => {
     if (fullPayment) {
@@ -184,7 +214,7 @@ const BillModal: React.FC<BillModalProps> = ({
       paidAmount: paid,
       balanceAmount: prev.totalAmount - paid
     }));
-    
+
     // Uncheck full payment if the amount doesn't match total
     if (paid !== formData.totalAmount && fullPayment) {
       setFullPayment(false);
@@ -201,62 +231,45 @@ const BillModal: React.FC<BillModalProps> = ({
       setLoading(true);
       // Only fetch patients if not provided by parent
       const fetchPromises: Promise<any>[] = [];
-      
+
       if (!patientsProp || patientsProp.length === 0) {
         fetchPromises.push(patientService.getPatients());
       } else {
         fetchPromises.push(Promise.resolve(patientsProp));
       }
-      
-      const [patientsData] = await Promise.all(fetchPromises);
-      
-      // Load doctors separately with null check
-      let doctorsData = [];
-      if (supabase) {
-        const doctorsResponse = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('is_open_for_consultation', true)
-          .eq('is_active', true)
-          .order('name', { ascending: true });
-        
-        if (doctorsResponse.data) {
-          doctorsData = doctorsResponse.data;
+
+      // Load appointment types from clinic settings
+      fetchPromises.push(clinicSettingsService.getOrCreateClinicSettings());
+
+      const [patientsData, fetchedClinicSettings] = await Promise.all(fetchPromises);
+
+      // Set appointment types
+      if (fetchedClinicSettings) {
+        setClinicSettings(fetchedClinicSettings);
+        if (fetchedClinicSettings.appointmentTypes && fetchedClinicSettings.appointmentTypes.length > 0) {
+          setAppointmentTypes(fetchedClinicSettings.appointmentTypes);
+        } else {
+          // Default appointment types embedded below if needing to keep logic
+          setAppointmentTypes([
+            { id: 'consultation', label: 'Consultation', duration: 30, color: '#3B82F6', feeType: 'consultation' },
+            { id: 'followup', label: 'Follow-up', duration: 20, color: '#10B981', feeType: 'followup' },
+            { id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444', feeType: 'emergency' }
+          ]);
         }
+      } else {
+        // Fallback default appointment types
+        setAppointmentTypes([
+          { id: 'consultation', label: 'Consultation', duration: 30, color: '#3B82F6', feeType: 'consultation' },
+          { id: 'followup', label: 'Follow-up', duration: 20, color: '#10B981', feeType: 'followup' },
+          { id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444', feeType: 'emergency' }
+        ]);
       }
-      
+
+      // Load doctors using authService to ensure clinic filtering
+      const doctorsData = await authService.getDoctors();
+
       setPatients(patientsData);
-      // Medicines and tests will be loaded lazily when needed
-      
-      // Convert database profiles to Profile type
-      const convertedDoctors = doctorsData.map((profile: any) => ({
-        id: profile.id,
-        userId: profile.user_id,
-        roleId: profile.role_id,
-        clinicId: profile.clinic_id,
-        name: profile.name,
-        email: profile.email,
-        phone: profile.phone,
-        specialization: profile.specialization,
-        qualification: profile.qualification,
-        registrationNo: profile.registration_no,
-        roleName: profile.role_name,
-        permissions: profile.permissions,
-        consultationFee: profile.consultation_fee,
-        followUpFee: profile.follow_up_fee,
-        emergencyFee: profile.emergency_fee,
-        isActive: profile.is_active,
-        isOpenForConsultation: profile.is_open_for_consultation,
-        doctorAvailability: profile.doctor_availability,
-        createdAt: new Date(profile.created_at),
-        updatedAt: new Date(profile.updated_at)
-      }));
-      
-      // Filter doctors by current user's clinic ID
-      const filteredDoctors = convertedDoctors.filter((doctor: any) => 
-        doctor.clinicId === user?.clinicId
-      );
-      setDoctors(filteredDoctors);
+      setDoctors(doctorsData);
     } catch (error) {
       console.error('Error loading initial data:', error);
       setDoctors([]);
@@ -279,10 +292,20 @@ const BillModal: React.FC<BillModalProps> = ({
     setBillItems(bill.billItems || []);
     setSelectedPatient(bill.patient || null);
     setCurrentVisitId(bill.visitId);
-    
+
     // Set doctor if available in bill
     if (bill.visit?.doctorId) {
       setSelectedDoctorId(bill.visit.doctorId);
+    } else {
+      // Try to find doctor from consultation item
+      const consultationItem = (bill.billItems || []).find((item: any) => item.itemType === 'consultation');
+      if (consultationItem && consultationItem.itemName.includes(' - ')) {
+        const doctorName = consultationItem.itemName.split(' - ')[1].trim();
+        const foundDoctor = doctors.find(d => d.name === doctorName);
+        if (foundDoctor) {
+          setSelectedDoctorId(foundDoctor.id);
+        }
+      }
     }
   };
 
@@ -293,6 +316,32 @@ const BillModal: React.FC<BillModalProps> = ({
       const visitData = await visitService.getVisit(visitId);
       if (visitData) {
         setCurrentVisitId(visitId);
+
+        // Load appointment data if visit has appointment_id
+        if (visitData.appointmentId && supabase) {
+          const { data: appointmentData, error: aptError } = await supabase
+            .from('appointments')
+            .select('*')
+            .eq('id', visitData.appointmentId)
+            .single();
+
+          if (appointmentData && !aptError) {
+            const appointment: Appointment = {
+              id: appointmentData.id,
+              patientId: appointmentData.patient_id,
+              doctorId: appointmentData.doctor_id,
+              appointmentDate: new Date(appointmentData.appointment_date),
+              duration: appointmentData.duration,
+              status: appointmentData.status,
+              appointmentType: appointmentData.appointment_type,
+              notes: appointmentData.notes,
+              createdAt: new Date(appointmentData.created_at),
+              updatedAt: new Date(appointmentData.updated_at)
+            };
+            setCurrentAppointment(appointment);
+          }
+        }
+
         if (visitData.doctorId) {
           setSelectedDoctorId(visitData.doctorId);
           updateConsultationFee(visitData.doctorId);
@@ -448,13 +497,26 @@ const BillModal: React.FC<BillModalProps> = ({
 
   const updateConsultationFee = (doctorId: string) => {
     const doctor = doctors.find(d => d.id === doctorId);
-    const consultationFee = doctor?.consultationFee || user?.clinic?.consultationFee || 300;
-    
+
+    // Use appointment type to determine fee if available
+    let consultationFee: number;
+    if (currentAppointment?.appointmentType && appointmentTypes.length > 0) {
+      consultationFee = resolveFeeForAppointment(
+        currentAppointment.appointmentType,
+        appointmentTypes,
+        doctor,
+        user?.clinic
+      );
+    } else {
+      // Fallback to default consultation fee
+      consultationFee = doctor?.consultationFee || user?.clinic?.consultationFee || 300;
+    }
+
     setBillItems(prev => prev.map(item => {
       if (item.itemType === 'consultation') {
         return {
           ...item,
-          itemName: doctor ? `Consultation - ${doctor.name}` : 'Consultation',
+          itemName: doctor ? `Consultation - ${doctor.name} ` : 'Consultation',
           unitPrice: consultationFee,
           totalPrice: consultationFee
         };
@@ -521,42 +583,42 @@ const BillModal: React.FC<BillModalProps> = ({
         ensureTestsLoaded();
       }
     }
-    
+
     setBillItems(prev => prev.map((item, i) => {
       if (i === index) {
         const updatedItem = { ...item, [field]: value };
-        
+
         // Auto-fill unit price for medicine items when item name changes
         if (field === 'itemName' && updatedItem.itemType === 'medicine') {
-          const matchedMedicine = medicines.find(medicine => 
+          const matchedMedicine = medicines.find(medicine =>
             medicine.name.toLowerCase() === value.toLowerCase() ||
             medicine.genericName?.toLowerCase() === value.toLowerCase() ||
             medicine.brandName?.toLowerCase() === value.toLowerCase()
           );
-          
+
           if (matchedMedicine && matchedMedicine.sellingPrice) {
             updatedItem.unitPrice = matchedMedicine.sellingPrice;
           }
         }
-        
+
         // Auto-fill unit price for test items when item name changes
         if (field === 'itemName' && updatedItem.itemType === 'test') {
-          const matchedTest = tests.find(test => 
+          const matchedTest = tests.find(test =>
             test.name.toLowerCase() === value.toLowerCase()
           );
-          
+
           if (matchedTest && matchedTest.price) {
             updatedItem.unitPrice = matchedTest.price;
           }
         }
-        
+
         // Always recalculate total price after any changes
         const subtotal = updatedItem.quantity * updatedItem.unitPrice;
         const discountAmount = subtotal * ((updatedItem.discount || 0) / 100);
         const taxableAmount = subtotal - discountAmount;
         const taxAmount = taxableAmount * ((updatedItem.tax || 0) / 100);
         updatedItem.totalPrice = taxableAmount + taxAmount;
-        
+
         return updatedItem;
       }
       return item;
@@ -595,31 +657,209 @@ const BillModal: React.FC<BillModalProps> = ({
   };
 
   const handleExportPDF = async () => {
-    if (!bill || !bill.patient || !user?.clinic) {
+    if (!bill || !bill.patient || (!user?.clinic && !clinicSettings)) {
       alert('Missing required data for PDF export');
       return;
     }
 
     try {
       setExportingPDF(true);
-      
-      // Find the doctor for this bill
-      const doctor = doctors.find(d => d.id === bill.visit?.doctorId);
-      
+
+      // Find the doctor for this bill - check in loaded doctors first
+      // Use selectedDoctorId if available (user might have changed it in the modal), otherwise fall back to visiting doctor
+      const doctorIdToUse = selectedDoctorId || bill.visit?.doctorId;
+      let doctor = doctors.find(d => d.id === doctorIdToUse);
+
+      // If doctor not found (might be inactive or not open for consultation),
+      // fetch all doctors to find them - if we have an ID
+      if (!doctor && doctorIdToUse) {
+        const allDoctors = await authService.getAllDoctors();
+        doctor = allDoctors.find(d => d.id === doctorIdToUse);
+      }
+
+      // Final fallback: If still no doctor object, but we have a consultation item with a name
+      if (!doctor) {
+        const consultationItem = billItems.find((item: any) => item.itemType === 'consultation');
+        if (consultationItem && consultationItem.itemName.includes(' - ')) {
+          const extractedName = consultationItem.itemName.split(' - ')[1].trim();
+          // Create a partial profile object just for the PDF
+          doctor = {
+            id: 'temp',
+            name: extractedName,
+            role: 'doctor',
+            email: '',
+            phone: '',
+            specialization: '',
+            qualification: '',
+            registrationNo: '',
+            roleId: 'temp',
+            roleName: 'doctor',
+            permissions: [],
+            isActive: true,
+            clinicId: 'temp',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          } as unknown as Profile;
+        }
+      }
+
       const pdfUrl = await pdfService.generatePdfFromData('bill', {
-        bill: bill,
+        bill: {
+          ...bill,
+          totalAmount: formData.totalAmount,
+          paidAmount: formData.paidAmount,
+          balanceAmount: formData.balanceAmount,
+          paymentStatus: formData.paymentStatus,
+          paymentMethod: formData.paymentMethod as any,
+          billDate: new Date(formData.billDate),
+          notes: formData.notes,
+          billItems: billItems.map((item: any) => ({
+            ...item,
+            id: item.id || 'temp-id',
+            billId: bill.id,
+            createdAt: item.createdAt || new Date()
+          })),
+          visit: {
+            ...bill.visit,
+            doctorId: doctorIdToUse
+          }
+        },
         patient: bill.patient,
         doctor: doctor,
-        clinicSettings: user.clinic
+        clinicSettings: clinicSettings || user?.clinic! // Use fetched settings preferentially
       });
-      
+
+      // Save PDF URL and trigger WhatsApp
+      if (bill.id) {
+        await pdfService.savePdfUrlToDatabase('bill', bill.id, pdfUrl);
+
+        const clinicId = user?.clinic?.id || clinicSettings?.id;
+        if (clinicId) {
+          WhatsAppAutoSendService.sendBillPdf(
+            bill.id,
+            pdfUrl,
+            user?.id || '',
+            clinicId
+          ).catch(err => console.error('Failed to auto-send WhatsApp:', err));
+        }
+      }
+
       window.open(pdfUrl, '_blank'); // Open the generated PDF in a new tab
-      
+
     } catch (error) {
       console.error('Error exporting PDF:', error);
       alert('Failed to export PDF. Please try again.');
     } finally {
       setExportingPDF(false);
+    }
+  };
+
+  // Handle sending invoice via WhatsApp
+  const handleSendWhatsAppInvoice = async () => {
+    if (!bill || !bill.patient || (!user?.clinic && !clinicSettings)) {
+      alert('Missing required data for WhatsApp invoice');
+      return;
+    }
+
+    // Check if patient has phone number
+    if (!bill.patient.phone) {
+      alert('Patient phone number is required to send WhatsApp message');
+      return;
+    }
+
+    try {
+      setSendingWhatsAppInvoice(true);
+
+      let pdfUrl = bill.pdfUrl;
+
+      // If no cached PDF, generate one
+      if (!pdfUrl) {
+        const doctorIdToUse = selectedDoctorId || bill.visit?.doctorId;
+        let doctor = doctors.find(d => d.id === doctorIdToUse);
+
+        if (!doctor && doctorIdToUse) {
+          const allDoctors = await authService.getAllDoctors();
+          doctor = allDoctors.find(d => d.id === doctorIdToUse);
+        }
+
+        pdfUrl = await pdfService.generatePdfFromData('bill', {
+          bill: {
+            ...bill,
+            totalAmount: formData.totalAmount,
+            paidAmount: formData.paidAmount,
+            balanceAmount: formData.balanceAmount,
+            paymentStatus: formData.paymentStatus,
+            paymentMethod: formData.paymentMethod as any,
+            billDate: new Date(formData.billDate),
+            notes: formData.notes,
+            billItems: billItems.map((item: any) => ({
+              ...item,
+              id: item.id || 'temp-id',
+              billId: bill.id,
+              createdAt: item.createdAt || new Date()
+            }))
+          },
+          patient: bill.patient,
+          doctor: doctor,
+          clinicSettings: clinicSettings || user?.clinic!
+        });
+
+        // Save PDF URL to database
+        if (bill.id) {
+          await pdfService.savePdfUrlToDatabase('bill', bill.id, pdfUrl);
+        }
+      }
+
+      // Send via WhatsApp using Netlify function
+      if (!supabase) {
+        throw new Error('Supabase client not initialized');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      const clinic = clinicSettings || user?.clinic;
+      // Get the template message
+      const template = clinic?.whatsappTemplates?.invoice_generated ||
+        'Dear {{patientName}},\n\n🧾 **INVOICE DETAILS**\n\nBill Number: #{{billNumber}}\n💰 Total Amount: ₹{{totalAmount}}\n\nYour invoice has been attached to this message.\n\nThank you for visiting {{clinicName}}! 🙏\n\nFor any queries, feel free to contact us.\n\n- {{clinicName}}';
+
+      const message = template
+        .replace('{{patientName}}', bill.patient.name)
+        .replace('{{billNumber}}', bill.billNumber)
+        .replace('{{totalAmount}}', formData.totalAmount.toString())
+        .replace('{{pdfUrl}}', pdfUrl)
+        .replace('{{clinicName}}', clinic?.clinicName || '');
+
+      const response = await fetch('/.netlify/functions/whatsapp-send-bill', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phoneNumber: normalizePhoneNumber(bill.patient.phone), // Normalized: removes leading 0, will auto-add +91
+          fileUrl: pdfUrl,
+          caption: message,
+          userId: user?.id,
+          fileName: `Invoice_${bill.billNumber}_${bill.patient.name.replace(/\s+/g, '_')}.pdf`,
+          billNumber: bill.billNumber,
+          patientName: bill.patient.name,
+          totalAmount: formData.totalAmount,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send WhatsApp message');
+      }
+
+      alert('Invoice sent via WhatsApp successfully!');
+    } catch (error) {
+      console.error('Error sending WhatsApp invoice:', error);
+      alert(`Failed to send WhatsApp invoice: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSendingWhatsAppInvoice(false);
     }
   };
 
@@ -642,7 +882,7 @@ const BillModal: React.FC<BillModalProps> = ({
       console.warn('Save already in progress, ignoring duplicate click');
       return;
     }
-    
+
     const profile = await getCurrentProfile();
     if (!profile?.clinicId) {
       alert('User not assigned to a clinic. Cannot save bill.');
@@ -663,7 +903,7 @@ const BillModal: React.FC<BillModalProps> = ({
       setSaving(true);
       setProgressStep(1);
       setSaveProgress('Updating visit information...');
-      
+
       // First, update the visit with the selected doctor if we have both visitId and doctorId
       if ((currentVisitId || visitId) && selectedDoctorId) {
         try {
@@ -679,10 +919,10 @@ const BillModal: React.FC<BillModalProps> = ({
           // Don't fail the entire bill save if visit update fails
         }
       }
-      
+
       setProgressStep(2);
       setSaveProgress('Preparing bill data...');
-      
+
       const billData = {
         visitId: currentVisitId || visitId || undefined,
         patientId: selectedPatient.id,
@@ -716,7 +956,7 @@ const BillModal: React.FC<BillModalProps> = ({
             tax: item.tax || 0
           }))
         });
-        
+
         // Handle payment updates for existing bills
         if (formData.paidAmount !== bill.paidAmount && formData.paidAmount > bill.paidAmount) {
           setProgressStep(4);
@@ -735,7 +975,7 @@ const BillModal: React.FC<BillModalProps> = ({
         setSaveProgress('Creating bill...');
         // Create the bill first
         const createdBill = await billingService.createBill(billData);
-        
+
         // If payment amount is greater than 0, create a payment record
         if (formData.paidAmount > 0) {
           setProgressStep(4);
@@ -749,10 +989,10 @@ const BillModal: React.FC<BillModalProps> = ({
           });
         }
       }
-      
+
       setProgressStep(5);
       setSaveProgress('Finalizing...');
-      
+
       onSave();
       onClose();
     } catch (error) {
@@ -797,7 +1037,7 @@ const BillModal: React.FC<BillModalProps> = ({
           {!selectedPatient ? (
             <div className="space-y-4">
               <h3 className="font-medium text-gray-800">Select Patient *</h3>
-              
+
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
@@ -808,7 +1048,7 @@ const BillModal: React.FC<BillModalProps> = ({
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-              
+
               {searchTerm && (
                 <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg">
                   {filteredPatients.length > 0 ? (
@@ -865,7 +1105,7 @@ const BillModal: React.FC<BillModalProps> = ({
               <option value="">Select a doctor</option>
               {doctors.map(doctor => (
                 <option key={doctor.id} value={doctor.id}>
-                  {toTitleCase(doctor.name)} {doctor.specialization && `- ${doctor.specialization}`}
+                  {toTitleCase(doctor.name)} {doctor.specialization && `- ${doctor.specialization} `}
                   {doctor.consultationFee && ` (₹${doctor.consultationFee})`}
                 </option>
               ))}
@@ -932,11 +1172,11 @@ const BillModal: React.FC<BillModalProps> = ({
                           if (item.itemType === 'medicine') ensureMedicinesLoaded();
                           if (item.itemType === 'test') ensureTestsLoaded();
                         }}
-                        list={`items-${item.itemType}-${index}`}
+                        list={`items - ${item.itemType} -${index} `}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Enter item name"
                       />
-                      <datalist id={`items-${item.itemType}-${index}`}>
+                      <datalist id={`items - ${item.itemType} -${index} `}>
                         {getItemOptions(item.itemType).map((option: any) => (
                           <option key={option.id} value={option.name} />
                         ))}
@@ -1035,9 +1275,8 @@ const BillModal: React.FC<BillModalProps> = ({
                       const paid = parseFloat(e.target.value) || 0;
                       handlePaidAmountChange(paid);
                     }}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      fullPayment ? 'bg-gray-100 cursor-not-allowed' : ''
-                    }`}
+                    className={`w - full px - 3 py - 2 border border - gray - 300 rounded - lg focus: ring - 2 focus: ring - blue - 500 focus: border - transparent ${fullPayment ? 'bg-gray-100 cursor-not-allowed' : ''
+                      } `}
                   />
                   <div className="flex items-center gap-2">
                     <input
@@ -1079,7 +1318,7 @@ const BillModal: React.FC<BillModalProps> = ({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Balance</label>
-                <div className={`text-2xl font-bold ${formData.balanceAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                <div className={`text - 2xl font - bold ${formData.balanceAmount > 0 ? 'text-red-600' : 'text-green-600'} `}>
                   ₹{formData.balanceAmount.toFixed(2)}
                 </div>
               </div>
@@ -1139,7 +1378,7 @@ const BillModal: React.FC<BillModalProps> = ({
                     {refundRequests.map((request) => (
                       <div
                         key={request.id}
-                        className={`rounded-lg p-3 text-sm flex flex-col gap-1 ${refundRequestStatusClasses[request.status]}`}
+                        className={`rounded - lg p - 3 text - sm flex flex - col gap - 1 ${refundRequestStatusClasses[request.status]} `}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold capitalize">{formatRefundRequestStatus(request.status)}</span>
@@ -1210,14 +1449,62 @@ const BillModal: React.FC<BillModalProps> = ({
           {/* Action Buttons */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
             {bill && (
-              <button
-                onClick={handleExportPDF}
-                disabled={exportingPDF}
-                className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                <Download className="w-4 h-4" />
-                {exportingPDF ? 'Exporting...' : 'Export PDF'}
-              </button>
+              <>
+                {/* Smart PDF Buttons - Check if PDF already exists */}
+                {bill.pdfUrl ? (
+                  <>
+                    {/* View Existing PDF */}
+                    <button
+                      onClick={() => window.open(bill.pdfUrl, '_blank')}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      title="View existing PDF"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View PDF
+                    </button>
+                    {/* Regenerate PDF */}
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={exportingPDF}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      title="Regenerate PDF (will replace existing)"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${exportingPDF ? 'animate-spin' : ''}`} />
+                      {exportingPDF ? 'Regenerating...' : 'Regenerate'}
+                    </button>
+                  </>
+                ) : (
+                  /* No existing PDF - Show Generate button */
+                  <button
+                    onClick={handleExportPDF}
+                    disabled={exportingPDF}
+                    className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    <Download className="w-4 h-4" />
+                    {exportingPDF ? 'Generating...' : 'Generate PDF'}
+                  </button>
+                )}
+                {/* WhatsApp Invoice Button - Show if bill exists */}
+                {bill && (
+                  <button
+                    onClick={handleSendWhatsAppInvoice}
+                    disabled={sendingWhatsAppInvoice}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    title="Send Invoice via WhatsApp"
+                  >
+                    {sendingWhatsAppInvoice ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-4 h-4" />
+                        Send WhatsApp
+                      </>
+                    )}
+                  </button>
+                )}</>
             )}
             <button
               onClick={onClose}
@@ -1245,14 +1532,14 @@ const BillModal: React.FC<BillModalProps> = ({
                 </>
               )}
             </button>
-            
+
             {/* Progress indicator below button when saving */}
             {saving && (
               <div className="mt-2 w-full">
                 <div className="w-full bg-gray-200 rounded-full h-1">
-                  <div 
+                  <div
                     className="bg-blue-600 h-1 rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${(progressStep / 5) * 100}%` }}
+                    style={{ width: `${(progressStep / 5) * 100}% ` }}
                   />
                 </div>
                 <p className="text-xs text-gray-600 mt-1 text-center">{saveProgress}</p>

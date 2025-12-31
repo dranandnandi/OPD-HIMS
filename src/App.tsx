@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './components/Auth/AuthProvider';
 import { useAuth } from './components/Auth/useAuth';
@@ -13,7 +13,7 @@ import './lib/supabaseClient'; // ✅ This ensures it initializes
 import PatientListWithTimeline from './components/Patients/PatientListWithTimeline';
 
 // Case Upload & OCR
-import CaseUpload from './components/CaseUpload/CaseUpload';
+// import CaseUpload from './components/CaseUpload/CaseUpload';
 import EnhancedCaseUpload from './components/CaseUpload/EnhancedCaseUpload';
 
 // Visits
@@ -46,9 +46,11 @@ import ClinicSettings from './components/Settings/ClinicSettings';
 import ProfileSettings from './components/Settings/ProfileSettings';
 import UserManagement from './components/Settings/UserManagement';
 import MasterDataManagement from './components/Settings/MasterDataManagement';
+import PrescriptionPresetSettings from './components/Settings/PrescriptionPresetSettings';
 import SystemSettings from './components/Settings/SystemSettings';
 import DoctorAvailabilitySettings from './components/Settings/DoctorAvailabilitySettings';
 import WhatsappAndAIReviewSettings from './components/Settings/WhatsappAndAIReviewSettings';
+import WhatsAppAutoSendSettings from './components/Settings/WhatsAppAutoSendSettings';
 import ChatbotUtility from './components/Chatbots/ChatbotUtility';
 
 // GMB Review Requests
@@ -135,7 +137,28 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Admin-Only Route Component - Requires admin/super_admin role
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, hasPermission } = useAuth();
+
+  // Check if user has admin privileges
+  const isAdmin = user && (
+    user.roleName?.toLowerCase() === 'admin' ||
+    user.roleName?.toLowerCase() === 'super_admin' ||
+    hasPermission('admin') ||
+    hasPermission('all')
+  );
+
+  if (!isAdmin) {
+    // Redirect non-admin users to home page
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 // Main App Layout Component
+
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="min-h-screen bg-soft-gray">
@@ -143,10 +166,10 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <div className="hidden lg:block">
         <Navigation />
       </div>
-      
+
       {/* Mobile Navigation */}
       <MobileNav />
-      
+
       {/* Main Content */}
       <div className="lg:ml-64 pt-16 lg:pt-0">
         <main className="p-6 lg:p-8">
@@ -163,7 +186,7 @@ const AppContent: React.FC = () => {
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={<LoginForm />} />
-      
+
       {/* Protected Routes */}
       <Route path="/" element={
         <ProtectedRoute>
@@ -172,7 +195,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Appointments */}
       <Route path="/appointments" element={
         <ProtectedRoute>
@@ -181,7 +204,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Visits */}
       <Route path="/visits" element={
         <ProtectedRoute>
@@ -190,7 +213,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/visits/:visitId" element={
         <ProtectedRoute>
           <AppLayout>
@@ -198,7 +221,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Patient Management */}
       <Route path="/patients" element={
         <ProtectedRoute>
@@ -207,7 +230,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Case Upload & OCR */}
       <Route path="/case-upload" element={
         <ProtectedRoute>
@@ -216,7 +239,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Follow-ups */}
       <Route path="/follow-ups" element={
         <ProtectedRoute>
@@ -225,7 +248,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* GMB Review Requests */}
       <Route path="/gmb-review-requests" element={
         <ProtectedRoute>
@@ -234,7 +257,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Billing */}
       <Route path="/billing" element={
         <ProtectedRoute>
@@ -243,7 +266,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Daily Reconciliation */}
       <Route path="/billing/reconciliation" element={
         <ProtectedRoute>
@@ -252,7 +275,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Pharmacy */}
       <Route path="/pharmacy" element={
         <ProtectedRoute>
@@ -261,7 +284,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/pharmacy/inward" element={
         <ProtectedRoute>
           <AppLayout>
@@ -269,7 +292,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/pharmacy/reports" element={
         <ProtectedRoute>
           <AppLayout>
@@ -277,15 +300,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
-      <Route path="/pharmacy/reports" element={
-        <ProtectedRoute>
-          <AppLayout>
-            <StockReport />
-          </AppLayout>
-        </ProtectedRoute>
-      } />
-      
+
       <Route path="/pharmacy/suppliers" element={
         <ProtectedRoute>
           <AppLayout>
@@ -293,7 +308,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/pharmacy/invoice-upload" element={
         <ProtectedRoute>
           <AppLayout>
@@ -301,16 +316,8 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
-      <Route path="/pharmacy/reports" element={
-        <ProtectedRoute>
-          <AppLayout>
-            <StockReport />
-          </AppLayout>
-        </ProtectedRoute>
-      } />
-      
-      
+
+
       {/* Analytics & Reports */}
       <Route path="/analytics" element={
         <ProtectedRoute>
@@ -319,7 +326,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Settings */}
       <Route path="/settings" element={
         <ProtectedRoute>
@@ -328,15 +335,17 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/clinic" element={
         <ProtectedRoute>
-          <AppLayout>
-            <ClinicSettings />
-          </AppLayout>
+          <AdminRoute>
+            <AppLayout>
+              <ClinicSettings />
+            </AppLayout>
+          </AdminRoute>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/profile" element={
         <ProtectedRoute>
           <AppLayout>
@@ -344,7 +353,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/availability" element={
         <ProtectedRoute>
           <AppLayout>
@@ -352,39 +361,67 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/users" element={
         <ProtectedRoute>
-          <AppLayout>
-            <UserManagement />
-          </AppLayout>
+          <AdminRoute>
+            <AppLayout>
+              <UserManagement />
+            </AppLayout>
+          </AdminRoute>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/master-data" element={
         <ProtectedRoute>
-          <AppLayout>
-            <MasterDataManagement />
-          </AppLayout>
+          <AdminRoute>
+            <AppLayout>
+              <MasterDataManagement />
+            </AppLayout>
+          </AdminRoute>
         </ProtectedRoute>
       } />
-      
+
       <Route path="/settings/system" element={
         <ProtectedRoute>
-          <AppLayout>
-            <SystemSettings />
-          </AppLayout>
+          <AdminRoute>
+            <AppLayout>
+              <SystemSettings />
+            </AppLayout>
+          </AdminRoute>
         </ProtectedRoute>
       } />
-      
+
+      <Route path="/settings/presets" element={
+        <ProtectedRoute>
+          <AdminRoute>
+            <AppLayout>
+              <PrescriptionPresetSettings />
+            </AppLayout>
+          </AdminRoute>
+        </ProtectedRoute>
+      } />
+
       <Route path="/settings/whatsapp-ai" element={
         <ProtectedRoute>
-          <AppLayout>
-            <WhatsappAndAIReviewSettings />
-          </AppLayout>
+          <AdminRoute>
+            <AppLayout>
+              <WhatsappAndAIReviewSettings />
+            </AppLayout>
+          </AdminRoute>
         </ProtectedRoute>
       } />
-      
+
+      <Route path="/settings/whatsapp-auto-send" element={
+        <ProtectedRoute>
+          <AdminRoute>
+            <AppLayout>
+              <WhatsAppAutoSendSettings />
+            </AppLayout>
+          </AdminRoute>
+        </ProtectedRoute>
+      } />
+
       <Route path="/chatbots" element={
         <ProtectedRoute>
           <AppLayout>
@@ -392,7 +429,7 @@ const AppContent: React.FC = () => {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
       {/* Catch all route - redirect to home */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

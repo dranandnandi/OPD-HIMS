@@ -40,45 +40,8 @@ const GMBReviewRequests: React.FC = () => {
       const [visitsData, patientsData, doctorsData] = await Promise.all([
         visitService.getAllVisits(),
         patientService.getPatients(),
-        // Load doctors directly and filter by clinic
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('is_open_for_consultation', true)
-          .eq('is_active', true)
-          .order('name')
-          .then(response => {
-            if (response.error) {
-              console.error('Error loading doctors:', response.error);
-              return [];
-            }
-            
-            // Convert and filter doctors by current user's clinic ID
-            return response.data
-              .filter(profile => profile.clinic_id === user?.clinicId)
-              .map(profile => ({
-                id: profile.id,
-                userId: profile.user_id,
-                roleId: profile.role_id,
-                clinicId: profile.clinic_id,
-                name: profile.name,
-                email: profile.email,
-                phone: profile.phone,
-                specialization: profile.specialization,
-                qualification: profile.qualification,
-                registrationNo: profile.registration_no,
-                roleName: profile.role_name,
-                permissions: profile.permissions,
-                consultationFee: profile.consultation_fee,
-                followUpFee: profile.follow_up_fee,
-                emergencyFee: profile.emergency_fee,
-                isActive: profile.is_active,
-                isOpenForConsultation: profile.is_open_for_consultation,
-                doctorAvailability: profile.doctor_availability,
-                createdAt: new Date(profile.created_at),
-                updatedAt: new Date(profile.updated_at)
-              }));
-          })
+        // Load doctors using authService to ensure clinic filtering
+        authService.getDoctors()
       ]);
       
       setVisits(visitsData);

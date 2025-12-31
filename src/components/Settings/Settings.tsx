@@ -3,28 +3,30 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/useAuth';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { ClinicSetting } from '../../types';
-import { 
-  User, 
-  Stethoscope, 
-  IndianRupee, 
-  Users, 
-  Bell, 
+import {
+  User,
+  Stethoscope,
+  IndianRupee,
+  Users,
+  Bell,
   Shield,
-  Printer,
   Globe,
   Save,
   Database,
   Edit,
   MessageCircle,
-  Building
+  Building,
+  Zap,
+  FileImage
 } from 'lucide-react';
+import { PDFSettings } from './PDFSettings';
 
 const Settings: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const [clinicSettings, setClinicSettings] = useState<ClinicSetting | null>(null);
-  
+
   const [profileData, setProfileData] = useState({
     name: 'Dr. Rajesh Kumar',
     email: 'dr.rajesh@clinic.com',
@@ -71,8 +73,10 @@ const Settings: React.FC = () => {
   // Admin-only tabs
   const adminTabs = [
     { id: 'clinic', label: 'Clinic Settings', icon: Building },
+    { id: 'pdf', label: 'PDF Settings', icon: FileImage },
     { id: 'fees', label: 'Consultation Fees', icon: IndianRupee },
     { id: 'templates', label: 'Specialty Templates', icon: Stethoscope },
+    { id: 'presets', label: 'Prescription Presets', icon: Zap },
     { id: 'staff', label: 'Staff Roles', icon: Users },
     { id: 'master-data', label: 'Master Data', icon: Database },
     { id: 'whatsapp-ai', label: 'WhatsApp & AI', icon: MessageCircle },
@@ -81,10 +85,10 @@ const Settings: React.FC = () => {
   ];
 
   // Combine tabs based on user role
-  const tabs = user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin') 
-    ? [...baseTabs, ...adminTabs] 
+  const tabs = user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin')
+    ? [...baseTabs, ...adminTabs]
     : baseTabs;
-  
+
   // Load clinic settings from database
   useEffect(() => {
     const loadClinicSettings = async () => {
@@ -97,10 +101,10 @@ const Settings: React.FC = () => {
         }
       }
     };
-    
+
     loadClinicSettings();
   }, [user?.clinicId]);
-  
+
   const handleSaveProfile = () => {
     alert('Profile updated successfully!');
   };
@@ -110,8 +114,8 @@ const Settings: React.FC = () => {
   };
 
   const toggleTemplate = (templateId: string) => {
-    setSpecialtyTemplates(prev => prev.map(template => 
-      template.id === templateId 
+    setSpecialtyTemplates(prev => prev.map(template =>
+      template.id === templateId
         ? { ...template, active: !template.active }
         : template
     ));
@@ -124,7 +128,7 @@ const Settings: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <h2 className="text-2xl font-bold text-gray-800">Settings</h2>
-      
+
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Sidebar */}
         <div className="lg:w-64">
@@ -134,11 +138,10 @@ const Settings: React.FC = () => {
                 <li key={tab.id}>
                   <button
                     onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-blue-50 text-blue-600 border-r-2 border-blue-600'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${activeTab === tab.id
+                      ? 'bg-blue-50 text-blue-600 border-r-2 border-blue-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                      }`}
                   >
                     <tab.icon className="w-5 h-5" />
                     <span>{tab.label}</span>
@@ -163,61 +166,60 @@ const Settings: React.FC = () => {
                   Edit Profile
                 </Link>
               </div>
-              
+
               <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> This section displays your profile information. 
+                  <strong>Note:</strong> This section displays your profile information.
                   Click "Edit Profile\" above to make changes. To manage other users, go to Settings → User Management.
                 </p>
               </div>
-              
+
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Full Name</label>
                     <p className="text-gray-800 font-medium">{user?.name || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
                     <p className="text-gray-800 font-medium">{user?.email || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Phone</label>
                     <p className="text-gray-800 font-medium">{user?.phone || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Role</label>
                     <p className="text-gray-800 font-medium">{user?.roleName || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Specialization</label>
                     <p className="text-gray-800 font-medium">{user?.specialization || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Qualification</label>
                     <p className="text-gray-800 font-medium">{user?.qualification || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Registration No.</label>
                     <p className="text-gray-800 font-medium">{user?.registrationNo || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Status</label>
-                    <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                      user?.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
+                    <span className={`inline-flex px-2 py-1 text-xs rounded-full ${user?.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
                       {user?.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                 </div>
-                
+
                 {/* Consultation Fees for Doctors */}
                 {user?.roleName?.toLowerCase() === 'doctor' && (
                   <div className="mt-6 pt-6 border-t border-gray-300">
@@ -244,7 +246,7 @@ const Settings: React.FC = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {/* Clinic Information */}
                 {user?.clinic && (
                   <div className="mt-6 pt-6 border-t border-gray-300">
@@ -272,14 +274,14 @@ const Settings: React.FC = () => {
           {activeTab === 'fees' && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Clinic Default Consultation Fees</h3>
-              
+
               <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> These are clinic-wide default fees. Individual doctors can set their own fees 
+                  <strong>Note:</strong> These are clinic-wide default fees. Individual doctors can set their own fees
                   in their profile settings or through User Management. Doctor-specific fees take precedence over these defaults.
                 </p>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">General Consultation</label>
@@ -293,7 +295,7 @@ const Settings: React.FC = () => {
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Follow-up Consultation</label>
                   <div className="relative">
@@ -306,7 +308,7 @@ const Settings: React.FC = () => {
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Home Visit</label>
                   <div className="relative">
@@ -319,7 +321,7 @@ const Settings: React.FC = () => {
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Consultation</label>
                   <div className="relative">
@@ -333,7 +335,7 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="mt-6">
                 <button
                   onClick={handleSaveFees}
@@ -358,52 +360,52 @@ const Settings: React.FC = () => {
                   Edit Clinic Settings
                 </Link>
               </div>
-              
+
               <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> This section displays your clinic information. 
+                  <strong>Note:</strong> This section displays your clinic information.
                   Click "Edit Clinic Settings\" above to make changes to clinic name, address, contact details, and branding.
                 </p>
               </div>
-              
+
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Clinic Name</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.clinicName || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Phone</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.phone || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.email || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Website</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.website || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Registration Number</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.registrationNumber || 'Not set'}</p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Tax ID</label>
                     <p className="text-gray-800 font-medium">{user?.clinic?.taxId || 'Not set'}</p>
                   </div>
                 </div>
-                
+
                 <div className="mt-6">
                   <label className="block text-sm font-medium text-gray-600 mb-1">Address</label>
                   <p className="text-gray-800 font-medium">{user?.clinic?.address || 'Not set'}</p>
                 </div>
-                
+
                 {/* Working Hours */}
                 <div className="mt-6 pt-6 border-t border-gray-300">
                   <h4 className="text-md font-medium text-gray-700 mb-4">Working Hours</h4>
@@ -412,7 +414,7 @@ const Settings: React.FC = () => {
                       <div key={day} className="text-sm">
                         <span className="font-medium capitalize text-gray-700">{day}:</span>
                         <span className="ml-2 text-gray-600">
-                          {hours.isOpen 
+                          {hours.isOpen
                             ? `${hours.startTime} - ${hours.endTime}${hours.breakStart ? ` (Break: ${hours.breakStart}-${hours.breakEnd})` : ''}`
                             : 'Closed'
                           }
@@ -421,7 +423,7 @@ const Settings: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                
+
                 {/* Consultation Fees */}
                 <div className="mt-6 pt-6 border-t border-gray-300">
                   <h4 className="text-md font-medium text-gray-700 mb-4">Default Consultation Fees</h4>
@@ -440,7 +442,7 @@ const Settings: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Prescription Frequencies */}
                 {clinicSettings?.prescriptionFrequencies && clinicSettings.prescriptionFrequencies.length > 0 && (
                   <div className="mt-6 pt-6 border-t border-gray-300">
@@ -466,6 +468,10 @@ const Settings: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'pdf' && user?.clinicId && (
+            <PDFSettings clinicId={user.clinicId} />
+          )}
+
           {activeTab === 'templates' && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Specialty Templates</h3>
@@ -487,6 +493,49 @@ const Settings: React.FC = () => {
                     </label>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'presets' && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">Prescription Presets</h3>
+                <Link
+                  to="/settings/presets"
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  Manage Presets
+                </Link>
+              </div>
+
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex gap-3">
+                  <Zap className="w-6 h-6 text-amber-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-amber-800 mb-1">Speed up your practice</h4>
+                    <p className="text-sm text-amber-700">
+                      Create ready-made prescription templates for common conditions like "Viral Fever", "Hypertension", or "Diabetes".
+                      Doctors can apply these with one click during patient visits.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center py-8">
+                <Link
+                  to="/settings/presets"
+                  className="flex flex-col items-center gap-4 text-center p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                >
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Zap className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">Configure Presets</h4>
+                    <p className="text-gray-500 mt-1">Click here to add or edit prescription templates</p>
+                  </div>
+                </Link>
               </div>
             </div>
           )}
@@ -519,11 +568,11 @@ const Settings: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Master Data Management</h3>
               <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> Master Data Management includes AI-powered data entry, medicine and test catalogs, 
+                  <strong>Note:</strong> Master Data Management includes AI-powered data entry, medicine and test catalogs,
                   clinic-specific pricing, and inventory management. Use the AI Assistant for quick natural language entry.
                 </p>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">🤖 AI Assistant</h4>
@@ -537,7 +586,7 @@ const Settings: React.FC = () => {
                     Open AI Assistant
                   </button>
                 </div>
-                
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">Medicine Master Data</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -550,7 +599,7 @@ const Settings: React.FC = () => {
                     Open Master Data Management
                   </button>
                 </div>
-                
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">Test Master Data</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -563,7 +612,7 @@ const Settings: React.FC = () => {
                     Manage Test Pricing
                   </button>
                 </div>
-                
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">Clinic Pricing Overview</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -585,12 +634,27 @@ const Settings: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">WhatsApp & AI Review Settings</h3>
               <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-700">
-                  <strong>Note:</strong> Configure WhatsApp messaging options and AI-powered review features. 
+                  <strong>Note:</strong> Configure WhatsApp messaging options and AI-powered review features.
                   These settings control how follow-up messages and review requests are sent to patients.
                 </p>
               </div>
-              
+
               <div className="space-y-4">
+                {/* Auto-Send Rules - NEW */}
+                <div className="p-4 border-2 border-blue-200 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium text-blue-800 mb-2">🤖 Auto-Send Rules</h4>
+                  <p className="text-sm text-blue-700 mb-3">
+                    Configure automatic WhatsApp notifications for appointments, invoices, prescriptions, and more.
+                    Uses your WhatsApp templates for consistent messaging.
+                  </p>
+                  <button
+                    onClick={() => navigate('/settings/whatsapp-auto-send')}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Configure Auto-Send Rules
+                  </button>
+                </div>
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">📱 WhatsApp Integration</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -603,7 +667,7 @@ const Settings: React.FC = () => {
                     Configure WhatsApp Settings
                   </button>
                 </div>
-                
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">🤖 AI Review Features</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -616,7 +680,7 @@ const Settings: React.FC = () => {
                     Configure AI Features
                   </button>
                 </div>
-                
+
                 <div className="p-4 border border-gray-200 rounded-lg">
                   <h4 className="font-medium text-gray-800 mb-2">⭐ Google My Business</h4>
                   <p className="text-sm text-gray-600 mb-3">
@@ -652,7 +716,7 @@ const Settings: React.FC = () => {
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium text-gray-800">Email Reports</h4>
@@ -668,7 +732,7 @@ const Settings: React.FC = () => {
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium text-gray-800">Follow-up Alerts</h4>
@@ -685,7 +749,7 @@ const Settings: React.FC = () => {
                   </label>
                 </div>
               </div>
-              
+
               <div className="mt-6">
                 <button
                   onClick={handleSaveNotifications}
@@ -700,45 +764,42 @@ const Settings: React.FC = () => {
 
           {activeTab === 'system' && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">System Settings</h3>
-              <div className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-gray-800 mb-3">Printer Settings</h4>
-                  <div className="flex items-center gap-3">
-                    <Printer className="w-5 h-5 text-gray-600" />
-                    <select className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                      <option>Default Printer</option>
-                      <option>HP LaserJet Pro</option>
-                      <option>Canon PIXMA</option>
-                    </select>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">System Settings</h3>
+                <Link
+                  to="/settings/system"
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  Manage System Settings
+                </Link>
+              </div>
+
+              <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex gap-3">
+                  <Shield className="w-6 h-6 text-gray-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-gray-800 mb-1">Advanced System Configuration</h4>
+                    <p className="text-sm text-gray-600">
+                      Configure database backups, security policies, session timeouts, and notification preferences.
+                    </p>
                   </div>
                 </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-800 mb-3">Language Settings</h4>
-                  <div className="flex items-center gap-3">
-                    <Globe className="w-5 h-5 text-gray-600" />
-                    <select className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                      <option>English</option>
-                      <option>Hindi</option>
-                      <option>Marathi</option>
-                      <option>Tamil</option>
-                    </select>
+              </div>
+
+              <div className="flex justify-center py-8">
+                <Link
+                  to="/settings/system"
+                  className="flex flex-col items-center gap-4 text-center p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                >
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Shield className="w-8 h-8 text-blue-600" />
                   </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-800 mb-3">Data Backup</h4>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="text-sm text-gray-600">Last backup: 2 hours ago</p>
-                      <p className="text-sm text-gray-600">Next backup: Today at 11:00 PM</p>
-                    </div>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                      Backup Now
-                    </button>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">Open System Settings</h4>
+                    <p className="text-gray-500 mt-1">Manage backups, security, and preferences</p>
                   </div>
-                </div>
+                </Link>
               </div>
             </div>
           )}

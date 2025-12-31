@@ -13,13 +13,13 @@ serve(async (req) => {
 
   try {
     const { rawText } = await req.json()
-    
+
     if (!rawText) {
       return new Response(
         JSON.stringify({ error: 'Raw text is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -29,9 +29,9 @@ serve(async (req) => {
     if (!apiKey) {
       return new Response(
         JSON.stringify({ error: 'Google API key not configured' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -62,7 +62,10 @@ Instructions:
 1. Do NOT interpret or normalize anything — preserve the original clinical language and dosages.
 2. Keep the text readable, well-structured, and focused on clinical information only.
 3. Do not include any headings or explanation — just the cleaned medical content.
-4. If no valid medical content is found, return: `"No medical content detected"``
+4. If no valid medical content is found, return: "No medical content detected"
+
+Input Text:
+${rawText}`;
 
     // Call Gemini API using API key
     const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
@@ -88,7 +91,7 @@ Instructions:
             threshold: "BLOCK_MEDIUM_AND_ABOVE"
           },
           {
-            category: "HARM_CATEGORY_HATE_SPEECH", 
+            category: "HARM_CATEGORY_HATE_SPEECH",
             threshold: "BLOCK_MEDIUM_AND_ABOVE"
           },
           {
@@ -104,14 +107,14 @@ Instructions:
     })
 
     const geminiData = await geminiResponse.json()
-    
+
     if (geminiData.error) {
       throw new Error(`Gemini API error: ${geminiData.error.message}`)
     }
 
     // Extract the generated text
     const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    
+
     if (!generatedText) {
       throw new Error('No response generated from Gemini')
     }
@@ -120,26 +123,26 @@ Instructions:
     const cleanedMedicalText = generatedText.trim()
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         cleanedMedicalText: cleanedMedicalText,
         originalLength: rawText.length,
         cleanedLength: cleanedMedicalText.length
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
 
   } catch (error) {
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'Failed to clean medical text with Gemini API',
-        details: error.message 
+        details: error.message
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
   }

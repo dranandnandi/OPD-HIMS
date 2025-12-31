@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { X, Upload, Camera, FileText, Loader2, CheckCircle, Save, Search, User, Plus } from 'lucide-react';
+import { X, Upload, Camera, FileText, Loader2, CheckCircle, Save, Search, User, Plus, Calendar, Clock, Phone, Stethoscope } from 'lucide-react';
 import { Patient, Visit, OCRResult, Profile } from '../../types';
 import { processCasePaperWithAI } from '../../services/ocrService';
 import { patientService } from '../../services/patientService';
 import { authService } from '../../services/authService';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase } from '../../utils/stringUtils';
+import { isPDF, convertPDFToSingleImage } from '../../utils/pdfToImage';
+import { supabase } from '../../lib/supabaseClient';
 import PatientModal from './PatientModal';
 import EMRForm from './EMRForm';
 
@@ -32,24 +34,25 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
   const [showPatientSearchResults, setShowPatientSearchResults] = useState(false);
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(false);
+  const [todaysAppointments, setTodaysAppointments] = useState<any[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+  const [showAllDoctorsAppointments, setShowAllDoctorsAppointments] = useState(false);
   const [visitDate, setVisitDate] = useState(
-    existingVisit 
+    existingVisit
       ? new Date(existingVisit.date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0]
   );
 
-  // Load doctors on component mount
-  React.useEffect(() => {
-    loadDoctors();
-    if (!patient) {
-      loadPatients();
-    }
-  }, []);
-
   const loadDoctors = async () => {
     try {
-      const doctorsData = await authService.getDoctors();
+      // Load all active doctors from clinic (not just those open for consultation)
+      // Users need to select doctors for visit EMR even if they're not currently accepting appointments
+      const doctorsData = await authService.getAllDoctors();
       setDoctors(doctorsData);
+
+      if (doctorsData.length === 0) {
+        console.warn('No doctors found in clinic');
+      }
     } catch (error) {
       console.error('Error loading doctors:', error);
     }
@@ -68,6 +71,61 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
     }
   };
 
+  const loadTodaysAppointments = async (allDoctors: boolean = false) => {
+    if (!user?.clinicId || !supabase) return;
+
+    try {
+      setLoadingAppointments(true);
+      const today = new Date();
+      const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+      const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+
+      let query = supabase
+        .from('appointments')
+        .select(`
+          *,
+          patient:patient_id(id, name, phone, age, gender),
+          doctor:doctor_id(id, name, specialization)
+        `)
+        .eq('clinic_id', user.clinicId)
+        .gte('appointment_date', startOfDay)
+        .lte('appointment_date', endOfDay)
+        .order('appointment_date', { ascending: true });
+
+      // Filter by current doctor if not showing all
+      if (!allDoctors && user.id) {
+        query = query.eq('doctor_id', user.id);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setTodaysAppointments(data || []);
+    } catch (error) {
+      console.error('Error loading today\'s appointments:', error);
+      setTodaysAppointments([]);
+    } finally {
+      setLoadingAppointments(false);
+    }
+  };
+
+  // Load doctors on component mount
+  React.useEffect(() => {
+    loadDoctors();
+    if (!patient) {
+      loadPatients();
+    }
+    // Load today's appointments
+    loadTodaysAppointments(showAllDoctorsAppointments);
+  }, []);
+
+  // Reload appointments when filter changes
+  React.useEffect(() => {
+    if (step === 'patient') {
+      loadTodaysAppointments(showAllDoctorsAppointments);
+    }
+  }, [showAllDoctorsAppointments]);
+
   // Filter patients based on search term
   const filteredPatients = patients.filter(p =>
     p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
@@ -84,6 +142,15 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
     setPatientSearchTerm('');
     setShowPatientSearchResults(false);
     setStep('method');
+  };
+
+  const handleAppointmentSelect = (appointment: any) => {
+    if (appointment.patient) {
+      setSelectedPatient(appointment.patient);
+      setPatientSearchTerm('');
+      setShowPatientSearchResults(false);
+      setStep('method');
+    }
   };
 
   const clearPatientSelection = () => {
@@ -119,6 +186,22 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Validate file type - images and PDFs supported
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/webp', 'application/pdf'];
+      if (!validTypes.includes(file.type.toLowerCase())) {
+        alert('Please upload a valid image file (JPEG, PNG, HEIC, HEIF, WebP) or PDF.');
+        event.target.value = ''; // Reset the input
+        return;
+      }
+
+      // Check file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        alert('File size must be less than 10MB');
+        event.target.value = '';
+        return;
+      }
+
       setSelectedFile(file);
     }
   };
@@ -130,12 +213,31 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
     setStep('processing');
 
     try {
-      const result = await processCasePaperWithAI(selectedFile, selectedPatient?.id);
+      let fileToProcess = selectedFile;
+
+      // If PDF, convert to image first
+      if (isPDF(selectedFile)) {
+        try {
+          console.log('Converting PDF to image...');
+          fileToProcess = await convertPDFToSingleImage(selectedFile, {
+            scale: 2.0,
+            outputFormat: 'image/jpeg',
+            quality: 0.92
+          });
+          console.log('PDF converted to image successfully');
+        } catch (error) {
+          console.error('PDF conversion failed:', error);
+          throw new Error(`Failed to convert PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      const result = await processCasePaperWithAI(fileToProcess, selectedPatient?.id);
       setOcrResult(result);
       setStep('emr');
     } catch (error) {
       console.error('OCR processing failed:', error);
-      alert('Failed to process case paper. Please try again or enter data manually.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to process case paper: ${errorMessage}. Please try again or enter data manually.`);
       setStep('upload');
     } finally {
       setIsProcessing(false);
@@ -181,6 +283,94 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">Select Patient</h3>
                 <p className="text-gray-600">Search for an existing patient or add a new one</p>
+              </div>
+
+              {/* Today's Appointments Section */}
+              <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-md font-semibold text-gray-800 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-blue-600" />
+                    Today's Appointments
+                    {todaysAppointments.length > 0 && (
+                      <span className="text-sm text-gray-500">({todaysAppointments.length})</span>
+                    )}
+                  </h4>
+                  <select
+                    value={showAllDoctorsAppointments ? 'all' : 'my'}
+                    onChange={(e) => setShowAllDoctorsAppointments(e.target.value === 'all')}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="my">My Appointments</option>
+                    <option value="all">All Doctors</option>
+                  </select>
+                </div>
+
+                {loadingAppointments ? (
+                  <div className="text-center py-6">
+                    <Loader2 className="w-6 h-6 text-blue-500 mx-auto mb-2 animate-spin" />
+                    <p className="text-sm text-gray-600">Loading appointments...</p>
+                  </div>
+                ) : todaysAppointments.length > 0 ? (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {todaysAppointments.map((apt: any) => (
+                      <button
+                        key={apt.id}
+                        onClick={() => handleAppointmentSelect(apt)}
+                        className="w-full p-3 rounded-lg border-2 border-gray-200 bg-white text-left transition-all hover:border-blue-400 hover:bg-blue-50 hover:shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              <span className="font-medium text-gray-900">
+                                {new Date(apt.appointment_date).toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true
+                                })}
+                              </span>
+                              {apt.appointment_type && (
+                                <span className="text-sm text-gray-600">- {apt.appointment_type}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm mb-1">
+                              <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <span className="font-medium text-gray-800 truncate">
+                                {toTitleCase(apt.patient?.name || 'Unknown')}
+                              </span>
+                              {apt.patient?.phone && (
+                                <>
+                                  <Phone className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                  <span className="text-gray-600">{apt.patient.phone}</span>
+                                </>
+                              )}
+                            </div>
+                            {showAllDoctorsAppointments && apt.doctor && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <Stethoscope className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                                <span className="text-gray-700">Dr. {apt.doctor.name}</span>
+                              </div>
+                            )}
+                          </div>
+                          <CheckCircle className="w-5 h-5 text-blue-400 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500 text-sm">
+                    <p>No appointments scheduled for today</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">Or search patients</span>
+                </div>
               </div>
 
               {/* Patient Search */}
@@ -379,7 +569,8 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                       <Upload className="w-16 h-16 text-gray-400 mx-auto" />
                       <div>
                         <p className="text-lg font-medium text-gray-800">Upload Case Paper</p>
-                        <p className="text-gray-600">Take a photo or select an image of the handwritten case paper</p>
+                        <p className="text-gray-600">Take a photo or select an image/PDF of the case paper</p>
+                        <p className="text-xs text-blue-600 mt-1">📄 PDFs will be automatically converted to images</p>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         <label className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-2">
@@ -395,10 +586,10 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                         </label>
                         <label className="border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer flex items-center gap-2">
                           <Upload className="w-5 h-5" />
-                          Select File
+                          Select Image/PDF
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,application/pdf"
                             onChange={handleFileSelect}
                             className="hidden"
                           />
@@ -415,10 +606,13 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
             <div className="text-center py-12">
               <Loader2 className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-spin" />
               <h3 className="text-lg font-medium text-gray-800 mb-2">Processing Case Paper with AI</h3>
-              <p className="text-gray-600 mb-2">Step 1: Extracting text from image...</p>
+              {selectedFile && isPDF(selectedFile) && (
+                <p className="text-gray-600 mb-2">Converting PDF to image...</p>
+              )}
+              <p className="text-gray-600 mb-2">Step 1: Extracting text from document...</p>
               <p className="text-gray-600">Step 2: Analyzing medical content with AI...</p>
               <div className="mt-4 text-sm text-gray-500">
-                This may take 10-30 seconds depending on image complexity
+                This may take 10-40 seconds depending on document complexity
               </div>
             </div>
           )}

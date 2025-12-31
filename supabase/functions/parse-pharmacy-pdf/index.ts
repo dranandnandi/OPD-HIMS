@@ -1,4 +1,4 @@
-// supabase/functions/parse-invoice/index.ts
+// supabase/functions/parse-pharmacy-pdf/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 // Helper: always return JSON with CORS
-const json = (body: unknown, status = 200, extraHeaders: Record<string,string> = {}) =>
+const json = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
@@ -58,11 +58,9 @@ serve(async (req) => {
       console.warn(`[${rid}] pdfBase64 looks malformed (non-base64 chars)`);
     }
 
-    // ==== STEP 1: Ask Gemini 1.5 directly with inline PDF ====
-    // Gemini 1.5 supports PDFs via inlineData. Prefer Pro/Flash 1.5; 2.0 PDF support can be inconsistent.
+    // ==== STEP 1: Ask Gemini 2.0 Flash directly with inline PDF ====
     const prompt = `
 You are an expert pharmacy invoice extraction AI. Read the attached PDF and output ONLY a JSON object with this schema:
-
 {
   "invoiceInfo": {
     "supplierName": "string|null",
@@ -84,18 +82,15 @@ You are an expert pharmacy invoice extraction AI. Read the attached PDF and outp
     }
   ]
 }
-
 Rules:
-- If unknown, use null (not empty strings).
+- If unknown, use null.
 - Dates => YYYY-MM-DD.
-- Prices => numeric only (strip currency symbols/commas).
+- Prices => numeric only.
 - Ensure at least medicineName, quantity, unitCostPrice for each line.
-- Derive totalCostPrice if missing (qty * unit).
-- Fix common OCR spacing/line breaks.
 - Return ONLY the JSON. No extra text.`.trim();
 
-    // Model: prefer 1.5 (Pro/Flash). If 2.0 works in your project, you can swap the model id.
-    const model = "gemini-1.5-pro";
+    // Model: Gemini 2.0 Flash Experimental
+    const model = "gemini-2.0-flash-exp";
 
     const geminiReq = {
       contents: [
@@ -103,26 +98,18 @@ Rules:
           parts: [
             { text: prompt },
             {
-              inlineData: {
+              inline_data: {
                 data: cleanB64,
-                mimeType: "application/pdf",
+                mime_type: "application/pdf",
               },
             },
           ],
         },
       ],
       generationConfig: {
-        temperature: 0.1,
-        topK: 1,
-        topP: 1,
-        maxOutputTokens: 4096,
-      },
-      safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      ],
+        response_mime_type: "application/json",
+        // temperature: 0.1 // optional
+      }
     };
 
     const geminiURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -157,8 +144,7 @@ Rules:
       );
     }
 
-    const generatedText: string =
-      geminiData?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || "").join("") || "";
+    const generatedText: string = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!generatedText) {
       console.warn(`[${rid}] Gemini returned empty text`);
@@ -168,12 +154,18 @@ Rules:
     // Extract JSON from LLM output
     let extracted: any;
     try {
-      const m = generatedText.match(/\{[\s\S]*\}$/);
-      if (!m) throw new Error("No JSON object found");
-      extracted = JSON.parse(m[0]);
+      extracted = JSON.parse(generatedText);
     } catch (e) {
-      console.error(`[${rid}] Gemini JSON extraction failed`, { sample: generatedText.slice(0, 400) });
-      return json({ error: "Invalid JSON returned by Gemini" }, 502);
+      try {
+        const m = generatedText.match(/\{[\s\S]*\}$/);
+        if (!m) throw new Error("No JSON object found");
+        extracted = JSON.parse(m[0]);
+      } catch (e2) {
+        console.error(`[${rid}] Gemini JSON extraction failed`, { sample: generatedText.slice(0, 400) });
+        // return json({ error: "Invalid JSON returned by Gemini" }, 502);
+        // Fallback to empty
+        extracted = { invoiceInfo: {}, medicines: [] };
+      }
     }
 
     // Validate & clean
@@ -190,23 +182,23 @@ Rules:
 
     const medicines = Array.isArray(extracted?.medicines)
       ? extracted.medicines
-          .map((m: any) => {
-            const quantity = Number.isFinite(m?.quantity) && m.quantity > 0 ? m.quantity : 1;
-            const unit = Number.isFinite(m?.unitCostPrice) && m.unitCostPrice > 0 ? m.unitCostPrice : 0;
-            return {
-              medicineName: (m?.medicineName || "").trim(),
-              quantity,
-              unitCostPrice: unit,
-              totalCostPrice:
-                Number.isFinite(m?.totalCostPrice) ? m.totalCostPrice : quantity * unit,
-              batchNumber: safe(m?.batchNumber, null),
-              expiryDate: safe(m?.expiryDate, null),
-              manufacturer: safe(m?.manufacturer, null),
-              strength: safe(m?.strength, null),
-              packSize: safe(m?.packSize, null),
-            };
-          })
-          .filter((m: any) => m.medicineName)
+        .map((m: any) => {
+          const quantity = Number.isFinite(m?.quantity) && m.quantity > 0 ? m.quantity : 1;
+          const unit = Number.isFinite(m?.unitCostPrice) && m.unitCostPrice > 0 ? m.unitCostPrice : 0;
+          return {
+            medicineName: (m?.medicineName || "").trim(),
+            quantity,
+            unitCostPrice: unit,
+            totalCostPrice:
+              Number.isFinite(m?.totalCostPrice) ? m.totalCostPrice : quantity * unit,
+            batchNumber: safe(m?.batchNumber, null),
+            expiryDate: safe(m?.expiryDate, null),
+            manufacturer: safe(m?.manufacturer, null),
+            strength: safe(m?.strength, null),
+            packSize: safe(m?.packSize, null),
+          };
+        })
+        .filter((m: any) => m.medicineName)
       : [];
 
     let confidence = 0.5;

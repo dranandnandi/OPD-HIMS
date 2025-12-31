@@ -10,6 +10,13 @@ import AIMasterSettings from './AIMasterSettings';
 const MasterDataManagement: React.FC = () => {
   const { user, hasPermission } = useAuth();
   const location = useLocation();
+
+  // Check if user is admin
+  const isAdmin = user?.roleName?.toLowerCase() === 'admin' ||
+    user?.roleName?.toLowerCase() === 'super_admin' ||
+    hasPermission('admin') ||
+    hasPermission('all');
+
   const [activeTab, setActiveTab] = useState<'ai-assistant' | 'medicines' | 'tests' | 'pricing'>(
     (location.state as { activeTab?: 'ai-assistant' | 'medicines' | 'tests' | 'pricing' })?.activeTab || 'ai-assistant'
   );
@@ -19,10 +26,10 @@ const MasterDataManagement: React.FC = () => {
   const [testPrices, setTestPrices] = useState<ClinicTestPrice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [showAddMedicineModal, setShowAddMedicineModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<MedicineMaster | TestMaster | MedicineWithPrice | TestWithPrice | null>(null);
+  const [editingMedicine, setEditingMedicine] = useState<MedicineWithPrice | null>(null);
+  const [editingTest, setEditingTest] = useState<TestWithPrice | null>(null);
   const [selectedPriceItem, setSelectedPriceItem] = useState<{ type: 'medicine' | 'test'; id: string; name: string } | null>(null);
 
   // Update activeTab when location state changes
@@ -48,7 +55,7 @@ const MasterDataManagement: React.FC = () => {
         throw new Error('User not assigned to a clinic.');
       }
 
-      
+
       if (activeTab === 'medicines') {
         const medicinesData = await masterDataService.getMedicines(clinicId);
         setMedicines(medicinesData);
@@ -93,7 +100,7 @@ const MasterDataManagement: React.FC = () => {
       } else if (type === 'test' && cost !== undefined) {
         await masterDataService.setClinicTestPrice(user.clinicId, id, price, cost);
       }
-      
+
       setShowPricingModal(false);
       setSelectedPriceItem(null);
       await loadData(); // Reload data
@@ -130,44 +137,40 @@ const MasterDataManagement: React.FC = () => {
           <nav className="flex">
             <button
               onClick={() => setActiveTab('ai-assistant')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'ai-assistant'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${activeTab === 'ai-assistant'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <Bot className="w-4 h-4" />
               AI Assistant
             </button>
             <button
               onClick={() => setActiveTab('medicines')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'medicines'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${activeTab === 'medicines'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <Pill className="w-4 h-4" />
               Medicines
             </button>
             <button
               onClick={() => setActiveTab('tests')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'tests'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${activeTab === 'tests'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <TestTube className="w-4 h-4" />
               Tests & Procedures
             </button>
             <button
               onClick={() => setActiveTab('pricing')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'pricing'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${activeTab === 'pricing'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <IndianRupee className="w-4 h-4" />
               Pricing
@@ -199,22 +202,41 @@ const MasterDataManagement: React.FC = () => {
             <AIMasterSettings />
           ) : activeTab === 'medicines' ? (
             <>
-              <div className="mb-4 flex justify-end">
-                <button
-                  onClick={() => setShowAddMedicineModal(true)}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Medicine
-                </button>
-              </div>
-              <MedicinesTable 
-                medicines={filteredMedicines} 
-                onEdit={() => {
-                  alert('Only administrators can edit master medicine data. Use AI Assistant to set clinic-specific pricing.');
+              {isAdmin && (
+                <div className="mb-4 flex justify-end">
+                  <button
+                    onClick={() => setShowAddMedicineModal(true)}
+                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Medicine
+                  </button>
+                </div>
+              )}
+              <MedicinesTable
+                medicines={filteredMedicines}
+                onEdit={(medicine) => {
+                  if (isAdmin) {
+                    setEditingMedicine(medicine);
+                  } else {
+                    alert('Only administrators can edit master medicine data. Use AI Assistant to set clinic-specific pricing.');
+                  }
                 }}
-                onDelete={() => {
-                  alert('Only administrators can delete master medicine data.');
+                onDelete={async (id) => {
+                  if (isAdmin) {
+                    if (confirm('Are you sure you want to delete this medicine?')) {
+                      try {
+                        await masterDataService.deleteMedicine(id);
+                        await loadData();
+                        alert('Medicine deleted successfully!');
+                      } catch (error) {
+                        console.error('Error deleting medicine:', error);
+                        alert('Failed to delete medicine.');
+                      }
+                    }
+                  } else {
+                    alert('Only administrators can delete master medicine data.');
+                  }
                 }}
                 onSetPrice={(medicine) => {
                   setSelectedPriceItem({ type: 'medicine', id: medicine.id, name: medicine.name });
@@ -223,13 +245,30 @@ const MasterDataManagement: React.FC = () => {
               />
             </>
           ) : activeTab === 'tests' ? (
-            <TestsTable 
-              tests={filteredTests} 
-              onEdit={() => {
-                alert('Only administrators can edit master test/procedure data. Use AI Assistant to set clinic-specific pricing.');
+            <TestsTable
+              tests={filteredTests}
+              onEdit={(test) => {
+                if (isAdmin) {
+                  setEditingTest(test);
+                } else {
+                  alert('Only administrators can edit master test/procedure data. Use AI Assistant to set clinic-specific pricing.');
+                }
               }}
-              onDelete={() => {
-                alert('Only administrators can delete master test/procedure data.');
+              onDelete={async (id) => {
+                if (isAdmin) {
+                  if (confirm('Are you sure you want to delete this test?')) {
+                    try {
+                      await masterDataService.deleteTest(id);
+                      await loadData();
+                      alert('Test deleted successfully!');
+                    } catch (error) {
+                      console.error('Error deleting test:', error);
+                      alert('Failed to delete test.');
+                    }
+                  }
+                } else {
+                  alert('Only administrators can delete master test/procedure data.');
+                }
               }}
               onSetPrice={(test) => {
                 setSelectedPriceItem({ type: 'test', id: test.id, name: test.name });
@@ -237,7 +276,7 @@ const MasterDataManagement: React.FC = () => {
               }}
             />
           ) : (
-            <PricingTable 
+            <PricingTable
               medicinePrices={medicinePrices}
               testPrices={testPrices}
               onEditPrice={(type, id, name) => {
@@ -276,6 +315,46 @@ const MasterDataManagement: React.FC = () => {
             }
           }}
           onClose={() => setShowAddMedicineModal(false)}
+        />
+      )}
+
+      {/* Edit Medicine Modal */}
+      {editingMedicine && (
+        <MasterDataModal
+          type="medicines"
+          item={editingMedicine}
+          onSave={async (data) => {
+            try {
+              await masterDataService.updateMedicine(editingMedicine.id, data);
+              setEditingMedicine(null);
+              await loadData();
+              alert('Medicine updated successfully!');
+            } catch (error) {
+              console.error('Error updating medicine:', error);
+              alert('Failed to update medicine. Please try again.');
+            }
+          }}
+          onClose={() => setEditingMedicine(null)}
+        />
+      )}
+
+      {/* Edit Test Modal */}
+      {editingTest && (
+        <MasterDataModal
+          type="tests"
+          item={editingTest}
+          onSave={async (data) => {
+            try {
+              await masterDataService.updateTest(editingTest.id, data);
+              setEditingTest(null);
+              await loadData();
+              alert('Test updated successfully!');
+            } catch (error) {
+              console.error('Error updating test:', error);
+              alert('Failed to update test. Please try again.');
+            }
+          }}
+          onClose={() => setEditingTest(null)}
         />
       )}
     </div>
@@ -343,9 +422,8 @@ const MedicinesTable: React.FC<{
                 </div>
               </td>
               <td className="py-3 px-4">
-                <span className={`px-2 py-1 text-xs rounded-full ${
-                  medicine.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
+                <span className={`px-2 py-1 text-xs rounded-full ${medicine.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
                   {medicine.isActive ? 'Active' : 'Inactive'}
                 </span>
               </td>
@@ -420,12 +498,11 @@ const TestsTable: React.FC<{
               </td>
               <td className="py-3 px-4 text-gray-600">{test.category}</td>
               <td className="py-3 px-4">
-                <span className={`px-2 py-1 text-xs rounded-full ${
-                  test.type === 'lab' ? 'bg-blue-100 text-blue-700' :
+                <span className={`px-2 py-1 text-xs rounded-full ${test.type === 'lab' ? 'bg-blue-100 text-blue-700' :
                   test.type === 'procedure' ? 'bg-purple-100 text-purple-700' :
-                  test.type === 'radiology' ? 'bg-purple-100 text-purple-700' :
-                  'bg-gray-100 text-gray-700'
-                }`}>
+                    test.type === 'radiology' ? 'bg-purple-100 text-purple-700' :
+                      'bg-gray-100 text-gray-700'
+                  }`}>
                   {test.type}
                 </span>
               </td>
@@ -436,9 +513,8 @@ const TestsTable: React.FC<{
                 </div>
               </td>
               <td className="py-3 px-4">
-                <span className={`px-2 py-1 text-xs rounded-full ${
-                  test.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
+                <span className={`px-2 py-1 text-xs rounded-full ${test.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
                   {test.isActive ? 'Active' : 'Inactive'}
                 </span>
               </td>
@@ -507,7 +583,7 @@ const PricingTable: React.FC<{
                 {medicinePrices.map(price => {
                   const margin = price.sellingPrice - price.costPrice;
                   const marginPercent = price.costPrice > 0 ? ((margin / price.costPrice) * 100).toFixed(1) : '0';
-                  
+
                   return (
                     <tr key={price.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 font-medium text-gray-800">
@@ -559,7 +635,7 @@ const PricingTable: React.FC<{
                 {testPrices.map(price => {
                   const margin = price.price - price.cost;
                   const marginPercent = price.cost > 0 ? ((margin / price.cost) * 100).toFixed(1) : '0';
-                  
+
                   return (
                     <tr key={price.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 font-medium text-gray-800">
@@ -604,20 +680,20 @@ const PricingModal: React.FC<{
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const price = parseFloat(formData.price);
     const cost = parseFloat(formData.cost);
-    
+
     if (isNaN(price) || price < 0) {
       alert('Please enter a valid price');
       return;
     }
-    
+
     if (isNaN(cost) || cost < 0) {
       alert('Please enter a valid cost');
       return;
     }
-    
+
     setSaving(true);
     try {
       await onSave(item.type, item.id, price, cost);
@@ -691,8 +767,8 @@ const PricingModal: React.FC<{
               <div className="text-sm text-blue-700">
                 <div>Margin: ₹{(parseFloat(formData.price) - parseFloat(formData.cost)).toFixed(2)}</div>
                 <div>
-                  Margin %: {parseFloat(formData.cost) > 0 ? 
-                    (((parseFloat(formData.price) - parseFloat(formData.cost)) / parseFloat(formData.cost)) * 100).toFixed(1) : 
+                  Margin %: {parseFloat(formData.cost) > 0 ?
+                    (((parseFloat(formData.price) - parseFloat(formData.cost)) / parseFloat(formData.cost)) * 100).toFixed(1) :
                     '0'
                   }%
                 </div>
@@ -1064,7 +1140,7 @@ const AddMedicineModal: React.FC<{
   ];
 
   const dosageForms = [
-    'tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment', 
+    'tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment',
     'drops', 'inhaler', 'powder', 'suspension', 'other'
   ];
 

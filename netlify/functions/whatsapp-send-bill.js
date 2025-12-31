@@ -28,6 +28,7 @@ exports.handler = async (event) => {
     const body = event.body ? JSON.parse(event.body) : {};
     const {
       userId,
+      email,
       phoneNumber,
       phone,
       fileUrl,
@@ -39,6 +40,7 @@ exports.handler = async (event) => {
     } = body;
 
     const finalUserId = userId || null;
+    const userEmail = email || null;
     let resolvedPhoneNumber = phoneNumber || phone || null;
     const resolvedFileUrl = fileUrl || null;
 
@@ -122,9 +124,9 @@ exports.handler = async (event) => {
     console.log('Using API key for authentication');
 
     const templateData = {};
-    if (patientName) templateData.PatientName = patientName;
-    if (billNumber) templateData.BillNumber = billNumber;
-    if (totalAmount !== undefined) templateData.Amount = totalAmount;
+    if (patientName) templateData.PatientName = String(patientName);
+    if (billNumber) templateData.BillNumber = String(billNumber);
+    if (totalAmount !== undefined) templateData.Amount = String(totalAmount);
 
     const requestBody = { 
       userId: finalUserId,
@@ -148,21 +150,55 @@ exports.handler = async (event) => {
       };
     }
 
-    const upstream = await fetchFn(apiUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    });
+    // Helper function to make the API call
+    const makeApiCall = async (userIdentifier) => {
+      const payload = { 
+        ...requestBody,
+        userId: userIdentifier,
+      };
+      console.log('Making API call with userId:', userIdentifier);
+      
+      const response = await fetchFn(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      
+      const text = await response.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      
+      return { response, text, json };
+    };
+
+    // First attempt with userId
+    let { response: upstream, text: responseText, json: data } = await makeApiCall(finalUserId);
 
     console.log('Upstream status:', upstream.status);
-
-    const responseText = await upstream.text();
     console.log('Upstream response text (trim):', responseText ? responseText.substring(0, 2000) : '');
 
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
+    // Check for session not found error and retry with email if available
+    const isSessionNotFound = !upstream.ok && (
+      (data && data.error && typeof data.error === 'string' && data.error.toLowerCase().includes('session not found')) ||
+      (data && data.message && typeof data.message === 'string' && data.message.toLowerCase().includes('session not found')) ||
+      (responseText && responseText.toLowerCase().includes('session not found'))
+    );
+
+    if (isSessionNotFound && userEmail) {
+      console.log('Session not found for userId, retrying with email:', userEmail);
+      const retryResult = await makeApiCall(userEmail);
+      upstream = retryResult.response;
+      responseText = retryResult.text;
+      data = retryResult.json;
+      console.log('Retry with email - status:', upstream.status);
+      console.log('Retry with email - response:', responseText ? responseText.substring(0, 2000) : '');
+    }
+
+    if (!data) {
       console.error('Failed to parse backend response as JSON:', responseText);
       return {
         statusCode: upstream.ok ? 200 : 502,
