@@ -10,6 +10,7 @@ import { isPDF, convertPDFToSingleImage } from '../../utils/pdfToImage';
 import { supabase } from '../../lib/supabaseClient';
 import PatientModal from './PatientModal';
 import EMRForm from './EMRForm';
+import { getAppointmentStatusColor, getAppointmentStatusLabel } from '../../utils/appointmentUtils';
 
 interface AddVisitModalProps {
   patient?: Patient; // Make optional for backward compatibility

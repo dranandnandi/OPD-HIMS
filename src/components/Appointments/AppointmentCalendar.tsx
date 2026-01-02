@@ -32,6 +32,9 @@ const AppointmentCalendar: React.FC = () => {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDayDetailsModal, setShowDayDetailsModal] = useState(false);
   const [selectedDateForDetails, setSelectedDateForDetails] = useState<Date | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [showRealtimeToast, setShowRealtimeToast] = useState(false);
+  const [realtimeToastMessage, setRealtimeToastMessage] = useState('');
 
   // 4-day calculation starting from current date
   const fourDayStart = new Date(currentWeek);
@@ -47,6 +50,106 @@ const AppointmentCalendar: React.FC = () => {
       loadAppointmentTypes();
     }
   }, [user, currentWeek]);
+
+  // Supabase Realtime Subscription for Appointments
+  useEffect(() => {
+    if (!user || !supabase) return;
+
+    console.log('[Realtime] Setting up appointments subscription...');
+
+    const channel = supabase
+      .channel('appointments-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'appointments'
+        },
+        (payload) => {
+          console.log('[Realtime] New appointment created:', payload.new);
+
+          // Add the new appointment to state
+          const newAppointment = payload.new as Appointment;
+
+          // Only add if it's within our current date range
+          const appointmentDate = new Date(newAppointment.appointmentDate);
+          if (appointmentDate >= fourDayStart && appointmentDate <= fourDayEnd) {
+            setAppointments(prev => {
+              // Avoid duplicates
+              if (prev.some(a => a.id === newAppointment.id)) return prev;
+              return [...prev, newAppointment];
+            });
+
+            // Show toast notification
+            setRealtimeToastMessage('New appointment created!');
+            setShowRealtimeToast(true);
+            setTimeout(() => setShowRealtimeToast(false), 3000);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'appointments'
+        },
+        (payload) => {
+          console.log('[Realtime] Appointment updated:', payload.new);
+
+          const updatedAppointment = payload.new as Appointment;
+
+          setAppointments(prev =>
+            prev.map(appointment =>
+              appointment.id === updatedAppointment.id ? updatedAppointment : appointment
+            )
+          );
+
+          // Show toast notification
+          setRealtimeToastMessage('Appointment updated');
+          setShowRealtimeToast(true);
+          setTimeout(() => setShowRealtimeToast(false), 3000);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'appointments'
+        },
+        (payload) => {
+          console.log('[Realtime] Appointment deleted:', payload.old);
+
+          const deletedId = (payload.old as any).id;
+
+          setAppointments(prev => prev.filter(appointment => appointment.id !== deletedId));
+
+          // Show toast notification
+          setRealtimeToastMessage('Appointment removed');
+          setShowRealtimeToast(true);
+          setTimeout(() => setShowRealtimeToast(false), 3000);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Subscription status:', status);
+
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnected(true);
+          console.log('[Realtime] ✅ Successfully subscribed to appointments');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setRealtimeConnected(false);
+          console.error('[Realtime] ❌ Subscription error:', status);
+        }
+      });
+
+    // Cleanup subscription on unmount
+    return () => {
+      console.log('[Realtime] Cleaning up subscription...');
+      channel.unsubscribe();
+    };
+  }, [user, fourDayStart, fourDayEnd]);
 
   const loadAppointmentTypes = async () => {
     try {
@@ -153,6 +256,16 @@ const AppointmentCalendar: React.FC = () => {
     setShowSendMessageModal(true);
   };
 
+  const handleQuickStatusChange = async (appointmentId: string, newStatus: Appointment['status']) => {
+    try {
+      await appointmentService.updateAppointment(appointmentId, { status: newStatus });
+      await loadData(); // Refresh appointments after status change
+    } catch (error) {
+      console.error('Error updating appointment status:', error);
+      alert('Failed to update appointment status. Please try again.');
+    }
+  };
+
   const clearFilters = () => {
     setStatusFilter('all');
     setDoctorFilter('');
@@ -199,7 +312,16 @@ const AppointmentCalendar: React.FC = () => {
       <div className="calendar-nav">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Appointments</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-gray-800">Appointments</h2>
+              {/* Realtime Connection Indicator */}
+              {realtimeConnected && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs font-medium text-green-700">Live</span>
+                </div>
+              )}
+            </div>
             <p className="text-sm text-gray-600 mt-1">Manage patient appointments and schedules</p>
           </div>
 
@@ -215,6 +337,7 @@ const AppointmentCalendar: React.FC = () => {
                 <option value="all">All Status</option>
                 <option value="Scheduled">Scheduled</option>
                 <option value="Confirmed">Confirmed</option>
+                <option value="Arrived">Arrived</option>
                 <option value="In_Progress">In Progress</option>
                 <option value="Completed">Completed</option>
                 <option value="Cancelled">Cancelled</option>
@@ -294,6 +417,7 @@ const AppointmentCalendar: React.FC = () => {
               <option value="all">All Status</option>
               <option value="Scheduled">Scheduled</option>
               <option value="Confirmed">Confirmed</option>
+              <option value="Arrived">Arrived</option>
               <option value="In_Progress">In Progress</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
@@ -361,6 +485,7 @@ const AppointmentCalendar: React.FC = () => {
                     appointment={appointment}
                     onEdit={handleEditAppointment}
                     onSendMessage={handleSendMessage}
+                    onStatusChange={handleQuickStatusChange}
                     hideActions={true}
                     className="text-xs md:text-sm"
                   />
@@ -436,6 +561,16 @@ const AppointmentCalendar: React.FC = () => {
               handleNewAppointment();
             }}
           />
+        </div>
+      )}
+
+      {/* Realtime Toast Notification */}
+      {showRealtimeToast && (
+        <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+            <span className="font-medium">{realtimeToastMessage}</span>
+          </div>
         </div>
       )}
     </div>
@@ -817,6 +952,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
             >
               <option value="Scheduled">Scheduled</option>
               <option value="Confirmed">Confirmed</option>
+              <option value="Arrived">Arrived</option>
               <option value="In_Progress">In Progress</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>

@@ -62,7 +62,7 @@ export interface Appointment {
   doctorId: string;
   appointmentDate: Date;
   duration: number;
-  status: 'Scheduled' | 'Confirmed' | 'In_Progress' | 'Completed' | 'Cancelled' | 'No_Show';
+  status: 'Scheduled' | 'Confirmed' | 'Arrived' | 'In_Progress' | 'Completed' | 'Cancelled' | 'No_Show';
   appointmentType: 'Consultation' | 'Follow_Up' | 'Emergency' | 'Routine_Checkup';
   notes?: string;
   createdAt: Date;
