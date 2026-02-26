@@ -65,7 +65,7 @@ serve(async (req) => {
     }
 
     try {
-        const { doctorSpecialization, chiefComplaint, symptoms, patientAge, patientGender } = await req.json();
+        const { doctorSpecialization, chiefComplaint, symptoms, patientAge, patientGender, referenceText } = await req.json();
 
         if (!doctorSpecialization) {
             return new Response(JSON.stringify({
@@ -90,6 +90,11 @@ serve(async (req) => {
         const normalizedSpec = doctorSpecialization.toLowerCase().replace(/[^a-z]/g, '');
         const baseTemplate = specialtyBaseTemplates[normalizedSpec] || specialtyBaseTemplates['general'];
 
+        // Build reference text section if provided
+        const referenceSection = referenceText
+            ? `\nREFERENCE CONTENT (user-provided existing format — use this as the PRIMARY basis for generating the template):\n---\n${referenceText.slice(0, 6000)}\n---\nIMPORTANT: Parse the above reference content carefully. Extract every section, heading, and field from it. Convert them into the structured JSON format below. Preserve the original section groupings, field names, and ordering as closely as possible. Add appropriate field types (text, select, toggle, textarea) and options where applicable.\n`
+            : '';
+
         const prompt = `You are a medical examination template generator. Based on the doctor's specialization and patient presentation, generate a contextual physical examination template.
 
 CONTEXT:
@@ -98,8 +103,8 @@ CONTEXT:
 - Symptoms: ${symptoms?.join(', ') || 'Not specified'}
 - Patient Age: ${patientAge || 'Not specified'}
 - Patient Gender: ${patientGender || 'Not specified'}
-
-BASE TEMPLATE FIELDS TO BUILD UPON:
+${referenceSection}
+BASE TEMPLATE FIELDS TO BUILD UPON (use only if no reference content is provided above):
 - General: ${baseTemplate.general.join(', ')}
 - Systemic: ${JSON.stringify(baseTemplate.systemic)}
 - Local: ${baseTemplate.local.join(', ')}
@@ -145,7 +150,7 @@ Generate a clinically appropriate template. Return ONLY the JSON, no explanation
                     temperature: 0.3,
                     topK: 1,
                     topP: 1,
-                    maxOutputTokens: 4096
+                    maxOutputTokens: 8192
                 }
             })
         });

@@ -47,6 +47,7 @@ import ProfileSettings from './components/Settings/ProfileSettings';
 import UserManagement from './components/Settings/UserManagement';
 import MasterDataManagement from './components/Settings/MasterDataManagement';
 import PrescriptionPresetSettings from './components/Settings/PrescriptionPresetSettings';
+import ExaminationTemplateSettings from './components/Settings/ExaminationTemplateSettings';
 import SystemSettings from './components/Settings/SystemSettings';
 import DoctorAvailabilitySettings from './components/Settings/DoctorAvailabilitySettings';
 import WhatsappAndAIReviewSettings from './components/Settings/WhatsappAndAIReviewSettings';
@@ -55,6 +56,9 @@ import ChatbotUtility from './components/Chatbots/ChatbotUtility';
 
 // GMB Review Requests
 import GMBReviewRequests from './components/GMBReviewRequests/GMBReviewRequests';
+
+// Verify Prescription (public page — no auth required)
+import VerifyPrescription from './pages/VerifyPrescription';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -186,6 +190,7 @@ const AppContent: React.FC = () => {
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={<LoginForm />} />
+      <Route path="/verify" element={<VerifyPrescription />} />
 
       {/* Protected Routes */}
       <Route path="/" element={
@@ -397,6 +402,16 @@ const AppContent: React.FC = () => {
           <AdminRoute>
             <AppLayout>
               <PrescriptionPresetSettings />
+            </AppLayout>
+          </AdminRoute>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/settings/examination-templates" element={
+        <ProtectedRoute>
+          <AdminRoute>
+            <AppLayout>
+              <ExaminationTemplateSettings />
             </AppLayout>
           </AdminRoute>
         </ProtectedRoute>

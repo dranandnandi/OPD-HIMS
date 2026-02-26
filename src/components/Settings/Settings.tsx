@@ -45,13 +45,6 @@ const Settings: React.FC = () => {
     emergencyConsultation: '800'
   });
 
-  const [specialtyTemplates, setSpecialtyTemplates] = useState([
-    { id: '1', name: 'General Medicine', active: true },
-    { id: '2', name: 'Pediatrics', active: false },
-    { id: '3', name: 'Cardiology', active: false },
-    { id: '4', name: 'Dermatology', active: false }
-  ]);
-
   const [staffRoles, setStaffRoles] = useState([
     { id: '1', name: 'Receptionist', permissions: ['patient_registration', 'appointment_scheduling'] },
     { id: '2', name: 'Nurse', permissions: ['patient_registration', 'vitals_recording', 'follow_up_calls'] },
@@ -75,7 +68,7 @@ const Settings: React.FC = () => {
     { id: 'clinic', label: 'Clinic Settings', icon: Building },
     { id: 'pdf', label: 'PDF Settings', icon: FileImage },
     { id: 'fees', label: 'Consultation Fees', icon: IndianRupee },
-    { id: 'templates', label: 'Specialty Templates', icon: Stethoscope },
+    { id: 'templates', label: 'Examination Templates', icon: Stethoscope },
     { id: 'presets', label: 'Prescription Presets', icon: Zap },
     { id: 'staff', label: 'Staff Roles', icon: Users },
     { id: 'master-data', label: 'Master Data', icon: Database },
@@ -111,14 +104,6 @@ const Settings: React.FC = () => {
 
   const handleSaveFees = () => {
     alert('Consultation fees updated successfully!');
-  };
-
-  const toggleTemplate = (templateId: string) => {
-    setSpecialtyTemplates(prev => prev.map(template =>
-      template.id === templateId
-        ? { ...template, active: !template.active }
-        : template
-    ));
   };
 
   const handleSaveNotifications = () => {
@@ -474,25 +459,44 @@ const Settings: React.FC = () => {
 
           {activeTab === 'templates' && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Specialty Templates</h3>
-              <div className="space-y-3">
-                {specialtyTemplates.map(template => (
-                  <div key={template.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Stethoscope className="w-5 h-5 text-blue-600" />
-                      <span className="font-medium">{template.name}</span>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={template.active}
-                        onChange={() => toggleTemplate(template.id)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">Examination Templates</h3>
+                <Link
+                  to="/settings/examination-templates"
+                  className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  Manage Templates
+                </Link>
+              </div>
+
+              <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex gap-3">
+                  <Stethoscope className="w-6 h-6 text-purple-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-purple-800 mb-1">Standardize examinations</h4>
+                    <p className="text-sm text-purple-700">
+                      Create reusable examination templates for different specializations.
+                      Use AI to generate section structures, then customize fields.
+                      Doctors can load these templates during patient visits.
+                    </p>
                   </div>
-                ))}
+                </div>
+              </div>
+
+              <div className="flex justify-center py-8">
+                <Link
+                  to="/settings/examination-templates"
+                  className="flex flex-col items-center gap-4 text-center p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all group"
+                >
+                  <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Stethoscope className="w-8 h-8 text-purple-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">Configure Templates</h4>
+                    <p className="text-gray-500 mt-1">Click here to add or edit examination templates</p>
+                  </div>
+                </Link>
               </div>
             </div>
           )}

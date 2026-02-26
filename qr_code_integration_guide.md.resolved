@@ -1,0 +1,227 @@
+# QR Code Integration Guide
+## How QR is Generated in LIMS PDF & How Your OPD App Can Read It
+
+---
+
+## 1. How QR Works in LIMS — End to End
+
+### Step 1: Verification URL is constructed at PDF generation time
+
+In [supabase/functions/generate-pdf-letterhead/index.ts](file:///d:/LIMS%20version%202/project/supabase/functions/generate-pdf-letterhead/index.ts) (line ~5326):
+
+```typescript
+const verifyUrl = `https://app.limsapp.in/verify?id=${
+  encodeURIComponent(order.sampleId)
+}`;
+```
+
+The `sampleId` is a human-readable string like `26-Feb-2026-001`. This URL becomes the **data payload** of the QR code.
+
+> ⚠️ The verify URL uses the **app domain** (`app.limsapp.in/verify`), NOT the Supabase Edge Function URL directly. The LIMS frontend has a `/verify` route that accepts `?id=` and calls the Edge Function server-side.
+
+---
+
+### Step 2: QR image is rendered via external API
+
+In [injectQrCode()](file:///d:/LIMS%20version%202/project/supabase/functions/generate-pdf-letterhead/index.ts#1053-1159) (line ~1073):
+
+```html
+<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={ENCODED_URL}"
+     style="width:60px;height:60px;" />
+```
+
+**`api.qrserver.com`** is a free, public QR generation API. The QR image is fetched at PDF render time by the PDF rendering service (pdf.co or headless browser). No QR npm package is needed — it's a simple `<img>` tag with the URL as the data parameter.
+
+**The QR image size in the PDF is `60px × 60px`** (small, bottom-left of signature area).
+
+---
+
+### Step 3: QR is placed in the PDF
+
+[injectQrCode()](file:///d:/LIMS%20version%202/project/supabase/functions/generate-pdf-letterhead/index.ts#1053-1159) searches the rendered HTML for these blocks in priority order:
+
+| Priority | Block class | Placement |
+|----------|-------------|-----------|
+| 1st | `.signatures` | QR on left, signature on right (flex) |
+| 2nd | `.report-footer` | QR prepended inside footer |
+| 3rd | `.signatory` / `.approver` | QR + signature wrapped in flex |
+| 4th | `</section>` | QR before section close |
+| 5th | `</body>` | QR before body close |
+| 6th | Fallback | Appended to HTML end |
+
+---
+
+### Step 4: Patient scans QR → hits `/verify?id=26-Feb-2026-001`
+
+The verify route in LIMS frontend calls the **Supabase Edge Function**:
+
+```
+POST https://<project>.supabase.co/functions/v1/verify-report
+Body: { "id": "26-Feb-2026-001" }
+```
+
+---
+
+### Step 5: `verify-report` Edge Function returns
+
+```json
+{
+  "status": "verified",
+  "data": {
+    "sample_id": "26-Feb-2026-001",
+    "created_at": "2026-02-26T...",
+    "patient_name": "Ramesh Kumar",
+    "patient_gender": "Male",
+    "patient_age": "45",
+    "doctor": "Dr. Sharma",
+    "pdf_url": "https://storage.../report.pdf"
+  }
+}
+```
+
+The Edge Function uses **service role key** (bypasses RLS) and queries:
+1. `orders` table → by `sample_id` (or UUID fallback)
+2. `reports` table → to get `pdf_url`
+
+---
+
+## 2. Full Logic Chain (Diagram)
+
+```
+PDF Generation (Edge Function)
+  └─► Build verifyUrl: "https://app.limsapp.in/verify?id={sampleId}"
+  └─► Inject <img src="https://api.qrserver.com/...&data={verifyUrl}">
+  └─► PDF rendered with QR image embedded
+
+Patient scans QR with phone
+  └─► Browser opens: https://app.limsapp.in/verify?id=26-Feb-2026-001
+  └─► LIMS frontend /verify page
+        └─► Calls: supabase.functions.invoke('verify-report', { body: { id } })
+              └─► Edge Function queries orders + reports tables
+              └─► Returns: { status: "verified", data: { ... } }
+        └─► Displays verification card to patient
+```
+
+---
+
+## 3. How Your OPD App Consumes This
+
+Your OPD app is a **separate Supabase + Netlify app** but can call the **same LIMS Supabase Edge Function** over HTTP. No shared database access needed.
+
+### Option A: Direct HTTP call to LIMS Edge Function (Recommended)
+
+The `verify-report` function has `Access-Control-Allow-Origin: *` — it's fully public.
+
+```typescript
+// In your OPD app (React/Next.js/Vite)
+async function verifyLimsReport(sampleId: string) {
+  const LIMS_VERIFY_URL =
+    'https://<lims-project-ref>.supabase.co/functions/v1/verify-report';
+
+  const res = await fetch(LIMS_VERIFY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: sampleId }),
+  });
+
+  const result = await res.json();
+  // result.status: 'verified' | 'not_found' | 'error'
+  // result.data: { sample_id, patient_name, patient_age, doctor, pdf_url }
+  return result;
+}
+```
+
+### Option B: Your OPD app hosts a `/verify` page
+
+When the patient scans the QR from your OPD app's context, redirect them to your own verify page:
+
+```
+https://your-opd-app.netlify.app/verify?id=26-Feb-2026-001
+```
+
+That page calls `verifyLimsReport(id)` and shows the result.
+
+> **Note:** The QR in the PDF always points to `https://app.limsapp.in/verify?...` (the LIMS app). If you want QRs to point to your OPD app instead, you'd need to change the `verifyUrl` in [generate-pdf-letterhead/index.ts](file:///d:/LIMS%20version%202/project/supabase/functions/generate-pdf-letterhead/index.ts).
+
+---
+
+## 4. Changing the QR Destination URL
+
+If you want patients to land on your **OPD app** when they scan:
+
+In [generate-pdf-letterhead/index.ts](file:///d:/LIMS%20version%202/project/supabase/functions/generate-pdf-letterhead/index.ts) line ~5326, change:
+```typescript
+// Before (points to LIMS app)
+const verifyUrl = `https://app.limsapp.in/verify?id=${encodeURIComponent(sampleId)}`;
+
+// After (points to OPD app)
+const verifyUrl = `https://your-opd-app.netlify.app/verify?id=${encodeURIComponent(sampleId)}`;
+```
+
+Both apps call the same `verify-report` edge function — only the landing page changes.
+
+---
+
+## 5. QR Stability in PDF — Important Notes
+
+| Concern | Answer |
+|---------|--------|
+| Does QR work offline? | ❌ No — QR image is fetched at render time from `api.qrserver.com`. PDF must be rendered with internet. |
+| Is QR stable after PDF saved? | ✅ Yes — the QR image is **rasterized into the PDF** by the PDF renderer. Once saved, no internet needed to view it. |
+| What if `api.qrserver.com` is down? | QR image won't appear in PDF. Consider self-hosting QR generation (see below). |
+| Is `sampleId` URL-encoded? | ✅ Yes — `encodeURIComponent()` is used. Special chars in sample IDs are safe. |
+
+### Self-hosted QR (Production Hardening)
+
+To avoid dependency on `api.qrserver.com`:
+
+```typescript
+// In the Edge Function, generate QR as base64 data URL using a Deno QR library
+import QRCode from "npm:qrcode";
+
+const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120 });
+// qrDataUrl = "data:image/png;base64,iVBORw..."
+
+// Use in HTML:
+`<img src="${qrDataUrl}" style="width:60px;height:60px;" />`
+```
+
+---
+
+## 6. Database Tables Involved
+
+```sql
+-- LIMS Supabase DB
+
+orders
+  id          uuid (PK)
+  sample_id   text  ← this is what's encoded in the QR
+  created_at  timestamptz
+  patient_id  uuid → patients.id
+  doctor      text
+  lab_id      uuid → labs.id
+
+patients
+  id    uuid
+  name  text
+  age   text
+  gender text
+
+reports
+  id       uuid
+  order_id uuid → orders.id
+  pdf_url  text  ← returned in verify response
+```
+
+The `verify-report` Edge Function **only exposes**: sample_id, created_at, patient name/age/gender, doctor, pdf_url — nothing sensitive.
+
+---
+
+## 7. Quick Implementation Checklist for OPD App
+
+- [ ] Create `/verify` page in OPD app (accepts `?id=` query param)
+- [ ] Call LIMS `verify-report` edge function with the `id`
+- [ ] Display: ✅ Verified / ❌ Not Found card with patient name, sample ID, date
+- [ ] Show "View Report" button if `pdf_url` is present
+- [ ] (Optional) Change `verifyUrl` in LIMS PDF generation to point to OPD app
+- [ ] (Optional) Replace `api.qrserver.com` with self-hosted QR via `npm:qrcode`

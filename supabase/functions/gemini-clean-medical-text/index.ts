@@ -12,9 +12,11 @@ serve(async (req) => {
   }
 
   try {
+    console.log('🔍 [DEBUG] Request received at gemini-clean-medical-text')
     const { rawText } = await req.json()
 
     if (!rawText) {
+      console.error('❌ [DEBUG] No rawText provided in request')
       return new Response(
         JSON.stringify({ error: 'Raw text is required' }),
         {
@@ -24,9 +26,20 @@ serve(async (req) => {
       )
     }
 
+    console.log(`📊 [DEBUG] Received text length: ${rawText.length} characters`)
+
+    // Truncate extremely long text to avoid token limits (approx 30k chars = ~7500 tokens)
+    const maxChars = 30000
+    const truncatedText = rawText.length > maxChars ? rawText.substring(0, maxChars) : rawText
+    
+    if (rawText.length > maxChars) {
+      console.log(`✂️ [DEBUG] Text truncated from ${rawText.length} to ${maxChars} characters`)
+    }
+
     // Get API key from Supabase secret
     const apiKey = Deno.env.get('ALLGOOGLE_KEY')
     if (!apiKey) {
+      console.error('❌ [DEBUG] ALLGOOGLE_KEY environment variable not found')
       return new Response(
         JSON.stringify({ error: 'Google API key not configured' }),
         {
@@ -35,6 +48,7 @@ serve(async (req) => {
         }
       )
     }
+    console.log('✅ [DEBUG] API key loaded successfully')
 
     const prompt = `You are a medical text cleaning AI specializing in processing raw OCR text from Indian clinical prescriptions and case papers.
 
@@ -65,10 +79,13 @@ Instructions:
 4. If no valid medical content is found, return: "No medical content detected"
 
 Input Text:
-${rawText}`;
+${truncatedText}`;
 
-    // Call Gemini API using API key
-    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    console.log(`🚀 [DEBUG] Calling Gemini 2.5 Flash API...`)
+    console.log(`📝 [DEBUG] Prompt length: ${prompt.length} characters`)
+    
+    // Call Gemini API using API key (using Gemini 2.5 Flash - current standard model)
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -83,7 +100,7 @@ ${rawText}`;
           temperature: 0.1,
           topK: 1,
           topP: 1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
         },
         safetySettings: [
           {
@@ -106,21 +123,36 @@ ${rawText}`;
       })
     })
 
+    console.log(`📡 [DEBUG] Gemini API response status: ${geminiResponse.status}`)
     const geminiData = await geminiResponse.json()
+    console.log(`📦 [DEBUG] Response received, parsing data...`)
 
     if (geminiData.error) {
-      throw new Error(`Gemini API error: ${geminiData.error.message}`)
+      console.error(`❌ [DEBUG] Gemini API error:`, JSON.stringify(geminiData.error, null, 2))
+      // Handle specific Gemini API errors
+      const errorMsg = geminiData.error.message || 'Unknown error'
+      const errorStatus = geminiData.error.status || 'UNKNOWN'
+      
+      if (errorStatus === 'RESOURCE_EXHAUSTED') {
+        throw new Error(`Gemini API quota exhausted. Please try again later or check your API quota.`)
+      }
+      
+      throw new Error(`Gemini API error (${errorStatus}): ${errorMsg}`)
     }
 
     // Extract the generated text
     const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    console.log(`📝 [DEBUG] Generated text length: ${generatedText.length} characters`)
 
     if (!generatedText) {
+      console.error('❌ [DEBUG] No text generated from Gemini response')
       throw new Error('No response generated from Gemini')
     }
 
     // Clean up the response
     const cleanedMedicalText = generatedText.trim()
+    console.log(`✅ [DEBUG] Successfully cleaned medical text`)
+    console.log(`📊 [DEBUG] Stats - Original: ${rawText.length}, Cleaned: ${cleanedMedicalText.length}`)
 
     return new Response(
       JSON.stringify({
@@ -135,6 +167,8 @@ ${rawText}`;
     )
 
   } catch (error) {
+    console.error('💥 [DEBUG] Exception caught:', error.message)
+    console.error('💥 [DEBUG] Stack trace:', error.stack)
     return new Response(
       JSON.stringify({
         error: 'Failed to clean medical text with Gemini API',

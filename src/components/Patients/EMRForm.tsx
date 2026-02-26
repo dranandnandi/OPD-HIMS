@@ -711,6 +711,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         visitId={existingVisit?.id}
         chiefComplaint={formData.chiefComplaint}
         currentSymptoms={formData.symptoms.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)}
+        examinationTemplate={physicalExamination}
         onApplyToForm={(data: VoiceTranscript['extractedData']) => {
           if (!data) return;
 
@@ -799,6 +800,44 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
               ...prev,
               advice: [...prev.advice, ...data.advice!]
             }));
+          }
+
+          // Apply examination findings to loaded template fields
+          if (data.examination && physicalExamination?.sections?.length) {
+            const examData = data.examination as Record<string, any>;
+            setPhysicalExamination(prev => {
+              if (!prev?.sections) return prev;
+              return {
+                ...prev,
+                sections: prev.sections.map(section => {
+                  // Check if AI returned data for this section (by section id or title match)
+                  const sectionData = examData[section.id] || examData[section.title?.toLowerCase()?.replace(/\s+/g, '')] || null;
+                  if (!sectionData || typeof sectionData !== 'object') {
+                    // Also check if fields are at root level (flat structure from AI)
+                    return {
+                      ...section,
+                      fields: section.fields.map(field => {
+                        const val = examData[field.key];
+                        if (val !== undefined && val !== null) {
+                          return { ...field, value: typeof val === 'boolean' ? val : String(val) };
+                        }
+                        return field;
+                      })
+                    };
+                  }
+                  return {
+                    ...section,
+                    fields: section.fields.map(field => {
+                      const val = sectionData[field.key];
+                      if (val !== undefined && val !== null) {
+                        return { ...field, value: typeof val === 'boolean' ? val : String(val) };
+                      }
+                      return field;
+                    })
+                  };
+                })
+              };
+            });
           }
 
           // Apply follow-up if mentioned

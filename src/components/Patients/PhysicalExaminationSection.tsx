@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Sparkles, Plus, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { PhysicalExamination, ExaminationSection, ExaminationField } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Sparkles, Plus, Trash2, ChevronDown, ChevronUp, Loader2, FileText } from 'lucide-react';
+import { PhysicalExamination, ExaminationSection, ExaminationField, ExaminationTemplate } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { examinationTemplateService } from '../../services/examinationTemplateService';
 
 interface PhysicalExaminationSectionProps {
     examination: PhysicalExamination | undefined;
@@ -25,6 +26,66 @@ const PhysicalExaminationSection: React.FC<PhysicalExaminationSectionProps> = ({
     const [loading, setLoading] = useState(false);
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['general']));
     const [error, setError] = useState<string | null>(null);
+
+    // Saved templates
+    const [templates, setTemplates] = useState<ExaminationTemplate[]>([]);
+    const [loadingTemplates, setLoadingTemplates] = useState(false);
+    const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Load saved templates on mount
+    useEffect(() => {
+        const loadTemplates = async () => {
+            try {
+                setLoadingTemplates(true);
+                const data = await examinationTemplateService.getTemplates();
+                setTemplates(data);
+            } catch {
+                // silently fail - templates are optional
+            } finally {
+                setLoadingTemplates(false);
+            }
+        };
+        loadTemplates();
+    }, []);
+
+    // Close dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setShowTemplateDropdown(false);
+            }
+        };
+        if (showTemplateDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showTemplateDropdown]);
+
+    const handleLoadTemplate = (template: ExaminationTemplate) => {
+        // Strip values from template fields (template stores structure, not patient data)
+        const cleanedSections = template.templateData.sections.map(section => ({
+            ...section,
+            fields: section.fields.map(field => ({
+                ...field,
+                value: field.type === 'toggle' ? false : ''
+            }))
+        }));
+
+        onChange({
+            sections: cleanedSections,
+            aiGenerated: false,
+            specialization: template.specialization || doctorSpecialization,
+        });
+
+        // Expand all sections
+        const allSectionIds = new Set<string>(cleanedSections.map(s => s.id));
+        setExpandedSections(allSectionIds);
+
+        // Track usage
+        examinationTemplateService.incrementUsage(template.id).catch(() => {});
+        setShowTemplateDropdown(false);
+    };
 
     const generateTemplate = async () => {
         if (!supabase) {
@@ -257,23 +318,64 @@ const PhysicalExaminationSection: React.FC<PhysicalExaminationSectionProps> = ({
                         <h3 className="font-semibold text-gray-800">Physical Examination</h3>
                     </div>
 
-                    <button
-                        onClick={generateTemplate}
-                        disabled={loading}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Generating...
-                            </>
-                        ) : (
-                            <>
-                                <Sparkles className="w-4 h-4" />
-                                {examination?.sections?.length ? 'Regenerate' : 'Generate Template'}
-                            </>
-                        )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* Load Saved Template Dropdown */}
+                        <div className="relative" ref={dropdownRef}>
+                            <button
+                                onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+                                disabled={loadingTemplates}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-all"
+                            >
+                                <FileText className="w-4 h-4" />
+                                Load Template
+                                <ChevronDown className="w-3 h-3" />
+                            </button>
+
+                            {showTemplateDropdown && (
+                                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto">
+                                    {templates.length > 0 ? (
+                                        templates.map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => handleLoadTemplate(t)}
+                                                className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm border-b border-gray-100 last:border-b-0"
+                                            >
+                                                <div className="font-medium text-gray-800">{t.name}</div>
+                                                {t.specialization && (
+                                                    <div className="text-xs text-gray-500">
+                                                        {t.specialization} - {t.templateData.sections.length} sections
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))
+                                    ) : (
+                                        <div className="p-4 text-center text-sm text-gray-500">
+                                            No templates saved yet. Create templates in Settings.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Generate Button */}
+                        <button
+                            onClick={generateTemplate}
+                            disabled={loading}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all"
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Generating...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="w-4 h-4" />
+                                    {examination?.sections?.length ? 'Regenerate' : 'Generate Template'}
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
 
                 {error && (

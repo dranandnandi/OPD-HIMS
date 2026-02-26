@@ -6,6 +6,8 @@ import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { format } from 'date-fns';
 import { toTitleCase } from '../../utils/stringUtils';
 import { useAuth } from '../Auth/useAuth';
+import { whatsappApi } from '../../services/whatsappApi';
+import { formatPhoneForWhatsApp } from '../../utils/phoneUtils';
 
 interface SendMessageModalProps {
   review: Review;
@@ -43,12 +45,18 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
   const [sendingManually, setSendingManually] = useState<string | null>(null);
   const [sendingDirectly, setSendingDirectly] = useState(false);
   const [sendingDirectlySingle, setSendingDirectlySingle] = useState<string | null>(null);
+  const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    checkWhatsAppConnection();
+  }, [user?.id, user?.clinicId]);
 
   // Auto-select message types based on messageType prop
   useEffect(() => {
@@ -90,6 +98,29 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
       console.error('Error loading clinic settings:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkWhatsAppConnection = async () => {
+    if (!user?.id || !user?.clinicId) {
+      setWhatsappConnected(false);
+      setCheckingConnection(false);
+      return;
+    }
+
+    try {
+      const status = await whatsappApi.getStatus({}, {
+        userId: user.id,
+        clinicId: user.clinicId
+      });
+      setWhatsappConnected(Boolean(status.connected));
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error('Error checking WhatsApp connection:', err);
+      }
+      setWhatsappConnected(false);
+    } finally {
+      setCheckingConnection(false);
     }
   };
 
@@ -238,17 +269,27 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
   };
 
   const handleSendDirectlySingle = async (messageType: string) => {
-    if (!clinicSettings || !messageContents[messageType] || !review.contactNumber) return;
+    if (!messageContents[messageType] || !review.contactNumber || !user?.id || !user?.clinicId) return;
 
     try {
       setSendingDirectlySingle(messageType);
       setError(null);
 
-      // Send the message directly via Blueticks
-      await reviewService.sendDirectly(
-        review.contactNumber,
-        messageContents[messageType],
-        clinicSettings.id
+      await whatsappApi.sendMessage(
+        {
+          phone: formatPhoneForWhatsApp(review.contactNumber),
+          message: messageContents[messageType],
+          metadata: {
+            visitId: review.visitId,
+            patientId: review.patientId,
+            type: messageType,
+            source: 'follow_up_modal'
+          }
+        },
+        {
+          userId: user.id,
+          clinicId: user.clinicId
+        }
       );
       
       // Log successful send
@@ -258,7 +299,7 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
         messageType: messageType,
         messageContent: messageContents[messageType],
         status: 'sent',
-        deliveryMethod: 'blueticks_api',
+        deliveryMethod: 'whatsapp_api',
         sentBy: user?.id
       });
 
@@ -276,7 +317,7 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
           messageType: messageType,
           messageContent: messageContents[messageType],
           status: 'failed',
-          deliveryMethod: 'blueticks_api',
+          deliveryMethod: 'whatsapp_api',
           errorDetails: err instanceof Error ? err.message : 'Unknown error',
           sentBy: user?.id
         });
@@ -292,7 +333,7 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
   };
 
   const handleSendDirectly = async () => {
-    if (!clinicSettings || selectedMessageTypes.length === 0) return;
+    if (selectedMessageTypes.length === 0 || !user?.id || !user?.clinicId || !review.contactNumber) return;
 
     try {
       setSendingDirectly(true);
@@ -309,10 +350,21 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
       for (const messageType of selectedMessageTypes) {
         if (messageContents[messageType]) {
           try {
-            await reviewService.sendDirectly(
-              review.contactNumber,
-              messageContents[messageType],
-              clinicSettings.id
+            await whatsappApi.sendMessage(
+              {
+                phone: formatPhoneForWhatsApp(review.contactNumber),
+                message: messageContents[messageType],
+                metadata: {
+                  visitId: review.visitId,
+                  patientId: review.patientId,
+                  type: messageType,
+                  source: 'follow_up_modal'
+                }
+              },
+              {
+                userId: user.id,
+                clinicId: user.clinicId
+              }
             );
             
             // Log successful send
@@ -322,7 +374,7 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
               messageType: messageType,
               messageContent: messageContents[messageType],
               status: 'sent',
-              deliveryMethod: 'blueticks_api',
+              deliveryMethod: 'whatsapp_api',
               sentBy: user?.id
             });
           } catch (sendError) {
@@ -333,7 +385,7 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
               messageType: messageType,
               messageContent: messageContents[messageType],
               status: 'failed',
-              deliveryMethod: 'blueticks_api',
+              deliveryMethod: 'whatsapp_api',
               errorDetails: sendError instanceof Error ? sendError.message : 'Unknown error',
               sentBy: user?.id
             });
@@ -358,7 +410,6 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
   };
 
   const messageOptions = getMessageOptions();
-  const isBlueticksConfigured = clinicSettings?.enableBlueticksApiSend;
   const isManualEnabled = clinicSettings?.enableManualWhatsappSend;
 
   if (loading) {
@@ -529,21 +580,25 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
                         
                         {messageContents[option.id] && (
                           <>
-                            {/* Direct Send Button (if Blueticks configured) */}
-                            {isBlueticksConfigured && (
-                              <button
-                                onClick={() => handleSendDirectlySingle(option.id)}
-                                disabled={sendingDirectlySingle === option.id}
-                                className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
-                              >
-                                {sendingDirectlySingle === option.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Zap className="w-3 h-3" />
-                                )}
-                                Send Direct
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleSendDirectlySingle(option.id)}
+                              disabled={
+                                sendingDirectlySingle === option.id ||
+                                checkingConnection ||
+                                !whatsappConnected ||
+                                !user?.id ||
+                                !user?.clinicId
+                              }
+                              className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={!whatsappConnected ? 'WhatsApp not connected. Please connect WhatsApp in Settings.' : ''}
+                            >
+                              {sendingDirectlySingle === option.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3" />
+                              )}
+                              Send Direct
+                            </button>
                             
                             {/* Manual Send Button */}
                             {isManualEnabled && (
@@ -589,26 +644,47 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({
               Cancel
             </button>
 
-            {isBlueticksConfigured && (
-              <button
-                onClick={handleSendDirectly}
-                disabled={sendingDirectly || selectedMessageTypes.length === 0}
-                className={`btn-figma-primary flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed ${messageType === 'follow_up' ? 'btn-figma-success' : 'btn-figma-purple'}`}
-              >
-                {sendingDirectly ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Zap className="w-4 h-4" />
-                )}
-                {sendingDirectly 
-                  ? 'Sending...' 
-                  : messageType === 'follow_up' 
-                    ? 'Send Follow-Up' 
-                    : 'Send Thank You'
-                }
-              </button>
-            )}
+            <button
+              onClick={handleSendDirectly}
+              disabled={
+                sendingDirectly ||
+                selectedMessageTypes.length === 0 ||
+                checkingConnection ||
+                !whatsappConnected ||
+                !user?.id ||
+                !user?.clinicId ||
+                !review.contactNumber
+              }
+              className={`btn-figma-primary flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed ${messageType === 'follow_up' ? 'btn-figma-success' : 'btn-figma-purple'}`}
+              title={!whatsappConnected ? 'WhatsApp not connected. Please connect WhatsApp in Settings.' : ''}
+            >
+              {sendingDirectly ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Zap className="w-4 h-4" />
+              )}
+              {sendingDirectly 
+                ? 'Sending...' 
+                : messageType === 'follow_up' 
+                  ? 'Send Follow-Up' 
+                  : 'Send Thank You'
+              }
+            </button>
           </div>
+
+          {!checkingConnection && !whatsappConnected && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div>
+                  <p className="text-yellow-800 font-medium">WhatsApp Not Connected</p>
+                  <p className="text-yellow-700 text-sm mt-1">
+                    Direct send is disabled. You can still use Send Manual, or connect WhatsApp in Settings.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Configuration Notice */}
           {messageOptions.length === 0 && (

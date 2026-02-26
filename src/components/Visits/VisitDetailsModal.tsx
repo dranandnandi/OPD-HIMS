@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle } from 'lucide-react';
+import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle, RefreshCw } from 'lucide-react';
 import { Visit, Bill } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
 import { visitService } from '../../services/visitService';
@@ -32,8 +32,10 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   const [dispensedItemsForBilling, setDispensedItemsForBilling] = useState<any[]>([]);
   const [exportingPDF, setExportingPDF] = useState(false);
   const [generatingPrintPdf, setGeneratingPrintPdf] = useState(false);
+  const [generatingCompactPdf, setGeneratingCompactPdf] = useState(false);
   const [sendingWhatsAppPrescription, setSendingWhatsAppPrescription] = useState(false);
   const [sendingWhatsAppInvoice, setSendingWhatsAppInvoice] = useState<string | null>(null); // Track which bill is being sent
+  const [regeneratingBillPdfId, setRegeneratingBillPdfId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && visitId) {
@@ -110,6 +112,30 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     // Remove leading zeros (e.g., 08780465286 -> 8780465286)
     normalized = normalized.replace(/^0+/, '');
     return normalized;
+  };
+
+  const resolveBillDoctor = async (bill: Bill) => {
+    const visitDoctorId = bill.visit?.doctorId || visit?.doctorId;
+    let resolvedDoctor = doctors.find(d => d.id === visitDoctorId) || visit?.doctor;
+
+    if (!resolvedDoctor && visitDoctorId) {
+      const allDoctors = await authService.getAllDoctors();
+      resolvedDoctor = allDoctors.find(d => d.id === visitDoctorId);
+    }
+
+    if (!resolvedDoctor) {
+      const consultationItem = bill.billItems?.find(
+        item => item.itemType === 'consultation' && typeof item.itemName === 'string'
+      );
+      if (consultationItem?.itemName?.includes(' - ')) {
+        const extractedName = consultationItem.itemName.split(' - ').slice(1).join(' - ').trim();
+        if (extractedName) {
+          resolvedDoctor = { name: extractedName };
+        }
+      }
+    }
+
+    return resolvedDoctor;
   };
 
   const handleDispenseSaved = (dispensedItems?: any[]) => {
@@ -374,9 +400,9 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
         'Dear {{patientName}},\n\n💊 Your prescription from {{clinicName}} is ready!\n\nThe prescription has been attached to this message for your reference.\n\n📋 Please follow the prescribed medication as discussed during your consultation.\n\nFeel better soon! 🌟\n\n- {{clinicName}}';
 
       const message = template
-        .replace('{{patientName}}', currentVisit.patient?.name || '')
-        .replace('{{pdfUrl}}', pdfUrl)
-        .replace('{{clinicName}}', user.clinic.clinicName);
+        .replace(/{{patientName}}/g, currentVisit.patient?.name || '')
+        .replace(/{{pdfUrl}}/g, pdfUrl)
+        .replace(/{{clinicName}}/g, user.clinic.clinicName);
 
       const response = await fetch('/.netlify/functions/whatsapp-send-bill', {
         method: 'POST',
@@ -388,6 +414,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
           fileUrl: pdfUrl,
           caption: message,
           userId: user.id,
+          clinicId: user.clinic.id,
           fileName: `Prescription_${currentVisit.patient?.name.replace(/\s+/g, '_')}_${format(currentVisit.date, 'dd-MM-yyyy')}.pdf`,
           patientName: currentVisit.patient?.name,
         }),
@@ -427,9 +454,11 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
 
       // If no cached PDF, generate one
       if (!pdfUrl) {
+        const doctor = await resolveBillDoctor(bill);
         pdfUrl = await pdfService.generatePdfFromData('bill', {
           bill: bill,
           patient: visit.patient,
+          doctor: doctor as any,
           clinicSettings: user.clinic
         });
 
@@ -456,11 +485,11 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
         'Dear {{patientName}},\n\n🧾 **INVOICE DETAILS**\n\nBill Number: #{{billNumber}}\n💰 Total Amount: ₹{{totalAmount}}\n\nYour invoice has been attached to this message.\n\nThank you for visiting {{clinicName}}! 🙏\n\nFor any queries, feel free to contact us.\n\n- {{clinicName}}';
 
       const message = template
-        .replace('{{patientName}}', visit.patient.name)
-        .replace('{{billNumber}}', bill.billNumber)
-        .replace('{{totalAmount}}', bill.totalAmount.toString())
-        .replace('{{pdfUrl}}', pdfUrl)
-        .replace('{{clinicName}}', user.clinic.clinicName);
+        .replace(/{{patientName}}/g, visit.patient.name)
+        .replace(/{{billNumber}}/g, bill.billNumber)
+        .replace(/{{totalAmount}}/g, bill.totalAmount.toString())
+        .replace(/{{pdfUrl}}/g, pdfUrl)
+        .replace(/{{clinicName}}/g, user.clinic.clinicName);
 
       const response = await fetch('/.netlify/functions/whatsapp-send-bill', {
         method: 'POST',
@@ -472,6 +501,8 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
           fileUrl: pdfUrl,
           caption: message,
           userId: user.id,
+          email: user.email,
+          clinicId: user.clinic.id,
           fileName: `Invoice_${bill.billNumber}_${visit.patient.name.replace(/\s+/g, '_')}.pdf`,
           billNumber: bill.billNumber,
           patientName: visit.patient.name,
@@ -502,6 +533,57 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     loadVisitData(); // Reload visit data to show changes
   };
 
+  // Handle generating compact 1-page prescription
+  const handleGenerateCompactPrintPdf = async () => {
+    if (!visit) return;
+
+    try {
+      setGeneratingCompactPdf(true);
+
+      const latestVisit = await visitService.getVisit(visitId);
+      if (latestVisit) setVisit(latestVisit);
+      const currentVisit = latestVisit || visit;
+
+      // Use cached compact PDF if available
+      if (currentVisit.compact_print_pdf_url) {
+        console.log('Using cached compact PDF:', currentVisit.compact_print_pdf_url);
+        window.open(currentVisit.compact_print_pdf_url, '_blank');
+        return;
+      }
+
+      let doctor = doctors.find(d => d.id === currentVisit.doctorId) || currentVisit.doctor;
+      if (!doctor && currentVisit.doctorId) {
+        const { authService } = await import('../../services/authService');
+        const allDoctors = await authService.getAllDoctors();
+        doctor = allDoctors.find(d => d.id === currentVisit.doctorId);
+      }
+
+      if (!currentVisit.patient) throw new Error('Patient data not found');
+      if (!user?.clinic) throw new Error('Clinic settings not found');
+
+      const compactPdfUrl = await pdfService.generateCompactPrintPdf('visit', {
+        visit: currentVisit,
+        patient: currentVisit.patient,
+        doctor,
+        clinicSettings: user.clinic
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      if (currentVisit.id) {
+        await pdfService.saveCompactPrintPdfUrl(currentVisit.id, compactPdfUrl);
+        setVisit(prev => prev ? { ...prev, compact_print_pdf_url: compactPdfUrl } : null);
+      }
+
+      window.open(compactPdfUrl, '_blank');
+    } catch (error) {
+      console.error('Error generating compact PDF:', error);
+      alert('Failed to generate compact PDF. Please try again.');
+    } finally {
+      setGeneratingCompactPdf(false);
+    }
+  };
+
   // Handle viewing bill PDF - opens in new tab (uses cached PDF if available)
   const handleViewBillPdf = async (bill: Bill) => {
     // If PDF already exists, use it directly
@@ -517,9 +599,11 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     }
 
     try {
+      const doctor = await resolveBillDoctor(bill);
       const pdfUrl = await pdfService.generatePdfFromData('bill', {
         bill: bill,
         patient: visit.patient,
+        doctor: doctor as any,
         clinicSettings: user.clinic
       });
 
@@ -528,6 +612,38 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     } catch (error) {
       console.error('Error viewing bill PDF:', error);
       alert('Failed to load bill PDF. Please try again.');
+    }
+  };
+
+  const handleRegenerateBillPdf = async (bill: Bill) => {
+    if (!visit?.patient || !user?.clinic) {
+      alert('Missing required data for PDF regeneration');
+      return;
+    }
+
+    try {
+      setRegeneratingBillPdfId(bill.id);
+      const doctor = await resolveBillDoctor(bill);
+      const pdfUrl = await pdfService.generatePdfFromData('bill', {
+        bill,
+        patient: visit.patient,
+        doctor: doctor as any,
+        clinicSettings: user.clinic
+      }, {
+        forceRegenerate: true
+      });
+
+      if (bill.id) {
+        await pdfService.savePdfUrlToDatabase('bill', bill.id, pdfUrl);
+        await loadVisitData();
+      }
+
+      window.open(pdfUrl, '_blank');
+    } catch (error) {
+      console.error('Error regenerating bill PDF:', error);
+      alert('Failed to regenerate bill PDF. Please try again.');
+    } finally {
+      setRegeneratingBillPdfId(null);
     }
   };
 
@@ -543,9 +659,11 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       }
 
       try {
+        const doctor = await resolveBillDoctor(bill);
         pdfUrl = await pdfService.generatePdfFromData('bill', {
           bill: bill,
           patient: visit.patient,
+          doctor: doctor as any,
           clinicSettings: user.clinic
         });
       } catch (error) {
@@ -727,6 +845,15 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                 >
                   <Printer className="w-4 h-4" />
                   {generatingPrintPdf ? 'Generating...' : 'Print Version'}
+                </button>
+                <button
+                  onClick={handleGenerateCompactPrintPdf}
+                  disabled={generatingCompactPdf}
+                  className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  title="Generate compact 1-page prescription for quick printing"
+                >
+                  <Printer className="w-4 h-4" />
+                  {generatingCompactPdf ? 'Generating...' : 'Compact Print'}
                 </button>
                 <button
                   onClick={handleSendWhatsAppPrescription}
@@ -1066,6 +1193,15 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                               Balance: ₹{bill.balanceAmount.toLocaleString()}
                             </span>
                           )}
+                          {/* Regenerate PDF Button */}
+                          <button
+                            onClick={() => handleRegenerateBillPdf(bill)}
+                            disabled={regeneratingBillPdfId === bill.id}
+                            className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Regenerate Bill PDF"
+                          >
+                            <RefreshCw className={`w-4 h-4 ${regeneratingBillPdfId === bill.id ? 'animate-spin' : ''}`} />
+                          </button>
                           {/* View PDF Button */}
                           <button
                             onClick={() => handleViewBillPdf(bill)}

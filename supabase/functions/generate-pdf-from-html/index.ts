@@ -8,15 +8,48 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+const escapeHtml = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+// Normalizes doctor name: strips any existing Dr./dr. prefix (with or without space)
+// then re-adds a clean "Dr. " — handles "Dr.pranav", "Dr. Pranav", "dr. pranav" etc.
+const formatDoctorName = (name: string | null | undefined): string => {
+  if (!name) return '';
+  const cleaned = name.trim().replace(/^dr\.?\s*/i, '').trim();
+  return cleaned ? `Dr. ${cleaned}` : '';
+}
+
+// Builds a QR code img tag pointing to the prescription verify page
+const buildQrHtml = (visitId: string, sizePx = 70): string => {
+  const verifyUrl = `https://docpreneur.academy/verify?id=${encodeURIComponent(visitId)}`;
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verifyUrl)}`;
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <img src="${qrSrc}" style="width:${sizePx}px;height:${sizePx}px;display:block;" alt="Scan to verify" />
+      <span style="font-size:8px;color:#666;text-align:center;line-height:1.2;">Scan to<br>verify</span>
+    </div>
+  `;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { type, data, printVersion } = await req.json()
+    const { type, data, printVersion, compactVersion, forceRegenerate } = await req.json()
 
-    console.log('[PDF GEN] Request received:', { type, printVersion: printVersion || false })
+    console.log('[PDF GEN] Request received:', {
+      type,
+      printVersion: printVersion || false,
+      compactVersion: compactVersion || false,
+      forceRegenerate: forceRegenerate || false
+    })
 
     if (!type || !data) {
       return new Response(
@@ -34,46 +67,52 @@ serve(async (req) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey)
 
     // === PDF EXISTENCE CHECK - Return cached PDF if available ===
-    if (type === 'visit' && data.visit?.id) {
-      const column = printVersion ? 'print_pdf_url' : 'pdf_url'
-      const { data: existingVisit, error } = await supabaseAdmin
-        .from('visits')
-        .select(column)
-        .eq('id', data.visit.id)
-        .single()
+    if (!forceRegenerate) {
+      if (type === 'visit' && data.visit?.id) {
+        const column = compactVersion ? 'compact_print_pdf_url' : printVersion ? 'print_pdf_url' : 'pdf_url'
+        const { data: existingVisit, error } = await supabaseAdmin
+          .from('visits')
+          .select(column)
+          .eq('id', data.visit.id)
+          .single()
 
-      if (!error && existingVisit) {
-        const existingPdfUrl = existingVisit[column]
+        if (!error && existingVisit) {
+          const existingPdfUrl = existingVisit[column]
 
-        if (existingPdfUrl) {
-          console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
-          return new Response(
-            JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
+          if (existingPdfUrl) {
+            const label = compactVersion ? 'Compact print' : printVersion ? 'Print' : 'Display'
+            console.log(`[PDF GEN] ✅ ${label} PDF already exists, returning cached URL:`, existingPdfUrl)
+            return new Response(
+              JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
         }
-      }
-      console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
-    } else if (type === 'bill' && data.bill?.id) {
-      const column = printVersion ? 'printPdfUrl' : 'pdfUrl'
-      const { data: existingBill, error } = await supabaseAdmin
-        .from('bills')
-        .select(column)
-        .eq('id', data.bill.id)
-        .single()
+        const label = compactVersion ? 'compact print' : printVersion ? 'print' : 'display'
+        console.log(`[PDF GEN] No cached ${label} PDF found, generating new one...`)
+      } else if (type === 'bill' && data.bill?.id) {
+        const column = printVersion ? 'printPdfUrl' : 'pdfUrl'
+        const { data: existingBill, error } = await supabaseAdmin
+          .from('bills')
+          .select(column)
+          .eq('id', data.bill.id)
+          .single()
 
-      if (!error && existingBill) {
-        const existingPdfUrl = existingBill[column]
+        if (!error && existingBill) {
+          const existingPdfUrl = existingBill[column]
 
-        if (existingPdfUrl) {
-          console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
-          return new Response(
-            JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
+          if (existingPdfUrl) {
+            console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
+            return new Response(
+              JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
         }
+        console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
       }
-      console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
+    } else {
+      console.log('[PDF GEN] Force regenerate enabled: bypassing cache check.')
     }
     // === END PDF EXISTENCE CHECK ===
 
@@ -152,6 +191,17 @@ serve(async (req) => {
     // Dynamic HTML Generation based on type
     if (type === 'bill') {
       const { bill, patient, doctor, clinicSettings } = data;
+      const consultationItem = bill?.billItems?.find((item: any) =>
+        String(item?.itemType || '').toLowerCase() === 'consultation' &&
+        typeof item?.itemName === 'string'
+      );
+      const extractedDoctorName = consultationItem?.itemName?.includes(' - ')
+        ? consultationItem.itemName.split(' - ').slice(1).join(' - ').trim()
+        : '';
+      const resolvedDoctorName = (doctor?.name || bill?.visit?.doctor?.name || extractedDoctorName || '').trim();
+      const doctorDisplayName = resolvedDoctorName
+        ? (/^dr\.?\s+/i.test(resolvedDoctorName) ? resolvedDoctorName : `Dr. ${resolvedDoctorName}`)
+        : '';
       filename = printVersion
         ? `Print_Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
         : `Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
@@ -238,7 +288,7 @@ serve(async (req) => {
             </div>
             <div>
               <h3>DOCTOR DETAILS</h3>
-              <p><strong>Name:</strong> Dr. ${doctor?.name || 'Not specified'}</p>
+              ${doctorDisplayName ? `<p><strong>Name:</strong> ${doctorDisplayName}</p>` : ''}
               ${doctor?.specialization ? `<p><strong>Specialization:</strong> ${doctor.specialization}</p>` : ''}
               ${doctor?.qualification ? `<p><strong>Qualification:</strong> ${doctor.qualification}</p>` : ''}
               ${doctor?.registrationNo ? `<p><strong>Registration No:</strong> ${doctor.registrationNo}</p>` : ''}
@@ -289,6 +339,223 @@ serve(async (req) => {
             <p style="border: 1px solid #eee; padding: 10px; border-radius: 5px;">${bill.notes}</p>
           </div>
           ` : ''}
+
+        </body>
+        </html>
+      `;
+    } else if (type === 'visit' && compactVersion) {
+      // =====================================================
+      // COMPACT PRINT VERSION - 1 page, tight layout
+      // =====================================================
+      const { visit, patient, doctor } = data;
+      filename = `CompactRx_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(visit.date).toLocaleDateString('en-IN').replace(/\//g, '-')}.pdf`;
+
+      htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Prescription - ${patient.name}</title>
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              color: #000;
+              line-height: 1.35;
+              padding: 12px 16px;
+            }
+            .top-bar {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #000;
+              padding-bottom: 6px;
+              margin-bottom: 8px;
+            }
+            .top-bar .rx { font-size: 20px; font-weight: bold; }
+            .top-bar .date { font-size: 10px; text-align: right; }
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 6px;
+              margin-bottom: 8px;
+              border: 1px solid #888;
+              border-radius: 3px;
+              padding: 6px;
+            }
+            .info-col p { margin-bottom: 2px; }
+            .info-col strong { font-size: 10px; text-transform: uppercase; color: #444; }
+            .section-title {
+              font-size: 10px;
+              font-weight: bold;
+              text-transform: uppercase;
+              background: #e8e8e8;
+              padding: 2px 6px;
+              margin: 6px 0 4px;
+              border-left: 3px solid #000;
+            }
+            .compact-line {
+              margin-bottom: 3px;
+              padding-left: 4px;
+            }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+            th {
+              background: #333;
+              color: #fff;
+              font-size: 10px;
+              padding: 3px 5px;
+              text-align: left;
+              font-weight: bold;
+            }
+            td { font-size: 10px; padding: 3px 5px; border-bottom: 1px solid #ddd; vertical-align: top; }
+            tr:nth-child(even) td { background: #f5f5f5; }
+            .followup {
+              border: 1px dashed #000;
+              padding: 4px 8px;
+              margin: 6px 0;
+              font-size: 11px;
+            }
+            .advice-list { padding-left: 12px; }
+            .advice-list li { margin-bottom: 2px; }
+            .sig-row {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 10px;
+              border-top: 1px solid #000;
+              padding-top: 6px;
+            }
+            .sig-box { text-align: center; width: 45%; }
+            .sig-line { border-bottom: 1px solid #000; margin-bottom: 3px; height: 20px; }
+            .allergy-warn {
+              background: #ffeeee;
+              border: 1px solid #cc0000;
+              padding: 3px 6px;
+              margin-bottom: 6px;
+              font-size: 10px;
+              font-weight: bold;
+              color: #cc0000;
+            }
+          </style>
+        </head>
+        <body>
+
+          <!-- TOP BAR -->
+          <div class="top-bar">
+            <div>
+              <div class="rx">&#8478; PRESCRIPTION</div>
+              <div style="font-size:10px;">${data.clinicSettings?.clinicName || 'Clinic'}</div>
+            </div>
+            <div class="date">
+              Date: <strong>${new Date(visit.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong><br>
+              ${visit.date ? 'Time: ' + new Date(visit.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+            </div>
+          </div>
+
+          <!-- PATIENT / DOCTOR INFO -->
+          <div class="info-grid">
+            <div class="info-col">
+              <p><strong>Patient</strong></p>
+              <p><b>${patient.name}</b></p>
+              <p>${patient.age ? patient.age + ' yrs' : ''} ${patient.gender ? '| ' + patient.gender : ''} ${patient.bloodGroup ? '| ' + patient.bloodGroup : ''}</p>
+              <p>Ph: ${patient.phone || 'N/A'}</p>
+              ${patient.address ? `<p>${patient.address}</p>` : ''}
+            </div>
+            <div class="info-col">
+              <p><strong>Doctor</strong></p>
+              <p><b>${formatDoctorName(doctor?.name || 'N/A')}</b></p>
+              ${doctor?.specialization ? `<p>${doctor.specialization}</p>` : ''}
+              ${doctor?.qualification ? `<p>${doctor.qualification}</p>` : ''}
+              ${doctor?.registrationNo ? `<p>Reg: ${doctor.registrationNo}</p>` : ''}
+            </div>
+          </div>
+
+          ${patient.allergies && patient.allergies.length > 0 ? `
+          <div class="allergy-warn">&#9888; ALLERGIES: ${patient.allergies.join(', ')}</div>
+          ` : ''}
+
+          ${visit.chiefComplaint ? `
+          <div class="section-title">Chief Complaint</div>
+          <div class="compact-line">${visit.chiefComplaint}</div>
+          ` : ''}
+
+          ${visit.symptoms && visit.symptoms.length > 0 ? `
+          <div class="section-title">Symptoms</div>
+          <div class="compact-line">
+            ${visit.symptoms.map(s => s.name + (s.severity ? ' (' + s.severity + ')' : '') + (s.duration ? ' - ' + s.duration : '')).join(' &nbsp;|&nbsp; ')}
+          </div>
+          ` : ''}
+
+          ${visit.diagnoses && visit.diagnoses.length > 0 ? `
+          <div class="section-title">Diagnosis</div>
+          <div class="compact-line">
+            ${visit.diagnoses.map((d, i) => (i + 1) + '. ' + d.name + (d.isPrimary ? ' (Primary)' : '')).join(' &nbsp;&nbsp; ')}
+          </div>
+          ` : ''}
+
+          ${visit.prescriptions && visit.prescriptions.length > 0 ? `
+          <div class="section-title">Medications</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:22px;">#</th>
+                <th>Medicine</th>
+                <th style="width:60px;">Dosage</th>
+                <th style="width:80px;">Frequency</th>
+                <th style="width:55px;">Duration</th>
+                <th>Instructions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${visit.prescriptions.map((p, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td><b>${p.medicine}</b></td>
+                <td>${p.dosage || '-'}</td>
+                <td>${p.frequency || '-'}</td>
+                <td>${p.duration || '-'}</td>
+                <td>${p.instructions || '-'}</td>
+              </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="font-size:9px; color:#555; margin-bottom:4px;">* Take medications as prescribed. Contact doctor if side effects occur.</div>
+          ` : ''}
+
+          ${visit.testsOrdered && visit.testsOrdered.length > 0 ? `
+          <div class="section-title">Tests Ordered</div>
+          <div class="compact-line">
+            ${visit.testsOrdered.map((t, i) => (i + 1) + '. ' + t.testName + (t.urgency === 'urgent' ? ' [URGENT]' : '')).join(' &nbsp;&nbsp; ')}
+          </div>
+          ` : ''}
+
+          ${visit.advice && visit.advice.length > 0 ? `
+          <div class="section-title">Advice</div>
+          <ul class="advice-list">
+            ${visit.advice.map(a => `<li>${a}</li>`).join('')}
+          </ul>
+          ` : ''}
+
+          ${visit.followUpDate ? `
+          <div class="followup">
+            <b>Follow-up:</b> ${new Date(visit.followUpDate).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+          </div>
+          ` : ''}
+
+          <!-- SIGNATURES -->
+          <div class="sig-row">
+            ${visit.id ? buildQrHtml(visit.id, 60) : ''}
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div>${patient.name}</div>
+              <div style="font-size:9px;">Patient Signature</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div>${formatDoctorName(doctor?.name || '')}</div>
+              <div style="font-size:9px;">Dr. Signature ${doctor?.registrationNo ? '| Reg: ' + doctor.registrationNo : ''}</div>
+            </div>
+          </div>
 
         </body>
         </html>
@@ -718,7 +985,7 @@ Translate now:`;
             </div>
             <div>
               <h3>👨‍⚕️ ATTENDING DOCTOR</h3>
-              <p><strong>Name:</strong> Dr. ${doctor?.name || 'Not specified'}</p>
+              <p><strong>Name:</strong> ${formatDoctorName(doctor?.name || 'Not specified')}</p>
               ${doctor?.specialization ? `<p><strong>Specialization:</strong> ${doctor.specialization}</p>` : ''}
               ${doctor?.qualification ? `<p><strong>Qualification:</strong> ${doctor.qualification}</p>` : ''}
               ${doctor?.registrationNo ? `<p><strong>Registration No:</strong> ${doctor.registrationNo}</p>` : ''}
@@ -909,15 +1176,18 @@ Translate now:`;
           ` : ''}
 
           <div class="signature-section">
-            <div class="signature-box">
-              <p><strong>Patient Signature</strong></p>
-              <div class="signature-line"></div>
-              <p style="font-size: 10px; color: #666;">${patient.name}</p>
+            <div style="display:flex;align-items:flex-end;gap:16px;">
+              ${visit.id ? buildQrHtml(visit.id, 65) : ''}
+              <div class="signature-box">
+                <p><strong>Patient Signature</strong></p>
+                <div class="signature-line"></div>
+                <p style="font-size: 10px; color: #666;">${patient.name}</p>
+              </div>
             </div>
             <div class="signature-box">
               <p><strong>Doctor's Signature</strong></p>
               <div class="signature-line"></div>
-              <p style="font-size: 10px; color: #666;">Dr. ${doctor?.name || ''}</p>
+              <p style="font-size: 10px; color: #666;">${formatDoctorName(doctor?.name || '')}</p>
               ${doctor?.registrationNo ? `<p style="font-size: 9px; color: #999;">Reg: ${doctor.registrationNo}</p>` : ''}
             </div>
           </div>
@@ -936,27 +1206,61 @@ Translate now:`;
     }
 
     // Get clinic PDF margins (default to letterhead margins for print, regular for display)
-    const clinicMargins = printVersion
-      ? (data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px")
-      : (data.clinicSettings?.pdfMargins || "20px");
+    const hasCustomDisplayMargins = Boolean(data.clinicSettings?.pdfMargins);
 
 
     // Prepare header/footer for PDF.co (only for display version)
     // Convert to Base64 because some URLs might be private
     let pdfHeader = "";
     let pdfFooter = "";
+    let fallbackHeaderFooterUsed = false;
+    const hasHeaderImage = Boolean(data.clinicSettings?.pdfHeaderUrl);
+    const hasFooterImage = Boolean(data.clinicSettings?.pdfFooterUrl);
 
-    if (!printVersion) {
+    if (!printVersion && !compactVersion) {
       if (data.clinicSettings?.pdfHeaderUrl) {
         const headerBase64 = await imageUrlToBase64(data.clinicSettings.pdfHeaderUrl);
         pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${headerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+      } else {
+        fallbackHeaderFooterUsed = true;
+        const clinicName = escapeHtml(data.clinicSettings?.clinicName || 'Clinic');
+        const clinicAddress = escapeHtml(data.clinicSettings?.address || '');
+        const clinicPhone = escapeHtml(data.clinicSettings?.phone || '');
+        const clinicEmail = escapeHtml(data.clinicSettings?.email || '');
+        const regNumber = escapeHtml(data.clinicSettings?.registrationNumber || '');
+        pdfHeader = `
+          <div style="width: 100%; padding: 8px 16px 6px; border-bottom: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #111827;">
+            <div style="font-size: 16px; font-weight: 700; line-height: 1.2;">${clinicName}</div>
+            <div style="font-size: 10px; line-height: 1.35; margin-top: 2px;">
+              ${clinicAddress ? `<div>${clinicAddress}</div>` : ''}
+              ${(clinicPhone || clinicEmail || regNumber) ? `<div>${[clinicPhone ? `Phone: ${clinicPhone}` : '', clinicEmail ? `Email: ${clinicEmail}` : '', regNumber ? `Reg: ${regNumber}` : ''].filter(Boolean).join(' | ')}</div>` : ''}
+            </div>
+          </div>
+        `;
       }
 
       if (data.clinicSettings?.pdfFooterUrl) {
         const footerBase64 = await imageUrlToBase64(data.clinicSettings.pdfFooterUrl);
         pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${footerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+      } else {
+        fallbackHeaderFooterUsed = true;
+        const website = escapeHtml(data.clinicSettings?.website || '');
+        const taxId = escapeHtml(data.clinicSettings?.taxId || '');
+        const clinicName = escapeHtml(data.clinicSettings?.clinicName || 'Clinic');
+        pdfFooter = `
+          <div style="width: 100%; padding: 6px 16px; border-top: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #4b5563; font-size: 10px; line-height: 1.3; text-align: center;">
+            <div>${clinicName}${website ? ` | ${website}` : ''}${taxId ? ` | Tax ID: ${taxId}` : ''}</div>
+            <div style="font-size: 9px; color: #6b7280;">This is a computer-generated medical document.</div>
+          </div>
+        `;
       }
     }
+
+    const clinicMargins = (compactVersion || printVersion)
+      ? (data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px")  // Same letterhead margins for both compact and print
+      : (hasCustomDisplayMargins
+        ? data.clinicSettings?.pdfMargins
+        : (fallbackHeaderFooterUsed ? "70px 20px 55px 20px" : "20px"));
 
     console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
     console.log(`[PDF GEN] Header: ${pdfHeader ? 'Base64 image included' : 'None'}`);
@@ -978,11 +1282,11 @@ Translate now:`;
         async: true,
         margins: clinicMargins,
         papersize: "A4",
-        displayheaderfooter: !printVersion, // Only show header/footer for display version
+        displayheaderfooter: !printVersion && !compactVersion, // No header/footer for print or compact
         header: pdfHeader,
         footer: pdfFooter,
-        headerheight: printVersion ? "0px" : "120px",
-        footerheight: printVersion ? "0px" : "80px",
+        headerheight: (printVersion || compactVersion) ? "0px" : (hasHeaderImage ? "120px" : "58px"),
+        footerheight: (printVersion || compactVersion) ? "0px" : (hasFooterImage ? "80px" : "42px"),
         scale: 1,
         mediatype: "print",
         printbackground: !printVersion, // Colors only for display version
@@ -1133,7 +1437,11 @@ Translate now:`;
         if (type === 'bill' && data.bill?.id) {
           storagePath = `bills/${data.bill.id}/${printVersion ? 'print' : 'display'}/${filename}`;
         } else if (type === 'visit' && data.visit?.id) {
-          storagePath = `visits/${data.visit.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+          if (compactVersion) {
+            storagePath = `visits/${data.visit.id}/compact/${filename}`;
+          } else {
+            storagePath = `visits/${data.visit.id}/${printVersion ? 'print' : 'display'}/${filename}`;
+          }
         } else {
           storagePath = `temp/${crypto.randomUUID()}/${filename}`;
         }
@@ -1153,11 +1461,13 @@ Translate now:`;
         const table = type === 'bill' ? 'bills' : 'visits';
         const recordId = type === 'bill' ? data.bill?.id : data.visit?.id;
         if (recordId) {
-          const column = printVersion
-            ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
-            : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
+          const column = compactVersion
+            ? 'compact_print_pdf_url'
+            : printVersion
+              ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
+              : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
           await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
-          console.log('[PDF GEN] Background: ✅ DB updated');
+          console.log('[PDF GEN] Background: ✅ DB updated with column:', column);
         }
       } catch (err) {
         console.error('[PDF GEN] Background error:', err);

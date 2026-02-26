@@ -161,6 +161,11 @@ export interface Database {
         Insert: Omit<DatabaseSentMessageLog, 'id' | 'created_at'>;
         Update: Partial<Omit<DatabaseSentMessageLog, 'id' | 'created_at'>>;
       };
+      examination_templates: {
+        Row: DatabaseExaminationTemplate;
+        Insert: Omit<DatabaseExaminationTemplate, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<DatabaseExaminationTemplate, 'id' | 'created_at' | 'updated_at'>>;
+      };
     };
   };
 }
@@ -669,4 +674,31 @@ export interface DatabaseSentMessageLog {
   error_details?: string;
   sent_by?: string;
   created_at: string;
+}
+
+export interface DatabaseExaminationTemplate {
+  id: string;
+  clinic_id: string;
+  name: string;
+  description?: string;
+  specialization?: string;
+  template_data: {
+    sections: Array<{
+      id: string;
+      title: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        type: 'text' | 'select' | 'toggle' | 'textarea';
+        value: string | boolean;
+        options?: string[];
+        placeholder?: string;
+      }>;
+    }>;
+  };
+  is_active: boolean;
+  usage_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
 }

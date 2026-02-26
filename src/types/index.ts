@@ -94,6 +94,23 @@ export interface PhysicalExamination {
   generatedAt?: Date;
 }
 
+// Examination Template (clinic-level reusable templates)
+export interface ExaminationTemplate {
+  id: string;
+  clinicId: string;
+  name: string;
+  description?: string;
+  specialization?: string;
+  templateData: {
+    sections: ExaminationSection[];
+  };
+  isActive: boolean;
+  usageCount: number;
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // Voice Transcript Types
 export interface VoiceTranscript {
   id: string;
@@ -204,6 +221,7 @@ export interface Visit {
   pdf_generated_at?: Date; // Timestamp of display PDF generation
   print_pdf_url?: string; // URL to grayscale print version for letterhead
   print_pdf_generated_at?: Date; // Timestamp of print PDF generation
+  compact_print_pdf_url?: string; // URL to compact 1-page print version
   createdAt: Date;
   updatedAt: Date;
   patient?: Patient;

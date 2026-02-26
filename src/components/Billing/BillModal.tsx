@@ -727,6 +727,8 @@ const BillModal: React.FC<BillModalProps> = ({
         patient: bill.patient,
         doctor: doctor,
         clinicSettings: clinicSettings || user?.clinic! // Use fetched settings preferentially
+      }, {
+        forceRegenerate: true
       });
 
       // Save PDF URL and trigger WhatsApp
@@ -842,6 +844,8 @@ const BillModal: React.FC<BillModalProps> = ({
           fileUrl: pdfUrl,
           caption: message,
           userId: user?.id,
+          email: user?.email,
+          clinicId: clinic?.id,
           fileName: `Invoice_${bill.billNumber}_${bill.patient.name.replace(/\s+/g, '_')}.pdf`,
           billNumber: bill.billNumber,
           patientName: bill.patient.name,

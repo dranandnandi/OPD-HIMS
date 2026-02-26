@@ -11,6 +11,17 @@ interface PrintableBillProps {
 }
 
 const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, clinicSettings }) => {
+  const consultationItem = bill.billItems.find(
+    (item) => item.itemType === 'consultation' && typeof item.itemName === 'string'
+  );
+  const extractedDoctorName = consultationItem?.itemName?.includes(' - ')
+    ? consultationItem.itemName.split(' - ').slice(1).join(' - ').trim()
+    : '';
+  const resolvedDoctorName = (doctor?.name || extractedDoctorName || '').trim();
+  const doctorDisplayName = resolvedDoctorName
+    ? (/^dr\.?\s+/i.test(resolvedDoctorName) ? resolvedDoctorName : `Dr. ${toTitleCase(resolvedDoctorName)}`)
+    : '';
+
   return (
     <div className="pdf-container p-8 text-black" style={{ fontFamily: 'Arial, sans-serif' }}>
       {/* Clinic Header */}
@@ -80,7 +91,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
         <div className="pdf-no-break-inside border border-gray-300 rounded p-4">
           <h3 className="font-bold text-gray-800 mb-3">DOCTOR DETAILS</h3>
           <div className="text-sm space-y-1">
-            <p><strong>Name:</strong> Dr. {toTitleCase(doctor?.name || 'Not specified')}</p>
+            {doctorDisplayName && <p><strong>Name:</strong> {doctorDisplayName}</p>}
             {doctor?.specialization && <p><strong>Specialization:</strong> {doctor.specialization}</p>}
             {doctor?.qualification && <p><strong>Qualification:</strong> {doctor.qualification}</p>}
             {doctor?.registrationNo && <p><strong>Registration No:</strong> {doctor.registrationNo}</p>}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { IndianRupee, FileText, Calendar, Search, Plus, Eye, Edit, RotateCcw, MessageCircle, Loader2 } from 'lucide-react';
+import { IndianRupee, FileText, Calendar, Search, Plus, Eye, Edit, RotateCcw, MessageCircle, Loader2, RefreshCw } from 'lucide-react';
 import { Bill, Patient } from '../../types';
 import { billingService } from '../../services/billingService';
 import { patientService } from '../../services/patientService';
@@ -40,6 +40,7 @@ const BillingDashboard: React.FC = () => {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundBill, setRefundBill] = useState<Bill | null>(null);
   const [whatsappBillId, setWhatsappBillId] = useState<string | null>(null);
+  const [regeneratingBillId, setRegeneratingBillId] = useState<string | null>(null);
   const { sendBillMessage } = useWhatsApp({ clinicId: user?.clinicId, userId: user?.id });
 
   useEffect(() => {
@@ -224,10 +225,19 @@ const BillingDashboard: React.FC = () => {
         headerText: user.clinic.headerText || '',
         footerText: user.clinic.footerText || ''
       } : null;
+
+      const consultationItem = bill.billItems?.find(
+        (item) => item.itemType === 'consultation' && typeof item.itemName === 'string'
+      );
+      const extractedDoctorName = consultationItem?.itemName?.includes(' - ')
+        ? consultationItem.itemName.split(' - ').slice(1).join(' - ').trim()
+        : '';
+      const doctor = extractedDoctorName ? ({ name: extractedDoctorName } as any) : undefined;
       
       const pdfUrl = await pdfService.generatePdfFromData('bill', {
         bill,
         patient: bill.patient,
+        doctor,
         clinicSettings
       });
       
@@ -257,6 +267,55 @@ const BillingDashboard: React.FC = () => {
       alert(error instanceof Error ? error.message : 'Failed to send bill PDF via WhatsApp');
     } finally {
       setWhatsappBillId(null);
+    }
+  };
+
+  const handleRegenerateBillPdf = async (bill: Bill) => {
+    if (!bill.patient || !user?.clinic) {
+      alert('Missing required data for PDF regeneration');
+      return;
+    }
+
+    try {
+      setRegeneratingBillId(bill.id);
+      const { pdfService } = await import('../../services/pdfService');
+
+      const clinicSettings = {
+        id: user.clinic.id,
+        clinicName: user.clinic.clinicName || 'Clinic',
+        address: user.clinic.address || '',
+        phone: user.clinic.phone || '',
+        email: user.clinic.email || '',
+        logo: user.clinic.logo || null,
+        headerText: user.clinic.headerText || '',
+        footerText: user.clinic.footerText || ''
+      };
+
+      const consultationItem = bill.billItems?.find(
+        (item) => item.itemType === 'consultation' && typeof item.itemName === 'string'
+      );
+      const extractedDoctorName = consultationItem?.itemName?.includes(' - ')
+        ? consultationItem.itemName.split(' - ').slice(1).join(' - ').trim()
+        : '';
+      const doctor = extractedDoctorName ? ({ name: extractedDoctorName } as any) : undefined;
+
+      const pdfUrl = await pdfService.generatePdfFromData('bill', {
+        bill,
+        patient: bill.patient,
+        doctor,
+        clinicSettings
+      }, {
+        forceRegenerate: true
+      });
+
+      await pdfService.savePdfUrlToDatabase('bill', bill.id, pdfUrl);
+      await loadData();
+      window.open(pdfUrl, '_blank');
+    } catch (error) {
+      console.error('Failed to regenerate bill PDF', error);
+      alert(error instanceof Error ? error.message : 'Failed to regenerate bill PDF');
+    } finally {
+      setRegeneratingBillId(null);
     }
   };
 
@@ -531,6 +590,14 @@ const BillingDashboard: React.FC = () => {
                         title="View Bill"
                       >
                         <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleRegenerateBillPdf(bill)}
+                        className="text-amber-600 hover:text-amber-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                        title="Regenerate Bill PDF"
+                        disabled={regeneratingBillId === bill.id}
+                      >
+                        <RefreshCw className={`w-4 h-4 ${regeneratingBillId === bill.id ? 'animate-spin' : ''}`} />
                       </button>
                       {canEditBill(bill) ? (
                         <button 
