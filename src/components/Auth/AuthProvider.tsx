@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Profile } from '../../types';
 import { authService } from '../../services/authService';
 import { getCurrentProfile, getProfileFromLocalStorage } from '../../services/profileService';
@@ -9,25 +9,61 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
-const fetchWithTimeout = <T,>(promise: Promise<T>): Promise<T> => {
-  return promise;
-};
+// Real timeout wrapper using AbortController — 12 seconds max per attempt
+const FETCH_TIMEOUT_MS = 12_000;
 
+function withTimeout<T>(promise: Promise<T>, ms = FETCH_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('NETWORK_TIMEOUT')), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+// Detect DNS / network-level errors (ERR_CONNECTION_TIMED_OUT, Failed to fetch, etc.)
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('network_timeout') ||
+    msg.includes('networkerror') ||
+    msg.includes('load failed') ||
+    msg.includes('err_connection') ||
+    msg.includes('err_name_not_resolved')
+  );
+}
+
+// Max 3 retries with exponential backoff; gives up fast on network errors
 async function fetchWithRetry<T>(fetchFn: () => Promise<T>): Promise<T> {
-  while (true) {
+  const MAX_RETRIES = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await fetchWithTimeout(fetchFn());
+      return await withTimeout(fetchFn());
     } catch (err) {
-      console.error('Fetch attempt failed, retrying...', err);
-      await new Promise((res) => setTimeout(res, 300));
+      lastErr = err;
+      // Don't bother retrying on DNS/network failures — they won't recover in seconds
+      if (isNetworkError(err)) {
+        if (import.meta.env.DEV) console.warn(`[fetchWithRetry] Network error on attempt ${attempt}, aborting retries.`, err);
+        throw err;
+      }
+      if (import.meta.env.DEV) console.warn(`[fetchWithRetry] Attempt ${attempt}/${MAX_RETRIES} failed:`, err);
+      if (attempt < MAX_RETRIES) {
+        await new Promise((res) => setTimeout(res, 500 * attempt)); // 500ms, 1000ms backoff
+      }
     }
   }
+  throw lastErr;
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isNetworkDown, setIsNetworkDown] = useState(false);
   const lastProfileRef = useRef<Profile | null>(null);
   const lastHandledAt = useRef<number>(0);
 
@@ -187,6 +223,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         const errorMessage = error instanceof Error ? error.message : 'Authentication failed.';
 
+        // ── DNS / Network failure (ERR_CONNECTION_TIMED_OUT, Failed to fetch) ──
+        if (isNetworkError(error)) {
+          setIsNetworkDown(true);
+          const fallback = getProfileFromLocalStorage();
+          if (fallback) {
+            // Already logged in before — keep them in the app with cached profile
+            updateUserIfChanged(fallback);
+            setAuthError(
+              '⚠️ Cannot reach the server (possible DNS issue). Using saved session. Some features may be limited.'
+            );
+          } else {
+            // Never logged in / no cache — show clear network error on login screen
+            updateUserIfChanged(null);
+            setAuthError(
+              'Cannot connect to the server. This is usually a DNS issue with your internet provider. ' +
+              'Try switching to Google DNS (8.8.8.8) or tap Retry.'
+            );
+          }
+          setLoading(false);
+          return;
+        }
+
         if (
           errorMessage.includes('session') ||
           errorMessage.includes('token') ||
@@ -310,6 +368,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('bolt_user_profile');
     await authService.signOut();
     updateUserIfChanged(null);
+    setIsNetworkDown(false);
   };
 
   const hasPermission = (permission: string): boolean => {
@@ -317,12 +376,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return user.permissions.includes(permission) || user.permissions.includes('all');
   };
 
+  // Retry button on the login screen for DNS error recovery
+  const retryConnection = useCallback(() => {
+    setIsNetworkDown(false);
+    setAuthError(null);
+    setLoading(true);
+    // Re-mount triggers checkSession via useEffect — forcing re-render is enough
+    window.location.reload();
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
         authError,
+        isNetworkDown,
+        retryConnection,
         signOut,
         hasPermission,
         tryLoadLocalProfile

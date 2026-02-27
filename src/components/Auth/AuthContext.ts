@@ -5,6 +5,8 @@ export interface AuthContextType {
   user: Profile | null;
   loading: boolean;
   authError: string | null;
+  isNetworkDown: boolean;
+  retryConnection: () => void;
   signOut: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
   tryLoadLocalProfile: () => void;

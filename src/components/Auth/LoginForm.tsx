@@ -1,69 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, Activity } from 'lucide-react';
+import { Eye, EyeOff, WifiOff, RefreshCw } from 'lucide-react';
 import { authService } from '../../services/authService';
+import { AuthContext } from './AuthContext';
+
+// 12-second timeout for login fetch calls
+function withTimeout<T>(promise: Promise<T>, ms = 12000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('NETWORK_TIMEOUT')), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message.toLowerCase();
+  return m.includes('failed to fetch') || m.includes('network_timeout') || m.includes('networkerror') || m.includes('load failed');
+}
 
 const LoginForm: React.FC = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const authCtx = useContext(AuthContext);
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isNetworkErr, setIsNetworkErr] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setIsNetworkErr(false);
 
     try {
-      const signInResult = await authService.signIn(formData.email, formData.password);
+      const signInResult = await withTimeout(authService.signIn(formData.email, formData.password));
       
-      // After successful sign-in, ensure a profile exists
       if (signInResult?.user) {
         let profile = await authService.getCurrentProfile();
         if (!profile) {
-          if (import.meta.env.DEV) {
-            console.log('No profile found for user, creating default profile...');
-          }
-          
-          // Get default role ID (we'll use a fallback if none exists)
           const roles = await authService.getRoles();
           const defaultRole = roles.find(role => role.name.toLowerCase() === 'doctor') || 
                              roles.find(role => role.name.toLowerCase() === 'user') ||
-                             roles[0]; // Use first available role as fallback
-          
-          if (!defaultRole) {
-            throw new Error('No roles found in system. Please contact administrator.');
-          }
-          
-          // Create a basic profile for the user
+                             roles[0];
+          if (!defaultRole) throw new Error('No roles found in system. Please contact administrator.');
           profile = await authService.createProfile(signInResult.user.id, {
             roleId: defaultRole.id,
             name: signInResult.user.email?.split('@')[0] || 'User',
             email: signInResult.user.email || '',
-            phone: undefined,
-            specialization: undefined,
-            qualification: undefined,
-            registrationNo: undefined,
-            isActive: true
+            phone: undefined, specialization: undefined,
+            qualification: undefined, registrationNo: undefined,
+            isActive: true, isOpenForConsultation: false
           });
-          if (import.meta.env.DEV) {
-            console.log('New profile created:', profile);
-          }
         }
       }
-      
       navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      if (isNetworkError(err)) {
+        setIsNetworkErr(true);
+        setError('Cannot connect to the server. This is likely a DNS issue with your internet provider.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // Show banner if AuthProvider detected network issue on initial load
+  const showNetworkBanner = authCtx?.isNetworkDown || isNetworkErr;
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-soft-gray">
@@ -90,8 +96,33 @@ const LoginForm: React.FC = () => {
         </div>
         
         <form className="space-y-4" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+
+          {/* DNS / Network error banner */}
+          {showNetworkBanner && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <WifiOff className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-800">Network / DNS Issue Detected</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Your internet provider's DNS may be blocking the server.<br />
+                    <strong>Fix:</strong> Change your DNS to <code className="bg-amber-100 px-1 rounded">8.8.8.8</code> (Google DNS) or <code className="bg-amber-100 px-1 rounded">1.1.1.1</code> (Cloudflare).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setIsNetworkErr(false); setError(null); authCtx?.retryConnection(); }}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-md transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Retry Connection
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Generic error */}
+          {error && !showNetworkBanner && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}
