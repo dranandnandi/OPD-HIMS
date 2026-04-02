@@ -189,6 +189,16 @@ export interface VoiceTranscript {
   syncedAt?: Date;
 }
 
+export interface VisitImage {
+  id: string;
+  url: string;
+  imageType: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'other';
+  label?: string;
+  context?: string;       // Doctor's specific focus for AI e.g. "Check for cartilage destruction"
+  aiAnalysis?: string;
+  uploadedAt: string;
+}
+
 export interface Visit {
   id: string;
   patientId: string;
@@ -217,6 +227,7 @@ export interface Visit {
   followUpDate?: Date;
   doctorNotes: string;
   caseImageUrl?: string;
+  visitImages?: VisitImage[];
   pdf_url?: string; // URL to the stored display PDF in Supabase Storage
   pdf_generated_at?: Date; // Timestamp of display PDF generation
   print_pdf_url?: string; // URL to grayscale print version for letterhead
@@ -528,6 +539,8 @@ export interface ClinicSetting {
   enableAiThankYou?: boolean;
   enableGmbLinkOnly?: boolean;
   gmbLink?: string;
+  // WhatsApp Shared Session
+  whatsappSharedSessionUserId?: string;
   // WhatsApp Message Templates
   whatsappTemplates?: {
     visit_prescription?: string;

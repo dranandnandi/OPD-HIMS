@@ -531,6 +531,7 @@ export interface DatabaseClinicSetting {
   enable_ai_thank_you?: boolean;
   enable_gmb_link_only?: boolean;
   gmb_link?: string;
+  whatsapp_shared_session_user_id?: string;
 }
 
 export interface DatabaseMedicineMaster {

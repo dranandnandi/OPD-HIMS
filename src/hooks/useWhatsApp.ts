@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { whatsappApi, type WhatsAppStatusResponse } from '../services/whatsappApi';
 import type { Bill, Patient } from '../types';
 import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
+import { resolveWhatsAppUserId } from '../services/clinicSettingsService';
 
 interface UseWhatsAppOptions {
   clinicId?: string;
@@ -10,9 +11,22 @@ interface UseWhatsAppOptions {
 }
 
 export const useWhatsApp = ({ clinicId, labId, userId }: UseWhatsAppOptions = {}) => {
+  const [resolvedUserId, setResolvedUserId] = useState<string | undefined>(userId);
+
+  // Resolve shared session userId
+  useEffect(() => {
+    if (!userId || !clinicId) {
+      setResolvedUserId(userId);
+      return;
+    }
+    resolveWhatsAppUserId(userId, clinicId).then(resolved => {
+      setResolvedUserId(resolved);
+    });
+  }, [userId, clinicId]);
+
   const context = useMemo(
-    () => ({ clinicId, labId: labId || clinicId, userId }),
-    [clinicId, labId, userId]
+    () => ({ clinicId, labId: labId || clinicId, userId: resolvedUserId }),
+    [clinicId, labId, resolvedUserId]
   );
 
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);

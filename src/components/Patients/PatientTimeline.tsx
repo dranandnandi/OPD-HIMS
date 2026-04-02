@@ -209,9 +209,6 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
                           <h4 className="text-gray-800">
                             {format(visit.date, 'MMMM dd, yyyy')}
                           </h4>
-                          <span className="text-sm text-gray-500">
-                            {format(visit.date, 'h:mm a')}
-                          </span>
                         </div>
                         
                         <div className="space-y-3">

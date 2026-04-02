@@ -305,9 +305,6 @@ const VisitList: React.FC = () => {
                         <div className="text-gray-900 font-medium">
                           {format(visit.date, 'MMM dd, yyyy')}
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {format(visit.date, 'h:mm a')}
-                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-gray-900 max-w-xs truncate">

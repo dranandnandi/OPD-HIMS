@@ -43,6 +43,8 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
       ? new Date(existingVisit.date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0]
   );
+  const [selectedAppointmentTime, setSelectedAppointmentTime] = useState('');
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | undefined>(undefined);
 
   const loadDoctors = async () => {
     try {
@@ -150,6 +152,12 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
       setSelectedPatient(appointment.patient);
       setPatientSearchTerm('');
       setShowPatientSearchResults(false);
+      // Capture the appointment's scheduled time
+      const aptDate = new Date(appointment.appointment_date);
+      const hh = aptDate.getHours().toString().padStart(2, '0');
+      const mm = aptDate.getMinutes().toString().padStart(2, '0');
+      setSelectedAppointmentTime(`${hh}:${mm}`);
+      setSelectedAppointmentId(appointment.id);
       setStep('method');
     }
   };
@@ -637,6 +645,8 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                 existingVisit={existingVisit}
                 ocrData={ocrResult?.extractedData || getEmptyOCRData()}
                 initialVisitDate={visitDate}
+                initialVisitTime={selectedAppointmentTime}
+                appointmentId={selectedAppointmentId}
                 onSave={handleVisitSaved}
               />
             </div>

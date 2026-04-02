@@ -31,6 +31,7 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   enableAiThankYou: dbSetting.enable_ai_thank_you,
   enableGmbLinkOnly: dbSetting.enable_gmb_link_only,
   gmbLink: dbSetting.gmb_link,
+  whatsappSharedSessionUserId: dbSetting.whatsapp_shared_session_user_id,
   prescriptionFrequencies: dbSetting.prescription_frequencies,
   appointmentTypes: dbSetting.appointment_types
 });
@@ -60,6 +61,7 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   enable_ai_thank_you: setting.enableAiThankYou,
   enable_gmb_link_only: setting.enableGmbLinkOnly,
   gmb_link: setting.gmbLink,
+  whatsapp_shared_session_user_id: setting.whatsappSharedSessionUserId,
   prescription_frequencies: setting.prescriptionFrequencies,
   appointment_types: setting.appointmentTypes
 });
@@ -171,7 +173,7 @@ export const clinicSettingsService = {
     if (settings.pdfHeaderUrl !== undefined) dbSettings.pdf_header_url = settings.pdfHeaderUrl;
     if (settings.pdfFooterUrl !== undefined) dbSettings.pdf_footer_url = settings.pdfFooterUrl;
     if (settings.pdfMargins !== undefined) dbSettings.pdf_margins = settings.pdfMargins;
-
+    if (settings.whatsappSharedSessionUserId !== undefined) dbSettings.whatsapp_shared_session_user_id = settings.whatsappSharedSessionUserId;
 
     const { data, error } = await supabase
       .from('clinic_settings')
@@ -339,3 +341,22 @@ export const clinicSettingsService = {
     });
   }
 };
+
+/**
+ * Resolve the WhatsApp userId to use for API calls.
+ * If shared session is enabled in clinic settings, returns the shared (admin) userId.
+ * Otherwise returns the current user's own userId.
+ */
+export async function resolveWhatsAppUserId(currentUserId: string, clinicId: string): Promise<string> {
+  try {
+    if (!supabase) return currentUserId;
+    const { data } = await supabase
+      .from('clinic_settings')
+      .select('whatsapp_shared_session_user_id')
+      .eq('id', clinicId)
+      .single();
+    return data?.whatsapp_shared_session_user_id || currentUserId;
+  } catch {
+    return currentUserId;
+  }
+}

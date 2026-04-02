@@ -49,6 +49,14 @@ const Navigation: React.FC = () => {
     );
   }
 
+  // Add WhatsApp & AI nav item for reception (non-admin)
+  if (user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
+    !(user.permissions.includes('admin') || user.permissions.includes('all'))) {
+    navItems.splice(-1, 0,
+      { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI', description: 'Messaging & review settings' }
+    );
+  }
+
   const handleSignOut = async () => {
     try {
       await signOut();

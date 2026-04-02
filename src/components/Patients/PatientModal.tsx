@@ -31,6 +31,7 @@ interface PatientModalProps {
 
 const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose }) => {
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -61,7 +62,10 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    setFormError(null);
     try {
       const patientData = {
         name: toTitleCase(formData.name),
@@ -78,6 +82,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
       await onSave(patientData);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'An error occurred while saving the patient');
+      setIsSubmitting(false);
     }
   };
 
@@ -229,6 +234,10 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
             />
           </div>
 
+          {formError && (
+            <p className="text-red-600 text-sm">{formError}</p>
+          )}
+
           <div className="flex justify-end gap-4 pt-6">
             <button
               type="button"
@@ -239,9 +248,10 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
             </button>
             <button
               type="submit"
-              className="primary-button"
+              disabled={isSubmitting}
+              className="primary-button disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {patient ? 'Update Patient' : 'Create Patient'}
+              {isSubmitting ? 'Saving...' : patient ? 'Update Patient' : 'Create Patient'}
             </button>
           </div>
         </form>

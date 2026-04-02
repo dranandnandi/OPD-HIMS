@@ -440,15 +440,12 @@ serve(async (req) => {
         </head>
         <body>
 
-          <!-- TOP BAR -->
           <div class="top-bar">
             <div>
-              <div class="rx">&#8478; PRESCRIPTION</div>
-              <div style="font-size:10px;">${data.clinicSettings?.clinicName || 'Clinic'}</div>
+              <div style="font-size:12px; font-weight:bold; margin-bottom:4px;">${data.clinicSettings?.clinicName || 'Clinic'}</div>
             </div>
             <div class="date">
-              Date: <strong>${new Date(visit.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong><br>
-              ${visit.date ? 'Time: ' + new Date(visit.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+              Date & Time: <strong>${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
             </div>
           </div>
 
@@ -881,7 +878,6 @@ Translate now:`;
             }
             
             /* Hide headers and footers for letterhead */
-            /* Hide headers and footers for letterhead */
             .custom-header, .custom-footer, .header, .footer, .prescription-header {
               display: none !important;
             }
@@ -907,6 +903,26 @@ Translate now:`;
               background: #ddd !important;
               color: #000 !important;
             }
+
+            /* === COMPACT SPACING: reduce gaps between components === */
+            body { margin: 10px !important; line-height: 1.4 !important; }
+            .section { margin-bottom: 8px !important; padding: 8px 10px !important; }
+            .section h3 { padding-bottom: 4px !important; margin-bottom: 6px !important; font-size: 13px !important; }
+            .details-section { margin-bottom: 8px !important; gap: 8px !important; }
+            .details-section > div { padding: 8px 10px !important; }
+            .details-section h3 { padding-bottom: 4px !important; margin-bottom: 4px !important; }
+            .details-section p { margin: 2px 0 !important; }
+            li { margin-bottom: 4px !important; padding: 5px 8px !important; }
+            th, td { padding: 5px 6px !important; }
+            .vitals-grid { gap: 6px !important; }
+            .vital-item { padding: 6px 8px !important; }
+            .vital-value { font-size: 15px !important; }
+            .patient-friendly-instr { margin-top: 4px !important; padding: 4px 8px !important; }
+            .regional-advice { margin-top: 6px !important; padding: 8px 10px !important; }
+            .warning-box { margin-top: 4px !important; padding: 5px 8px !important; }
+            .signature-section { margin-top: 16px !important; padding: 10px 16px !important; }
+            .signature-line { margin: 16px auto 6px !important; }
+            table { margin-top: 4px !important; }
             ` : ''}
             /* === END PRINT VERSION STYLING === */
             
@@ -966,7 +982,7 @@ Translate now:`;
         <body>
           <div class="prescription-header">
             <h2>📋 PATIENT PRESCRIPTION</h2>
-            <p style="margin: 5px 0; font-size: 12px;">Visit Date: ${new Date(visit.date).toLocaleDateString('en-IN')} at ${new Date(visit.date).toLocaleTimeString('en-IN')}</p>
+            <p style="margin: 5px 0; font-size: 12px;">Visit Date & Time: ${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
           </div>
 
           <div class="details-section">

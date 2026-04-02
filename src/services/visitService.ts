@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patient, Profile } from '../types';
+import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patient, Profile, VisitImage } from '../types';
 import { getCurrentProfile } from './profileService';
 import type { DatabaseVisit, DatabaseSymptom, DatabaseDiagnosis, DatabasePrescription, DatabaseTestOrdered, DatabaseTestResult } from '../lib/supabase';
 
@@ -33,6 +33,7 @@ const convertDatabaseVisit = (
   physicalExamination: dbVisit.physical_examination || undefined,
   doctorNotes: dbVisit.doctor_notes || '',
   caseImageUrl: dbVisit.case_image_url,
+  visitImages: (dbVisit as any).visit_images || undefined,
   createdAt: new Date(dbVisit.created_at),
   updatedAt: new Date(dbVisit.updated_at),
   patient,
@@ -360,7 +361,8 @@ export const visitService = {
           follow_up_date: visit.followUpDate?.toISOString(),
           physical_examination: visit.physicalExamination || {},
           doctor_notes: visit.doctorNotes,
-          case_image_url: visit.caseImageUrl
+          case_image_url: visit.caseImageUrl,
+          visit_images: visit.visitImages || null
         }])
         .select()
         .single();
@@ -576,6 +578,12 @@ export const visitService = {
       if (visit.doctorNotes !== undefined) dbVisit.doctor_notes = visit.doctorNotes;
       if (visit.physicalExamination !== undefined) dbVisit.physical_examination = visit.physicalExamination;
       if (visit.caseImageUrl !== undefined) dbVisit.case_image_url = visit.caseImageUrl;
+      if (visit.visitImages !== undefined) dbVisit.visit_images = visit.visitImages || null;
+
+      // IMPORTANT: Clear cached PDF URLs when visit data is updated so new ones are generated
+      dbVisit.pdf_url = null;
+      dbVisit.print_pdf_url = null;
+      dbVisit.compact_print_pdf_url = null;
 
       const { error } = await supabase
         .from('visits')

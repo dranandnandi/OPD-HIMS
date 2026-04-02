@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity } from 'lucide-react';
-import { Visit, Bill } from '../../types';
+import { ArrowLeft, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, Image, X, ExternalLink } from 'lucide-react';
+import { Visit, Bill, VisitImage } from '../../types';
 import { visitService } from '../../services/visitService';
 import { billingService } from '../../services/billingService';
 import { useAuth } from '../Auth/useAuth';
@@ -23,6 +23,7 @@ const VisitDetails: React.FC = () => {
   const [showBillModal, setShowBillModal] = useState(false);
   const [showDispenseModal, setShowDispenseModal] = useState(false);
   const [dispensedItemsForBilling, setDispensedItemsForBilling] = useState<any[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && visitId) {
@@ -212,7 +213,6 @@ const VisitDetails: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Visit Date</p>
               <p className="font-semibold text-gray-800">{format(visit.date, 'PPP')}</p>
-              <p className="text-sm text-gray-600">{format(visit.date, 'p')}</p>
             </div>
           </div>
           
@@ -453,6 +453,52 @@ const VisitDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* Clinical Images */}
+      {visit.visitImages && visit.visitImages.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Image className="w-5 h-5 text-teal-600" />
+            <h3 className="text-lg font-semibold text-gray-800">Clinical Images</h3>
+            <span className="text-sm text-gray-500">({visit.visitImages.length})</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {visit.visitImages.map((img: VisitImage) => (
+              <div key={img.id} className="group relative border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                <div
+                  className="relative cursor-pointer"
+                  onClick={() => setLightboxUrl(img.url)}
+                >
+                  <img
+                    src={img.url}
+                    alt={img.label || img.imageType}
+                    className="w-full h-32 object-cover"
+                    onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23e5e7eb" width="100" height="100"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12">No preview</text></svg>'; }}
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all" />
+                </div>
+                <div className="p-2">
+                  <p className="text-xs font-medium text-gray-700 capitalize">{img.imageType.replace('_', ' ')}</p>
+                  {img.label && <p className="text-xs text-gray-500 truncate">{img.label}</p>}
+                  {img.aiAnalysis && (
+                    <p className="text-xs text-purple-600 italic mt-1 truncate" title={img.aiAnalysis}>
+                      ✓ AI analyzed
+                    </p>
+                  )}
+                  <a
+                    href={img.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 mt-1"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Open full
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Associated Bills */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-4">
@@ -522,6 +568,37 @@ const VisitDetails: React.FC = () => {
           onSave={handleDispenseSaved}
           onClose={() => setShowDispenseModal(false)}
         />
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            <img
+              src={lightboxUrl}
+              alt="Full view"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            />
+            <a
+              href={lightboxUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute bottom-2 right-2 flex items-center gap-1 bg-white bg-opacity-80 text-gray-800 text-xs px-3 py-1 rounded hover:bg-opacity-100"
+              onClick={e => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3 h-3" /> Open in new tab
+            </a>
+          </div>
+        </div>
       )}
     </div>
   );

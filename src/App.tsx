@@ -161,6 +161,26 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+// Admin-or-Reception Route Component - Requires admin/super_admin OR receptionist role
+const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, hasPermission } = useAuth();
+
+  const isAllowed = user && (
+    user.roleName?.toLowerCase() === 'admin' ||
+    user.roleName?.toLowerCase() === 'super_admin' ||
+    user.roleName?.toLowerCase() === 'receptionist' ||
+    user.roleName?.toLowerCase() === 'reception' ||
+    hasPermission('admin') ||
+    hasPermission('all')
+  );
+
+  if (!isAllowed) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 // Main App Layout Component
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -419,11 +439,11 @@ const AppContent: React.FC = () => {
 
       <Route path="/settings/whatsapp-ai" element={
         <ProtectedRoute>
-          <AdminRoute>
+          <AdminOrReceptionRoute>
             <AppLayout>
               <WhatsappAndAIReviewSettings />
             </AppLayout>
-          </AdminRoute>
+          </AdminOrReceptionRoute>
         </ProtectedRoute>
       } />
 

@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { whatsappApi } from './whatsappApi';
 import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
+import { resolveWhatsAppUserId } from './clinicSettingsService';
 import type { WhatsAppEventType, WhatsAppMessageQueue } from '../types/whatsapp';
 import type { Appointment, Bill, Patient, Review } from '../types';
 
@@ -146,6 +147,9 @@ export class WhatsAppAutoSendService {
     userId: string,
     clinicId: string
   ): Promise<void> {
+    // Resolve shared session userId
+    const resolvedUserId = await resolveWhatsAppUserId(userId, clinicId);
+
     const { data: queueItem, error: fetchError } = await supabase
       .from('whatsapp_message_queue')
       .select('*')
@@ -167,7 +171,7 @@ export class WhatsAppAutoSendService {
             eventType: queueItem.event_type
           }
         },
-        { userId, clinicId }
+        { userId: resolvedUserId, clinicId }
       );
 
       // Update queue status

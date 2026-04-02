@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ShieldAlert, Users } from 'lucide-react';
 import QRCodeLib from 'qrcode';
 import { useAuth } from '../Auth/useAuth';
 import { whatsappApi, type WhatsAppQrResponse, type WhatsAppStatusResponse } from '../../services/whatsappApi';
 import { formatPhoneForWhatsApp } from '../../utils/phoneUtils';
+import { resolveWhatsAppUserId } from '../../services/clinicSettingsService';
 
 const defaultMessage = (clinicName?: string) =>
   `Hello! This is ${clinicName || 'our clinic'}. This is a quick test message to confirm that WhatsApp notifications are working.`;
@@ -17,6 +18,7 @@ const WhatsAppConnectionCard: React.FC = () => {
   const { user } = useAuth();
   const clinicId = user?.clinicId;
   const clinicName = user?.clinic?.clinicName;
+  const isAdmin = user?.roleName?.toLowerCase() === 'admin' || user?.roleName?.toLowerCase() === 'super_admin';
 
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -25,8 +27,24 @@ const WhatsAppConnectionCard: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [testPhone, setTestPhone] = useState('');
   const [testMessage, setTestMessage] = useState(defaultMessage(clinicName));
+  const [resolvedUserId, setResolvedUserId] = useState<string | undefined>(user?.id);
+  const [isSharedSession, setIsSharedSession] = useState(false);
 
-  const context = useMemo(() => ({ clinicId: clinicId || undefined, userId: user?.id }), [clinicId, user?.id]);
+  // Resolve the WhatsApp userId (shared session support)
+  useEffect(() => {
+    if (!clinicId || !user?.id) return;
+    if (isAdmin) {
+      setResolvedUserId(user.id);
+      setIsSharedSession(false);
+      return;
+    }
+    resolveWhatsAppUserId(user.id, clinicId).then(resolved => {
+      setResolvedUserId(resolved);
+      setIsSharedSession(resolved !== user.id);
+    });
+  }, [clinicId, user?.id, isAdmin]);
+
+  const context = useMemo(() => ({ clinicId: clinicId || undefined, userId: resolvedUserId }), [clinicId, resolvedUserId]);
 
   const fetchStatus = useCallback(async () => {
     if (!clinicId) return;
@@ -54,7 +72,7 @@ const WhatsAppConnectionCard: React.FC = () => {
     setFeedback(null);
     try {
       setAction('connect');
-      await whatsappApi.connect({ sessionName: clinicId, userId: user?.id }, context);
+      await whatsappApi.connect({ sessionName: clinicId, userId: resolvedUserId }, context);
       setFeedback({ type: 'success', message: 'Connection requested. Generate the QR and scan using WhatsApp.' });
       await fetchStatus();
     } catch (error) {
@@ -204,6 +222,17 @@ const WhatsAppConnectionCard: React.FC = () => {
             {status?.phoneNumber ? `Linked number: ${status.phoneNumber}` : 'No WhatsApp session detected.'}
           </p>
         </div>
+
+        {/* Shared session banner for non-admin users */}
+        {isSharedSession && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <Users className="w-4 h-4 text-blue-600" />
+            <span className="text-sm text-blue-700">Using shared clinic WhatsApp connection (managed by admin)</span>
+          </div>
+        )}
+
+        {/* Connection controls - only for admin or users with their own session */}
+        {(isAdmin || !isSharedSession) && (
         <div className="flex flex-wrap gap-3">
           <button
             className="primary-button"
@@ -232,6 +261,7 @@ const WhatsAppConnectionCard: React.FC = () => {
             </button>
           )}
         </div>
+        )}
       </div>
 
       {qr && (

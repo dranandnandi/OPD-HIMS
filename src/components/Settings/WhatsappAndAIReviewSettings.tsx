@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, MessageCircle, Bot, Heart, Star, Link, Shield, Eye, EyeOff } from 'lucide-react';
+import { Save, MessageCircle, Bot, Heart, Star, Link, Shield, Eye, EyeOff, Users } from 'lucide-react';
 import { ClinicSetting } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
@@ -19,7 +19,8 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
     enableSimpleThankYou: true,
     enableAiThankYou: true,
     enableGmbLinkOnly: true,
-    gmbLink: ''
+    gmbLink: '',
+    shareWhatsAppSession: false
   });
 
   useEffect(() => {
@@ -42,7 +43,8 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
         enableSimpleThankYou: clinicSettings.enableSimpleThankYou ?? true,
         enableAiThankYou: clinicSettings.enableAiThankYou ?? true,
         enableGmbLinkOnly: clinicSettings.enableGmbLinkOnly ?? true,
-        gmbLink: clinicSettings.gmbLink || ''
+        gmbLink: clinicSettings.gmbLink || '',
+        shareWhatsAppSession: !!clinicSettings.whatsappSharedSessionUserId
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
@@ -53,7 +55,7 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!settings) return;
+    if (!settings || !user) return;
 
     try {
       setSaving(true);
@@ -63,7 +65,8 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
         enableSimpleThankYou: formData.enableSimpleThankYou,
         enableAiThankYou: formData.enableAiThankYou,
         enableGmbLinkOnly: formData.enableGmbLinkOnly,
-        gmbLink: formData.gmbLink
+        gmbLink: formData.gmbLink,
+        whatsappSharedSessionUserId: formData.shareWhatsAppSession ? user.id : undefined
       });
       setSettings(updatedSettings);
       alert('WhatsApp and AI Review settings saved successfully!');
@@ -165,6 +168,31 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
               </div>
             </div>
           </div>
+
+
+          {/* Share WhatsApp Session (Admin Only) */}
+          {(user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin') && (
+            <div className="flex items-center justify-between p-4 border border-blue-200 rounded-lg bg-blue-50">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h4 className="font-medium text-gray-800">Share WhatsApp Connection</h4>
+                  <p className="text-sm text-gray-600">
+                    Allow clinic staff (reception) to send messages using your connected WhatsApp session
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.shareWhatsAppSession}
+                  onChange={(e) => setFormData({ ...formData, shareWhatsAppSession: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          )}
 
           {/* Google Business Profile */}
           <div className="p-4 border border-gray-200 rounded-lg">

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Loader2, Play, Square, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Mic, Loader2, Play, Square, Upload, CheckCircle, AlertCircle, Pause, RotateCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { VoiceTranscript } from '../../types';
 import { offlineSyncService, PendingRecording } from '../../services/offlineSyncService';
@@ -22,6 +22,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     onApplyToForm
 }) => {
     const [isRecording, setIsRecording] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -31,6 +32,8 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     const [privacyRedactions, setPrivacyRedactions] = useState(0);
     const [pendingSync, setPendingSync] = useState<PendingRecording[]>([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [recordingSeconds, setRecordingSeconds] = useState(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -62,10 +65,30 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         setPendingSync(pending);
     };
 
+    const startTimer = () => {
+        timerRef.current = setInterval(() => {
+            setRecordingSeconds(s => s + 1);
+        }, 1000);
+    };
+
+    const stopTimer = () => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    };
+
+    const formatTime = (secs: number) => {
+        const m = Math.floor(secs / 60).toString().padStart(2, '0');
+        const s = (secs % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
     const startRecording = async () => {
         setError(null);
         setTranscript(null);
         setExtractedData(null);
+        setRecordingSeconds(0);
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -102,10 +125,13 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                 if (animationRef.current) {
                     cancelAnimationFrame(animationRef.current);
                 }
+                stopTimer();
             };
 
             mediaRecorder.start(1000); // Collect data every second
             setIsRecording(true);
+            setIsPaused(false);
+            startTimer();
 
         } catch (err) {
             setError('Failed to access microphone. Please grant permission.');
@@ -113,10 +139,33 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         }
     };
 
+    const pauseRecording = () => {
+        if (mediaRecorderRef.current && isRecording && !isPaused) {
+            mediaRecorderRef.current.pause();
+            setIsPaused(true);
+            stopTimer();
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+                animationRef.current = null;
+            }
+        }
+    };
+
+    const resumeRecording = () => {
+        if (mediaRecorderRef.current && isRecording && isPaused) {
+            mediaRecorderRef.current.resume();
+            setIsPaused(false);
+            startTimer();
+            drawWaveform();
+        }
+    };
+
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
+            setIsPaused(false);
+            stopTimer();
         }
     };
 
@@ -264,27 +313,59 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
             <div className="p-4 space-y-4">
                 {/* Recording Controls */}
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={isRecording ? stopRecording : startRecording}
-                        disabled={isProcessing}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${isRecording
-                            ? 'bg-red-500 hover:bg-red-600 text-white'
-                            : 'bg-green-500 hover:bg-green-600 text-white'
-                            } disabled:opacity-50`}
-                    >
-                        {isRecording ? (
-                            <>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {!isRecording ? (
+                        <button
+                            onClick={startRecording}
+                            disabled={isProcessing}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
+                        >
+                            <Mic className="w-5 h-5" />
+                            {audioBlob ? 'New Recording' : 'Start Recording'}
+                        </button>
+                    ) : (
+                        <>
+                            {/* Pause / Resume */}
+                            {!isPaused ? (
+                                <button
+                                    onClick={pauseRecording}
+                                    className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                                    title="Pause recording — audio so far is kept"
+                                >
+                                    <Pause className="w-5 h-5" />
+                                    Pause
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={resumeRecording}
+                                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium animate-pulse"
+                                    title="Resume recording"
+                                >
+                                    <Mic className="w-5 h-5" />
+                                    Resume
+                                </button>
+                            )}
+
+                            {/* Stop */}
+                            <button
+                                onClick={stopRecording}
+                                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+                            >
                                 <Square className="w-5 h-5" />
-                                Stop Recording
-                            </>
-                        ) : (
-                            <>
-                                <Mic className="w-5 h-5" />
-                                Start Recording
-                            </>
-                        )}
-                    </button>
+                                Stop
+                            </button>
+                        </>
+                    )}
+
+                    {/* Timer */}
+                    {isRecording && (
+                        <span className={`flex items-center gap-1 text-sm font-mono font-medium px-3 py-2 rounded-lg ${isPaused ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                            {isPaused
+                                ? <><Pause className="w-3 h-3" /> PAUSED &nbsp;{formatTime(recordingSeconds)}</>
+                                : <><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse inline-block" /> REC &nbsp;{formatTime(recordingSeconds)}</>
+                            }
+                        </span>
+                    )}
 
                     {audioBlob && !isRecording && (
                         <>
@@ -310,6 +391,17 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                     )}
                 </div>
 
+                {/* Pause hint */}
+                {isRecording && isPaused && (
+                    <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                        <Pause className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <span className="font-medium">Recording paused.</span> All audio recorded so far is preserved.
+                            Press <span className="font-medium">Resume</span> to continue, or <span className="font-medium">Stop</span> to finish and transcribe.
+                        </div>
+                    </div>
+                )}
+
                 {/* Waveform Visualization */}
                 {isRecording && (
                     <div className="relative">
@@ -317,13 +409,24 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                             ref={canvasRef}
                             width={600}
                             height={80}
-                            className="w-full h-20 rounded-lg bg-gray-50"
+                            className={`w-full h-20 rounded-lg bg-gray-50 transition-opacity ${isPaused ? 'opacity-30' : 'opacity-100'}`}
                         />
-                        <div className="absolute top-2 right-2 flex items-center gap-1">
-                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-xs text-red-600 font-medium">REC</span>
-                        </div>
+                        {isPaused && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-amber-600 font-semibold text-sm bg-amber-50 bg-opacity-90 px-3 py-1 rounded-full border border-amber-200">
+                                    Microphone muted — private conversation
+                                </span>
+                            </div>
+                        )}
                     </div>
+                )}
+
+                {/* Note about new recording clearing previous */}
+                {audioBlob && !isRecording && (
+                    <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <RotateCcw className="w-3 h-3" />
+                        "New Recording" will replace the current audio. Transcribe first if you want to keep it.
+                    </p>
                 )}
 
                 {/* Error */}

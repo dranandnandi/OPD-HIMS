@@ -270,3 +270,73 @@ export const getOcrHistory = async (): Promise<OcrResult[]> => {
 };
 
 export const simulateOCR = processCasePaperWithAI;
+
+export interface VisitImageAnalysisResult {
+  imageCategory: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'other';
+  description: string;
+  structuredData: {
+    symptoms?: Array<{ name: string; severity?: string | null; duration?: string | null; notes?: string | null }>;
+    vitals?: { temperature?: string | null; bloodPressure?: string | null; pulse?: string | null; weight?: string | null; height?: string | null };
+    diagnoses?: Array<{ name: string; icd10Code?: string | null; isPrimary?: boolean; notes?: string | null }>;
+    prescriptions?: Array<{ medicine: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }>;
+    testsOrdered?: Array<{ testName: string; testType?: string; urgency?: string }>;
+    advice?: string[];
+    chiefComplaint?: string | null;
+    doctorNotes?: string | null;
+  };
+}
+
+export const analyzeVisitImageWithAI = async (
+  imageFile: File,
+  imageType: string,
+  visitContext?: {
+    chiefComplaint?: string;
+    symptoms?: string[];
+    diagnoses?: string[];
+    doctorContext?: string;   // Specific focus e.g. "check for cartilage destruction"
+  }
+): Promise<VisitImageAnalysisResult> => {
+  if (!supabase) throw new Error('Supabase client not initialized');
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) throw new Error('Not authenticated');
+  const token = session.access_token;
+
+  // Step 1: Vision OCR to extract any text from image
+  const imageBase64 = await fileToBase64(imageFile);
+  let rawText = '';
+
+  try {
+    const visionResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ imageBase64 })
+    });
+    if (visionResponse.ok) {
+      const visionData = await visionResponse.json();
+      rawText = visionData.extractedText || '';
+    }
+  } catch {
+    // Vision OCR failed - continue with image-only analysis
+  }
+
+  // Step 2: Gemini Vision analyzes both image + raw text
+  const analyzeResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-analyze-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ imageBase64, rawText, imageType, visitContext })
+  });
+
+  if (!analyzeResponse.ok) {
+    throw new Error(`Image analysis failed: ${analyzeResponse.statusText}`);
+  }
+
+  const result = await analyzeResponse.json();
+  if (result.error) throw new Error(result.error);
+
+  return {
+    imageCategory: result.imageCategory || imageType || 'other',
+    description: result.description || '',
+    structuredData: result.structuredData || {}
+  };
+};
