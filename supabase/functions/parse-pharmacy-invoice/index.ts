@@ -82,8 +82,8 @@ EXTRACTION RULES:
 
 Return only the JSON object, no additional text or formatting.`
 
-    // Call Gemini 2.0 Flash Experimental API (Multimodal)
-    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
+    // Call Gemini 2.5 Flash API (multimodal)
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

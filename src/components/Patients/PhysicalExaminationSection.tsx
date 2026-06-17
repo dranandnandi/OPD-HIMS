@@ -76,6 +76,8 @@ const PhysicalExaminationSection: React.FC<PhysicalExaminationSectionProps> = ({
             sections: cleanedSections,
             aiGenerated: false,
             specialization: template.specialization || doctorSpecialization,
+            templateId: template.id,
+            templateName: template.name,
         });
 
         // Expand all sections
@@ -393,10 +395,10 @@ const PhysicalExaminationSection: React.FC<PhysicalExaminationSectionProps> = ({
                 ) : (
                     <div className="space-y-4">
                         {examination.sections.map(section => (
-                            <div key={section.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div key={section.id} className="border border-gray-200 rounded-lg">
                                 <button
                                     onClick={() => toggleSection(section.id)}
-                                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                                    className={`w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors ${expandedSections.has(section.id) ? 'rounded-t-lg' : 'rounded-lg'}`}
                                 >
                                     <span className="font-medium text-gray-700">{section.title}</span>
                                     <div className="flex items-center gap-2">

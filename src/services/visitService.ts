@@ -3,6 +3,34 @@ import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patie
 import { getCurrentProfile } from './profileService';
 import type { DatabaseVisit, DatabaseSymptom, DatabaseDiagnosis, DatabasePrescription, DatabaseTestOrdered, DatabaseTestResult } from '../lib/supabase';
 
+const deduplicatePrescriptions = <T extends {
+  medicine: string;
+  dosage?: string | null;
+  frequency?: string | null;
+  duration?: string | null;
+  instructions?: string | null;
+  quantity?: number | null;
+  refills?: number | null;
+}>(prescriptions: T[]): T[] => {
+  const seen = new Set<string>();
+
+  return prescriptions.filter((prescription) => {
+    const key = JSON.stringify([
+      prescription.medicine.trim().toLowerCase(),
+      prescription.dosage?.trim().toLowerCase() || '',
+      prescription.frequency?.trim().toLowerCase() || '',
+      prescription.duration?.trim().toLowerCase() || '',
+      prescription.instructions?.trim().toLowerCase() || '',
+      prescription.quantity ?? null,
+      prescription.refills ?? 0
+    ]);
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 // Convert database visit to app visit type
 const convertDatabaseVisit = (
   dbVisit: DatabaseVisit,
@@ -23,7 +51,7 @@ const convertDatabaseVisit = (
   symptoms,
   vitals: dbVisit.vitals || {},
   diagnoses,
-  prescriptions,
+  prescriptions: deduplicatePrescriptions(prescriptions),
   testsOrdered,
   testResults,
   advice: dbVisit.advice || [],
@@ -122,10 +150,11 @@ export const visitService = {
       .from('visits')
       .select(`
         *, clinic_id,
-        patients (*),
+        patients!inner (*),
         profiles (*)
       `)
       .eq('clinic_id', profile.clinicId)
+      .eq('patients.is_hidden', false)
       .order('created_at', { ascending: false });
 
     if (visitsError) {
@@ -234,7 +263,7 @@ export const visitService = {
       .from('visits')
       .select(`
         *, clinic_id,
-        patients (*),
+        patients!inner (*),
         profiles (*)
       `)
       .eq('patient_id', patientId)
@@ -402,7 +431,7 @@ export const visitService = {
 
       // Insert prescriptions
       if (visit.prescriptions.length > 0) {
-        const prescriptionsToInsert = visit.prescriptions.map(prescription => ({
+        const prescriptionsToInsert = deduplicatePrescriptions(visit.prescriptions).map(prescription => ({
           visit_id: visitId,
           medicine: prescription.medicine,
           dosage: prescription.dosage || null,
@@ -481,7 +510,7 @@ export const visitService = {
       .select(`
         *,
         clinic_id,
-        patients (*),
+        patients!inner (*),
         profiles (*)
       `)
       .eq('id', id)
@@ -639,8 +668,9 @@ export const visitService = {
         // Delete existing prescriptions and insert new ones
         await supabase.from('prescriptions').delete().eq('visit_id', id);
 
-        if (visit.prescriptions.length > 0) {
-          const prescriptionsToInsert = visit.prescriptions.map(prescription => ({
+        const uniquePrescriptions = deduplicatePrescriptions(visit.prescriptions);
+        if (uniquePrescriptions.length > 0) {
+          const prescriptionsToInsert = uniquePrescriptions.map(prescription => ({
             visit_id: id,
             clinic_id: profile.clinicId,
             medicine: prescription.medicine,
@@ -714,6 +744,7 @@ export const visitService = {
       `)
       .not('follow_up_date', 'is', null)
       .eq('clinic_id', profile.clinicId)
+      .eq('patients.is_hidden', false)
       .order('created_at', { ascending: false });
 
     if (visitsError) {
@@ -804,5 +835,52 @@ export const visitService = {
         updatedAt: new Date(visit.profiles.updated_at)
       } : undefined
     ));
+  },
+
+  // Delete a visit and all related data
+  async deleteVisit(id: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    try {
+      // Delete all related records first (cascade delete pattern)
+      const deleteOperations = [
+        supabase.from('symptoms').delete().eq('visit_id', id),
+        supabase.from('diagnoses').delete().eq('visit_id', id),
+        supabase.from('prescriptions').delete().eq('visit_id', id),
+        supabase.from('tests_ordered').delete().eq('visit_id', id),
+        supabase.from('test_results').delete().eq('visit_id', id)
+      ];
+
+      // Execute all delete operations in parallel
+      const results = await Promise.all(deleteOperations);
+
+      // Check for errors in related data deletion
+      for (const result of results) {
+        if (result.error) {
+          console.error('Error deleting related data:', result.error);
+        }
+      }
+
+      // Finally delete the visit itself
+      const { error: visitError } = await supabase
+        .from('visits')
+        .delete()
+        .eq('id', id)
+        .eq('clinic_id', profile.clinicId);
+
+      if (visitError) {
+        throw new Error('Failed to delete visit');
+      }
+    } catch (error) {
+      console.error('Error deleting visit:', error);
+      throw new Error(error instanceof Error ? error.message : 'Failed to delete visit');
+    }
   }
 };

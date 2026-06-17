@@ -23,7 +23,7 @@ const WhatsAppConnectionCard: React.FC = () => {
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
-  const [action, setAction] = useState<'connect' | 'disconnect' | 'qr' | 'send' | null>(null);
+  const [action, setAction] = useState<'connect' | 'disconnect' | 'qr' | 'send' | 'refresh' | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [testPhone, setTestPhone] = useState('');
   const [testMessage, setTestMessage] = useState(defaultMessage(clinicName));
@@ -181,6 +181,20 @@ const WhatsAppConnectionCard: React.FC = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    if (!clinicId) return;
+    setFeedback(null);
+    setAction('refresh');
+    try {
+      await fetchStatus();
+      setFeedback({ type: 'success', message: 'WhatsApp status updated.' });
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Unable to refresh status' });
+    } finally {
+      setAction(null);
+    }
+  };
+
   if (!user) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -202,75 +216,90 @@ const WhatsAppConnectionCard: React.FC = () => {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-sm text-gray-500">WhatsApp Status</p>
-          <div className="flex items-center gap-2 text-lg font-semibold text-gray-800">
-            {status?.connected ? (
-              <>
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-                Connected
-              </>
-            ) : (
-              <>
-                <ShieldAlert className="w-5 h-5 text-amber-500" />
-                Not Connected
-              </>
-            )}
+      <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-4 items-start">
+          <div>
+            <p className="text-sm text-gray-500">WhatsApp Status</p>
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800">
+              {status?.connected ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  Connected
+                </>
+              ) : (
+                <>
+                  <ShieldAlert className="w-4 h-4 text-amber-500" />
+                  Not Connected
+                </>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {status?.phoneNumber ? `Linked number: ${status.phoneNumber}` : 'No active WhatsApp session detected.'}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            {status?.phoneNumber ? `Linked number: ${status.phoneNumber}` : 'No WhatsApp session detected.'}
-          </p>
+
+          <button
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            type="button"
+            onClick={handleRefresh}
+            disabled={action === 'refresh' || loadingStatus}
+          >
+            {action === 'refresh' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Refresh status
+          </button>
         </div>
 
         {/* Shared session banner for non-admin users */}
         {isSharedSession && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-            <Users className="w-4 h-4 text-blue-600" />
-            <span className="text-sm text-blue-700">Using shared clinic WhatsApp connection (managed by admin)</span>
+          <div className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700 border border-blue-100">
+            <Users className="w-4 h-4" />
+            <span>Using shared clinic WhatsApp connection managed by admin.</span>
           </div>
         )}
 
         {/* Connection controls - only for admin or users with their own session */}
         {(isAdmin || !isSharedSession) && (
-        <div className="flex flex-wrap gap-3">
-          <button
-            className="primary-button"
-            onClick={handleConnect}
-            disabled={action === 'connect' || loadingStatus}
-          >
-            {action === 'connect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            <span>{status?.connected ? 'Reconnect' : 'Connect'}</span>
-          </button>
-          <button
-            className="secondary-button"
-            onClick={handleQr}
-            disabled={action === 'qr'}
-          >
-            {action === 'qr' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
-            <span>Generate QR</span>
-          </button>
-          {status?.connected && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button
-              className="secondary-button text-red-600 hover:text-red-700"
-              onClick={handleDisconnect}
-              disabled={action === 'disconnect'}
+              className="primary-button justify-center"
+              onClick={handleConnect}
+              disabled={action === 'connect' || loadingStatus}
             >
-              {action === 'disconnect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
-              <span>Disconnect</span>
+              {action === 'connect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              <span>{status?.connected ? 'Reconnect session' : 'Connect WhatsApp'}</span>
             </button>
-          )}
-        </div>
+            <button
+              className="secondary-button justify-center"
+              onClick={handleQr}
+              disabled={action === 'qr' || loadingStatus}
+            >
+              {action === 'qr' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+              <span>Generate QR</span>
+            </button>
+            {status?.connected && (
+              <button
+                className="secondary-button justify-center text-red-600 hover:text-red-700"
+                onClick={handleDisconnect}
+                disabled={action === 'disconnect' || loadingStatus}
+              >
+                {action === 'disconnect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+                <span>Disconnect</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
       {qr && (
         <div className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-center">
-          <img src={qr} alt="WhatsApp QR" className="w-48 h-48 object-contain" />
-          <div>
-            <p className="font-semibold text-gray-800">Scan to link WhatsApp Web</p>
+          <img src={qr} alt="WhatsApp QR" className="w-48 h-48 object-contain rounded-xl bg-white" />
+          <div className="space-y-2">
+            <p className="font-semibold text-gray-800">Scan this QR to pair WhatsApp</p>
             <p className="text-sm text-gray-500">
-              Open WhatsApp &gt; Linked devices &gt; Link a device, then scan this QR code. It refreshes every ~2 minutes.
+              Open WhatsApp &gt; Settings &gt; Linked devices &gt; Link a device. Scan the QR within 2 minutes to complete pairing.
+            </p>
+            <p className="text-sm text-slate-600">
+              If the QR expires, generate a new one and try again. The connection is required for automated patient messages.
             </p>
           </div>
         </div>

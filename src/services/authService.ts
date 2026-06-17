@@ -8,7 +8,7 @@ export const convertDatabaseRole = (dbRole: DatabaseRole): Role => ({
   name: dbRole.name,
   description: dbRole.description || '',
   permissions: dbRole.permissions || [],
-  createdAt: dbRole.created_at || new Date().toISOString(),
+  createdAt: new Date(dbRole.created_at || new Date()),
 });
 
 export const authService = {
@@ -79,10 +79,11 @@ export const authService = {
 
     const { data, error } = await supabase
       .from('profiles')
-      .insert([dbProfile])
+      .upsert([dbProfile], { onConflict: 'id' })
       .select(`*, clinic_settings:clinic_id (*)`);
 
-    if (error || !data?.[0]) throw new Error('Failed to create profile');
+    if (error) throw new Error(`Failed to create profile: ${error.message}`);
+    if (!data?.[0]) throw new Error('Failed to create profile: no data returned');
     const profile = convertDatabaseProfile(data[0], undefined, data[0].clinic_settings);
     saveProfileToLocalStorage(profile);
     return profile;

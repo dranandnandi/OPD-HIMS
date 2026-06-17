@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User, Phone, Plus } from 'lucide-react';
+import { X, Calendar, Clock, User, Phone, Plus, Download } from 'lucide-react';
 import { Appointment, Patient, Profile } from '../../types';
 import { appointmentService } from '../../services/appointmentService';
 import { patientService } from '../../services/patientService';
@@ -9,6 +9,84 @@ import { format, isSameDay } from 'date-fns';
 import AppointmentCard from './AppointmentCard';
 import AppointmentMessageModal from './AppointmentMessageModal';
 import { toTitleCase } from '../../utils/stringUtils';
+
+type ExcelCellValue = string | number | boolean | null | undefined;
+
+const escapeXml = (value: ExcelCellValue) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const sanitizeWorksheetName = (value: string) =>
+  value.replace(/[\\/*?:\[\]]/g, '').slice(0, 31) || 'Sheet';
+
+const buildExcelCell = (value: ExcelCellValue, isHeader = false) => {
+  const styleId = isHeader ? 'Header' : 'Default';
+  const cellValue = value ?? '';
+
+  if (typeof cellValue === 'number' && Number.isFinite(cellValue)) {
+    return `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${cellValue}</Data></Cell>`;
+  }
+
+  if (typeof cellValue === 'boolean') {
+    return `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${cellValue ? 'Yes' : 'No'}</Data></Cell>`;
+  }
+
+  return `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(cellValue)}</Data></Cell>`;
+};
+
+const buildWorksheetXml = (name: string, rows: ExcelCellValue[][]) => `
+  <Worksheet ss:Name="${escapeXml(sanitizeWorksheetName(name))}">
+    <Table>
+      ${rows
+        .map((row, rowIndex) => `
+          <Row>
+            ${row.map((cell) => buildExcelCell(cell, rowIndex === 0)).join('')}
+          </Row>
+        `)
+        .join('')}
+    </Table>
+  </Worksheet>
+`;
+
+const createExcelWorkbookXml = (worksheets: Array<{ name: string; rows: ExcelCellValue[][] }>) => `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook
+  xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:html="http://www.w3.org/TR/REC-html40">
+  <Styles>
+    <Style ss:ID="Default">
+      <Alignment ss:Vertical="Top" ss:WrapText="1" />
+    </Style>
+    <Style ss:ID="Header">
+      <Font ss:Bold="1" />
+      <Interior ss:Color="#DCEBFF" ss:Pattern="Solid" />
+      <Alignment ss:Vertical="Top" ss:WrapText="1" />
+    </Style>
+  </Styles>
+  ${worksheets.map((sheet) => buildWorksheetXml(sheet.name, sheet.rows)).join('')}
+</Workbook>`;
+
+const triggerExcelDownload = (filename: string, worksheets: Array<{ name: string; rows: ExcelCellValue[][] }>) => {
+  const workbookXml = createExcelWorkbookXml(worksheets);
+  const blob = new Blob([workbookXml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;'
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 interface AppointmentDayDetailsModalProps {
   selectedDate: Date;
@@ -27,8 +105,15 @@ const AppointmentDayDetailsModal: React.FC<AppointmentDayDetailsModalProps> = ({
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [showSendMessageModal, setShowSendMessageModal] = useState(false);
   const [selectedAppointmentForMessage, setSelectedAppointmentForMessage] = useState<Appointment | null>(null);
+  const isAdminUser = !!user && (
+    user.roleName?.toLowerCase() === 'admin' ||
+    user.roleName?.toLowerCase() === 'super_admin' ||
+    user.permissions?.includes('admin') ||
+    user.permissions?.includes('all')
+  );
 
   useEffect(() => {
     if (user && selectedDate) {
@@ -84,6 +169,74 @@ const AppointmentDayDetailsModal: React.FC<AppointmentDayDetailsModalProps> = ({
     onClose(); // Close the day details modal when opening new appointment modal
   };
 
+  const handleDownloadExcel = async () => {
+    if (!user || !isAdminUser) {
+      return;
+    }
+
+    try {
+      setExportingExcel(true);
+
+      const scheduledCount = appointments.filter((appointment) => appointment.status === 'Scheduled').length;
+      const confirmedCount = appointments.filter((appointment) => appointment.status === 'Confirmed').length;
+      const completedCount = appointments.filter((appointment) => appointment.status === 'Completed').length;
+      const cancelledCount = appointments.filter((appointment) => appointment.status === 'Cancelled').length;
+      const noShowCount = appointments.filter((appointment) => appointment.status === 'No_Show').length;
+      const arrivedCount = appointments.filter((appointment) => appointment.status === 'Arrived').length;
+      const inProgressCount = appointments.filter((appointment) => appointment.status === 'In_Progress').length;
+
+      const workbookSheets = [
+        {
+          name: 'Day Summary',
+          rows: [
+            ['Field', 'Value'],
+            ['Date', format(selectedDate, 'dd-MMM-yyyy')],
+            ['Day', format(selectedDate, 'EEEE')],
+            ['Clinic User', user.name || user.email || ''],
+            ['Total Appointments', appointments.length],
+            ['First Slot', appointments[0] ? format(appointments[0].appointmentDate, 'hh:mm a') : ''],
+            ['Last Slot', appointments.length > 0 ? format(appointments[appointments.length - 1].appointmentDate, 'hh:mm a') : ''],
+            ['Scheduled', scheduledCount],
+            ['Confirmed', confirmedCount],
+            ['Arrived', arrivedCount],
+            ['In Progress', inProgressCount],
+            ['Completed', completedCount],
+            ['Cancelled', cancelledCount],
+            ['No Show', noShowCount]
+          ]
+        },
+        {
+          name: 'Appointments',
+          rows: [
+            ['Time', 'Patient Name', 'Phone', 'Doctor', 'Appointment Type', 'Duration (min)', 'Status', 'Waiting Condition', 'Notes', 'Patient ID', 'Appointment ID'],
+            ...(appointments.length > 0
+              ? appointments.map((appointment) => [
+                  format(appointment.appointmentDate, 'hh:mm a'),
+                  appointment.patient?.name || 'Unknown',
+                  appointment.patient?.phone || '',
+                  appointment.doctor?.name || 'Unassigned',
+                  toTitleCase(appointment.appointmentType.replace(/_/g, ' ')),
+                  appointment.duration,
+                  toTitleCase(appointment.status.replace(/_/g, ' ')),
+                  appointment.waitingConditionType || '',
+                  appointment.notes || '',
+                  appointment.patientId,
+                  appointment.id
+                ])
+              : [['No appointments scheduled', '', '', '', '', '', '', '', '', '', '']])
+          ]
+        }
+      ];
+
+      triggerExcelDownload(`appointments_${format(selectedDate, 'dd-MMM-yyyy')}.xls`, workbookSheets);
+    } catch (err) {
+      console.error('Error exporting appointments Excel:', err);
+      alert('Failed to export appointments Excel. Please try again.');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   if (!user) {
     return null;
   }
@@ -105,6 +258,17 @@ const AppointmentDayDetailsModal: React.FC<AppointmentDayDetailsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isAdminUser && (
+              <button
+                onClick={handleDownloadExcel}
+                disabled={exportingExcel}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+                title="Download appointments in Excel format"
+              >
+                <Download className="w-4 h-4" />
+                {exportingExcel ? 'Preparing Excel...' : 'Download Excel'}
+              </button>
+            )}
             <button
               onClick={handleNewAppointmentForDate}
               className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"

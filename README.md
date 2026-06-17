@@ -2,9 +2,24 @@
 
 A comprehensive OPD (Outpatient Department) management application specifically designed for Indian clinics, featuring AI-powered case paper processing with Google Vision AI and Google Gemini.
 
+## Applications
+
+This repository contains two applications:
+
+### 🏥 Main OPD Management System
+The full-featured clinic management system with AI-powered case paper processing, comprehensive patient management, billing, pharmacy, and analytics.
+
+### 📅 Appointment Portal (`appointment-portal/`)
+A streamlined web application for managing clinic waiting sequences and appointment display settings. Features include:
+- Waiting sequence configuration and management
+- Display settings for patient information screens
+- User management for doctors and staff
+- WhatsApp integration for automated messaging
+- Real-time queue status and token management
+
 ## Features
 
-### 🏥 Core Medical Features
+### 🏥 Core Medical Features (Main App)
 - **Patient Registration & Management** - Complete patient demographics, search, and visit history
 - **AI-Powered Case Paper Upload** - Photo capture with Google Vision AI OCR
 - **Medical NLP Processing** - Google Gemini extracts symptoms, vitals, diagnosis, prescriptions, and advice
@@ -13,6 +28,13 @@ A comprehensive OPD (Outpatient Department) management application specifically 
 - **Follow-up Management** - Automated scheduling with SMS reminders
 - **Patient Timeline** - Comprehensive visit history with search and filtering
 - **Analytics Dashboard** - Indian clinic-specific metrics and trends
+
+### 📅 Appointment Portal Features
+- **Appointment Management** - Calendar view, booking, and status tracking
+- **Patient Directory** - Searchable patient list with contact info and visit history
+- **Analytics Dashboard** - Appointment statistics, wait times, and patient satisfaction
+- **Settings Management** - Profile, clinic info, users, WhatsApp, and notifications
+- **WhatsApp Integration** - Automated messaging and review requests
 
 ### 🔧 Technical Features
 - **Mobile-First Design** - Fully responsive with touch-optimized interfaces
@@ -47,6 +69,17 @@ A comprehensive OPD (Outpatient Department) management application specifically 
 ```bash
 npm install
 ```
+
+#### For Appointment Portal Only
+If you only need the appointment portal:
+```bash
+cd appointment-portal
+npm install
+npm run dev  # Runs on port 5174
+```
+
+#### For Main OPD System
+For the full OPD management system, continue with the main directory.
 
 2. **Configure Environment Variables:**
    Create a `.env` file in the root directory with your Supabase credentials and WhatsApp settings:

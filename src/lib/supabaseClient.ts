@@ -176,7 +176,7 @@ try {
   if (supabaseUrl && supabaseAnonKey) {
     supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
-        debug: true,
+        debug: import.meta.env.DEV,
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true
@@ -243,15 +243,24 @@ export interface DatabasePatient {
   id: string;
   name: string;
   phone: string;
-  age: number;
+  age: number | null;
   gender: 'male' | 'female' | 'other';
-  address: string;
-  emergency_contact: string;
+  address: string | null;
+  emergency_contact: string | null;
   blood_group?: string;
   allergies?: string[];
   created_at: string;
   last_visit?: string;
   clinic_id?: string;
+  // ABHA fields
+  abha_number?: string;
+  abha_address?: string;
+  abha_linked_at?: string;
+  abha_consent_given?: boolean;
+  abha_consent_at?: string;
+  mobile_verified?: boolean;
+  is_hidden?: boolean;
+  hidden_at?: string;
 }
 
 export interface DatabaseAppointment {
@@ -532,6 +541,14 @@ export interface DatabaseClinicSetting {
   enable_gmb_link_only?: boolean;
   gmb_link?: string;
   whatsapp_shared_session_user_id?: string;
+  clinic_tier?: 'basic' | 'silver' | 'gold';
+  waiting_sequence_enabled?: boolean;
+  prescription_frequencies?: Array<{ code: string; label: string; timesPerDay: number | null }>;
+  appointment_types?: Array<{ id: string; label: string; duration: number; color: string; feeType?: string; customFee?: number; fee?: number }>;
+  whatsapp_templates?: Record<string, string>;
+  pdf_header_url?: string;
+  pdf_footer_url?: string;
+  pdf_margins?: string;
 }
 
 export interface DatabaseMedicineMaster {

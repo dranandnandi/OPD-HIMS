@@ -52,7 +52,9 @@ import SystemSettings from './components/Settings/SystemSettings';
 import DoctorAvailabilitySettings from './components/Settings/DoctorAvailabilitySettings';
 import WhatsappAndAIReviewSettings from './components/Settings/WhatsappAndAIReviewSettings';
 import WhatsAppAutoSendSettings from './components/Settings/WhatsAppAutoSendSettings';
+import WaitingSequenceSettings from './components/Settings/WaitingSequenceSettings';
 import ChatbotUtility from './components/Chatbots/ChatbotUtility';
+import { MessageQueueProcessor } from './components/WhatsApp/MessageQueueProcessor';
 
 // GMB Review Requests
 import GMBReviewRequests from './components/GMBReviewRequests/GMBReviewRequests';
@@ -161,6 +163,50 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+// Tier-gated Route - Restricts pages to Silver/Gold clinics only (basic tier has no access)
+const TIER_ORDER: Record<string, number> = { basic: 0, silver: 1, gold: 2 };
+
+const TierRoute: React.FC<{ minTier?: 'silver' | 'gold'; children: React.ReactNode }> = ({
+  minTier = 'silver',
+  children,
+}) => {
+  const { user } = useAuth();
+  const clinicTier = (user?.clinic?.clinicTier ?? 'basic') as string;
+  const hasAccess = TIER_ORDER[clinicTier] >= TIER_ORDER[minTier];
+
+  console.log('[TierRoute]', {
+    clinicId: user?.clinicId,
+    rawClinicTier: user?.clinic?.clinicTier,
+    resolvedTier: clinicTier,
+    minTier,
+    hasAccess,
+  });
+
+  if (!hasAccess) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-8 bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Feature Locked</h2>
+          <p className="text-gray-500 mb-1">
+            This feature is available on the <span className="font-semibold capitalize">{minTier}</span> plan and above.
+          </p>
+          <p className="text-sm text-gray-400">
+            Your clinic is currently on the <span className="font-semibold capitalize">{clinicTier}</span> plan.
+            Contact The Doctorpreneur Academy to upgrade.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 // Admin-or-Reception Route Component - Requires admin/super_admin OR receptionist role
 const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, hasPermission } = useAuth();
@@ -186,6 +232,7 @@ const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ childr
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="min-h-screen bg-soft-gray">
+      <MessageQueueProcessor />
       {/* Desktop Navigation */}
       <div className="hidden lg:block">
         <Navigation />
@@ -230,6 +277,16 @@ const AppContent: React.FC = () => {
         </ProtectedRoute>
       } />
 
+      <Route path="/waiting-sequences" element={
+        <ProtectedRoute>
+          <AdminRoute>
+            <AppLayout>
+              <WaitingSequenceSettings />
+            </AppLayout>
+          </AdminRoute>
+        </ProtectedRoute>
+      } />
+
       {/* Visits */}
       <Route path="/visits" element={
         <ProtectedRoute>
@@ -269,7 +326,9 @@ const AppContent: React.FC = () => {
       <Route path="/follow-ups" element={
         <ProtectedRoute>
           <AppLayout>
-            <FollowUps />
+            <TierRoute>
+              <FollowUps />
+            </TierRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -278,7 +337,9 @@ const AppContent: React.FC = () => {
       <Route path="/gmb-review-requests" element={
         <ProtectedRoute>
           <AppLayout>
-            <GMBReviewRequests />
+            <TierRoute>
+              <GMBReviewRequests />
+            </TierRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -441,7 +502,9 @@ const AppContent: React.FC = () => {
         <ProtectedRoute>
           <AdminOrReceptionRoute>
             <AppLayout>
-              <WhatsappAndAIReviewSettings />
+              <TierRoute>
+                <WhatsappAndAIReviewSettings />
+              </TierRoute>
             </AppLayout>
           </AdminOrReceptionRoute>
         </ProtectedRoute>
@@ -451,7 +514,9 @@ const AppContent: React.FC = () => {
         <ProtectedRoute>
           <AdminRoute>
             <AppLayout>
-              <WhatsAppAutoSendSettings />
+              <TierRoute>
+                <WhatsAppAutoSendSettings />
+              </TierRoute>
             </AppLayout>
           </AdminRoute>
         </ProtectedRoute>
@@ -460,7 +525,9 @@ const AppContent: React.FC = () => {
       <Route path="/chatbots" element={
         <ProtectedRoute>
           <AppLayout>
-            <ChatbotUtility />
+            <TierRoute>
+              <ChatbotUtility />
+            </TierRoute>
           </AppLayout>
         </ProtectedRoute>
       } />

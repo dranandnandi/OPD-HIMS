@@ -24,6 +24,52 @@ const formatDoctorName = (name: string | null | undefined): string => {
   return cleaned ? `Dr. ${cleaned}` : '';
 }
 
+const extractImpressionDetails = (doctorNotes?: string | null) => {
+  const notes = doctorNotes?.trim() || '';
+  if (!notes) {
+    return {
+      impressionItems: [] as string[],
+      remainingNotes: ''
+    };
+  }
+
+  const headingPattern = /^\s*(?:\[[^\]]+\]\s*:?\s*)?(impression|findings?)\s*[:\-]?\s*/i;
+  const splitItems = (text: string) => text
+    .split(/\r?\n+|\/|;|(?<=\.)\s+(?=[A-Z])/g)
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const lines = notes
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const impressionLines: string[] = [];
+  const remainingLines: string[] = [];
+
+  lines.forEach((line) => {
+    if (headingPattern.test(line)) {
+      impressionLines.push(line.replace(headingPattern, '').trim());
+      return;
+    }
+    remainingLines.push(line);
+  });
+
+  const collapsed = lines.join(' ');
+  if (impressionLines.length === 0 && headingPattern.test(collapsed)) {
+    const extracted = collapsed.replace(headingPattern, '').trim();
+    return {
+      impressionItems: splitItems(extracted),
+      remainingNotes: ''
+    };
+  }
+
+  return {
+    impressionItems: splitItems(impressionLines.join('\n')),
+    remainingNotes: remainingLines.join('\n').trim()
+  };
+}
+
 // Builds a QR code img tag pointing to the prescription verify page
 const buildQrHtml = (visitId: string, sizePx = 70): string => {
   const verifyUrl = `https://docpreneur.academy/verify?id=${encodeURIComponent(visitId)}`;
@@ -349,6 +395,7 @@ serve(async (req) => {
       // =====================================================
       const { visit, patient, doctor } = data;
       filename = `CompactRx_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(visit.date).toLocaleDateString('en-IN').replace(/\//g, '-')}.pdf`;
+      const impressionDetails = extractImpressionDetails(visit.doctorNotes);
 
       htmlContent = `
         <!DOCTYPE html>
@@ -445,7 +492,7 @@ serve(async (req) => {
               <div style="font-size:12px; font-weight:bold; margin-bottom:4px;">${data.clinicSettings?.clinicName || 'Clinic'}</div>
             </div>
             <div class="date">
-              Date & Time: <strong>${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
+              Date & Time: <strong>${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}</strong>
             </div>
           </div>
 
@@ -471,6 +518,7 @@ serve(async (req) => {
           <div class="allergy-warn">&#9888; ALLERGIES: ${patient.allergies.join(', ')}</div>
           ` : ''}
 
+
           ${visit.chiefComplaint ? `
           <div class="section-title">Chief Complaint</div>
           <div class="compact-line">${visit.chiefComplaint}</div>
@@ -480,6 +528,13 @@ serve(async (req) => {
           <div class="section-title">Symptoms</div>
           <div class="compact-line">
             ${visit.symptoms.map(s => s.name + (s.severity ? ' (' + s.severity + ')' : '') + (s.duration ? ' - ' + s.duration : '')).join(' &nbsp;|&nbsp; ')}
+          </div>
+          ` : ''}
+
+          ${impressionDetails.impressionItems.length > 0 ? `
+          <div class="section-title">Impression</div>
+          <div class="compact-line">
+            ${impressionDetails.impressionItems.map((item, index) => (index + 1) + '. ' + item).join(' &nbsp;&nbsp; ')}
           </div>
           ` : ''}
 
@@ -518,7 +573,6 @@ serve(async (req) => {
           </table>
           <div style="font-size:9px; color:#555; margin-bottom:4px;">* Take medications as prescribed. Contact doctor if side effects occur.</div>
           ` : ''}
-
           ${visit.testsOrdered && visit.testsOrdered.length > 0 ? `
           <div class="section-title">Tests Ordered</div>
           <div class="compact-line">
@@ -649,7 +703,7 @@ OUTPUT JSON FORMAT:
 Translate now:`;
 
           const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -858,6 +912,8 @@ Translate now:`;
         return result;
       };
 
+      const impressionDetails = extractImpressionDetails(visit.doctorNotes);
+
       htmlContent = `
         <!DOCTYPE html>
         <html lang="${adviceLanguage === 'hindi' ? 'hi' : adviceLanguage === 'bengali' ? 'bn' : 'en'}">
@@ -981,13 +1037,14 @@ Translate now:`;
         </head>
         <body>
           <div class="prescription-header">
-            <h2>📋 PATIENT PRESCRIPTION</h2>
-            <p style="margin: 5px 0; font-size: 12px;">Visit Date & Time: ${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
+            <h2>📋 PATIENT VISIT SUMMARY</h2>
+            <p style="margin: 5px 0; font-size: 12px;">Visit Date & Time: ${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}</p>
           </div>
 
           <div class="details-section">
             <div>
               <h3>👤 PATIENT DETAILS</h3>
+              <p><strong>Visit Date & Time:</strong> ${new Date(visit.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}</p>
               <p><strong>Name:</strong> ${patient.name}</p>
               <p><strong>Phone:</strong> ${patient.phone}</p>
               <p><strong>Age:</strong> ${patient.age} years | <strong>Gender:</strong> ${patient.gender}</p>
@@ -1032,7 +1089,7 @@ Translate now:`;
 
           ${visit.physicalExamination?.sections && visit.physicalExamination.sections.length > 0 ? `
           <div class="section">
-            <h3><span class="section-icon">🔍</span> PHYSICAL EXAMINATION</h3>
+            <h3><span class="section-icon">🔍</span> ${escapeHtml(visit.physicalExamination.templateName?.trim() || 'PHYSICAL EXAMINATION')}</h3>
             ${visit.physicalExamination.sections.map(section => `
               <div style="margin-bottom: 15px;">
                 <h4 style="font-size: 13px; color: #666; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;">${section.title}</h4>
@@ -1060,6 +1117,19 @@ Translate now:`;
                   ${symptom.severity ? ` <span style="background: ${symptom.severity === 'severe' ? '#ffcdd2' : symptom.severity === 'moderate' ? '#fff9c4' : '#c8e6c9'}; padding: 2px 8px; border-radius: 3px; font-size: 11px;">${symptom.severity}</span>` : ''}
                   ${symptom.duration ? ` - Duration: ${symptom.duration}` : ''}
                   ${symptom.notes ? `<br><em style="color: #666; font-size: 12px;">${symptom.notes}</em>` : ''}
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+          ` : ''}
+
+          ${impressionDetails.impressionItems.length > 0 ? `
+          <div class="section">
+            <h3><span class="section-icon">IM</span> IMPRESSION</h3>
+            <ul>
+              ${impressionDetails.impressionItems.map((item, index) => `
+                <li>
+                  <strong>${index + 1}. ${item}</strong>
                 </li>
               `).join('')}
             </ul>
@@ -1184,10 +1254,10 @@ Translate now:`;
           </div>
           ` : ''}
 
-          ${visit.doctorNotes ? `
+          ${impressionDetails.remainingNotes ? `
           <div class="section">
             <h3><span class="section-icon">📋</span> DOCTOR'S NOTES</h3>
-            <p style="font-style: italic; color: #555; background: white; padding: 12px; border-radius: 5px; border-left: 3px solid #9c27b0;">${visit.doctorNotes}</p>
+            <p style="font-style: italic; color: #555; background: white; padding: 12px; border-radius: 5px; border-left: 3px solid #9c27b0; white-space: pre-line;">${impressionDetails.remainingNotes}</p>
           </div>
           ` : ''}
 

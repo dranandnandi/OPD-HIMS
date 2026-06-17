@@ -72,6 +72,8 @@ serve(async (req) => {
         consultation_fee,
         follow_up_fee,
         emergency_fee,
+        is_open_for_consultation,
+        doctor_availability,
         is_active,
         created_at,
         updated_at,
@@ -98,7 +100,8 @@ serve(async (req) => {
           pdf_header_url,
           pdf_footer_url,
           pdf_margins,
-          pdf_print_margins
+          pdf_print_margins,
+          clinic_tier
         )
       `)
       .eq('id', user.id)
@@ -153,6 +156,8 @@ serve(async (req) => {
       consultationFee: dbProfile.consultation_fee,
       followUpFee: dbProfile.follow_up_fee,
       emergencyFee: dbProfile.emergency_fee,
+      isOpenForConsultation: dbProfile.is_open_for_consultation,
+      doctorAvailability: dbProfile.doctor_availability,
       isActive: dbProfile.is_active,
       createdAt: dbProfile.created_at,
       updatedAt: dbProfile.updated_at,
@@ -179,6 +184,7 @@ serve(async (req) => {
         pdfFooterUrl: dbProfile.clinic_settings.pdf_footer_url,
         pdfMargins: dbProfile.clinic_settings.pdf_margins,
         pdfPrintMargins: dbProfile.clinic_settings.pdf_print_margins,
+        clinicTier: dbProfile.clinic_settings.clinic_tier ?? 'basic',
       } : undefined
     }
 

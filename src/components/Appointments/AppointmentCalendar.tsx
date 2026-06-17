@@ -12,7 +12,9 @@ import PatientModal from '../Patients/PatientModal';
 import AddVisitModal from '../Patients/AddVisitModal';
 import AppointmentMessageModal from './AppointmentMessageModal';
 import AppointmentCard from './AppointmentCard';
+import ArrivedConditionModal from './ArrivedConditionModal';
 import { toTitleCase } from '../../utils/stringUtils';
+import { waitingSequenceService } from '../../services/waitingSequenceService';
 
 const AppointmentCalendar: React.FC = () => {
   const { user } = useAuth();
@@ -35,6 +37,7 @@ const AppointmentCalendar: React.FC = () => {
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [showRealtimeToast, setShowRealtimeToast] = useState(false);
   const [realtimeToastMessage, setRealtimeToastMessage] = useState('');
+  const [pendingArrivedAppointment, setPendingArrivedAppointment] = useState<Appointment | null>(null);
 
   // 4-day calculation starting from current date
   const fourDayStart = new Date(currentWeek);
@@ -257,13 +260,53 @@ const AppointmentCalendar: React.FC = () => {
   };
 
   const handleQuickStatusChange = async (appointmentId: string, newStatus: Appointment['status']) => {
+    if (newStatus === 'Arrived') {
+      const appt = appointments.find(a => a.id === appointmentId);
+      if (appt) {
+        try {
+          await appointmentService.updateAppointment(appointmentId, { status: 'Arrived' });
+          await loadData();
+        } catch (error) {
+          console.error('Error updating appointment status:', error);
+          alert('Failed to update appointment status. Please try again.');
+          return;
+        }
+        setPendingArrivedAppointment({ ...appt, status: 'Arrived' });
+        return;
+      }
+    }
     try {
       await appointmentService.updateAppointment(appointmentId, { status: newStatus });
-      await loadData(); // Refresh appointments after status change
+      if (newStatus === 'In_Progress' || newStatus === 'Completed' || newStatus === 'Cancelled') {
+        await waitingSequenceService.cancelSequence(appointmentId);
+      }
+      await loadData();
     } catch (error) {
       console.error('Error updating appointment status:', error);
       alert('Failed to update appointment status. Please try again.');
     }
+  };
+
+  const handleArrivedConfirm = async (conditionType: string | null) => {
+    const appt = pendingArrivedAppointment;
+    setPendingArrivedAppointment(null);
+    if (!appt?.id || !user?.clinicId) return;
+    if (conditionType && appt.patient?.phone) {
+      try {
+        await waitingSequenceService.startSequence({
+          clinicId: user.clinicId,
+          appointmentId: appt.id,
+          patientId: appt.patientId,
+          patientPhone: appt.patient.phone,
+          conditionType,
+          arrivalTime: new Date(),
+          appointmentTime: new Date(appt.appointmentDate),
+        });
+      } catch (error) {
+        console.error('Error starting waiting sequence:', error);
+      }
+    }
+    await loadData();
   };
 
   const clearFilters = () => {
@@ -521,9 +564,15 @@ const AppointmentCalendar: React.FC = () => {
           doctors={doctors}
           appointmentTypes={appointmentTypes}
           onSave={(appointmentData) => {
-            // Handle save logic here
             setShowModal(false);
-            loadData(); // Reload data
+            if (appointmentData.status === 'Arrived' && selectedAppointment?.id) {
+              setPendingArrivedAppointment({
+                ...selectedAppointment,
+                ...appointmentData,
+                id: selectedAppointment.id,
+              } as Appointment);
+            }
+            loadData();
           }}
           onPatientAdded={loadData}
           onClose={() => setShowModal(false)}
@@ -562,6 +611,17 @@ const AppointmentCalendar: React.FC = () => {
             }}
           />
         </div>
+      )}
+
+      {/* Arrived Condition Picker */}
+      {pendingArrivedAppointment && (
+        <ArrivedConditionModal
+          appointmentId={pendingArrivedAppointment.id}
+          patientName={pendingArrivedAppointment.patient?.name ?? 'Patient'}
+          preselectedCondition={pendingArrivedAppointment.waitingConditionType}
+          onConfirm={handleArrivedConfirm}
+          onCancel={() => setPendingArrivedAppointment(null)}
+        />
       )}
 
       {/* Realtime Toast Notification */}
@@ -608,24 +668,35 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(
     appointment ? patients.find(p => p.id === appointment.patientId) || null : null
   );
+  const [waitingSequenceEnabled, setWaitingSequenceEnabled] = useState(false);
+  const [conditionTypes, setConditionTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.clinicId) return;
+      try {
+        const settings = await clinicSettingsService.getOrCreateClinicSettings();
+        if (settings?.waitingSequenceEnabled) {
+          setWaitingSequenceEnabled(true);
+          const types = await waitingSequenceService.getConditionTypes(user.clinicId);
+          setConditionTypes(types);
+          // Auto-select General if no condition already set on this appointment
+          if (!appointment?.waitingConditionType && types.includes('General')) {
+            setFormData(prev => ({ ...prev, waitingConditionType: 'General' }));
+          }
+        }
+      } catch {}
+    };
+    load();
+  }, [user?.clinicId]);
 
   // Generate time slots starting from 9:00 AM
   const generateTimeSlots = () => {
     const slots = [];
-    for (let hour = 9; hour < 24; hour++) {
+    // 7:00 AM to 10:00 PM only
+    for (let hour = 7; hour <= 22; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        const displayTime = new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        });
-        slots.push({ value: timeString, display: displayTime });
-      }
-    }
-    // Add early morning slots (12:00 AM to 8:45 AM)
-    for (let hour = 0; hour < 9; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
+        if (hour === 22 && minute > 0) break;
         const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         const displayTime = new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
           hour: 'numeric',
@@ -672,7 +743,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     duration: appointment?.duration || 30,
     appointmentType: getDefaultAppointmentType(),
     status: appointment?.status || 'Scheduled' as Appointment['status'],
-    notes: appointment?.notes || ''
+    notes: appointment?.notes || '',
+    waitingConditionType: appointment?.waitingConditionType || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -730,7 +802,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
         duration: formData.duration,
         appointmentType: formData.appointmentType,
         status: formData.status,
-        notes: formData.notes
+        notes: formData.notes,
+        waitingConditionType: formData.waitingConditionType || undefined,
       };
 
       if (appointment) {
@@ -959,6 +1032,25 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
               <option value="No_Show">No Show</option>
             </select>
           </div>
+
+          {waitingSequenceEnabled && conditionTypes.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Waiting Condition
+                <span className="ml-1 text-xs text-gray-400 font-normal">(for WhatsApp waiting sequence)</span>
+              </label>
+              <select
+                value={formData.waitingConditionType}
+                onChange={(e) => setFormData({ ...formData, waitingConditionType: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              >
+                <option value="">— Select condition (optional) —</option>
+                {conditionTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

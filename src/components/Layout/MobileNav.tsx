@@ -15,6 +15,7 @@ import {
   User,
   Pill,
   Clock,
+  Timer,
   Star,
   TrendingUp,
   Bot,
@@ -28,20 +29,39 @@ const MobileNav: React.FC = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
+  const clinicTier = user?.clinic?.clinicTier ?? 'silver';
+  const isBasic = clinicTier === 'basic';
+  const roleName = user?.roleName?.toLowerCase();
+  const canManageClinicDoctors = Boolean(
+    user && (
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      roleName === 'receptionist' ||
+      roleName === 'reception' ||
+      user.permissions.includes('admin') ||
+      user.permissions.includes('all')
+    )
+  );
+
   const navItems = [
     { path: '/', icon: CalendarDays, label: 'Appointments' },
+    ...(user && (roleName === 'admin' || roleName === 'super_admin' || user.permissions.includes('admin') || user.permissions.includes('all'))
+      ? [{ path: '/waiting-sequences', icon: Timer, label: 'Waiting Sequences' }]
+      : []),
     { path: '/visits', icon: Activity, label: 'Visits' },
     { path: '/patients', icon: Users, label: 'Patients' },
-    { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
-    { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' },
+    ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups' }] : []),
+    ...(!isBasic ? [{ path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' }] : []),
     { path: '/billing', icon: CreditCard, label: 'Billing' },
     { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection' },
     { path: '/pharmacy', icon: Pill, label: 'Pharmacy' },
     { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload' },
-    { path: '/chatbots', icon: Bot, label: 'AI Health Assistant' },
+    ...(!isBasic ? [{ path: '/chatbots', icon: Bot, label: 'AI Health Assistant' }] : []),
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
     { path: '/settings', icon: Settings, label: 'Settings' },
-    ...(user?.isOpenForConsultation ? [{ path: '/settings/availability', icon: Clock, label: 'My Availability' }] : [])
+    ...(user?.isOpenForConsultation || canManageClinicDoctors
+      ? [{ path: '/settings/availability', icon: Clock, label: canManageClinicDoctors ? 'Doctor Availability' : 'My Availability' }]
+      : [])
   ];
 
   // Add admin-only navigation items
@@ -49,12 +69,12 @@ const MobileNav: React.FC = () => {
     navItems.splice(-1, 0,
       { path: '/settings/master-data', icon: Settings, label: 'AI Master Data' },
       { path: '/settings/users', icon: Users, label: 'User Management' },
-      { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI' }
+      ...(!isBasic ? [{ path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI' }] : [])
     );
   }
 
   // Add WhatsApp & AI nav item for reception (non-admin)
-  if (user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
+  if (!isBasic && user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
     !(user.permissions.includes('admin') || user.permissions.includes('all'))) {
     navItems.splice(-1, 0,
       { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI' }
@@ -197,8 +217,8 @@ const MobileNav: React.FC = () => {
           <div className="flex-1 p-6 overflow-y-auto">
             <ul className="space-y-2">
               {navItems.map(({ path, icon: Icon, label }) => {
-                // Hide availability link for non-consultation users
-                if (path === '/settings/availability' && !user?.isOpenForConsultation) {
+                // Hide availability link unless this user can set their own or manage clinic doctors.
+                if (path === '/settings/availability' && !user?.isOpenForConsultation && !canManageClinicDoctors) {
                   return null;
                 }
 

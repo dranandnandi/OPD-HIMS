@@ -122,9 +122,10 @@ export class WhatsAppAutoSendService {
     messageContent: string;
     metadata?: Record<string, any>;
     delayMinutes?: number;
+    scheduledAt?: Date;
   }): Promise<void> {
-    const scheduledAt = new Date();
-    if (params.delayMinutes) {
+    const scheduledAt = params.scheduledAt ?? new Date();
+    if (!params.scheduledAt && params.delayMinutes) {
       scheduledAt.setMinutes(scheduledAt.getMinutes() + params.delayMinutes);
     }
 
@@ -137,7 +138,7 @@ export class WhatsAppAutoSendService {
       metadata: params.metadata || {},
       status: 'pending',
       scheduled_at: scheduledAt.toISOString(),
-      retry_count: 0
+      retry_count: 0,
     });
   }
 

@@ -78,6 +78,18 @@ const VisitDetails: React.FC = () => {
     }
   };
 
+  const getRefundStatusColor = (status: Bill['refundStatus']) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'partial': return 'bg-orange-100 text-orange-800';
+      case 'refunded': return 'bg-emerald-100 text-emerald-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatRefundStatus = (status: Bill['refundStatus']) =>
+    status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
   const handleDispenseSaved = (dispensedItems?: any[]) => {
     setShowDispenseModal(false);
     
@@ -523,6 +535,12 @@ const VisitDetails: React.FC = () => {
                   <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(bill.paymentStatus)}`}>
                     {bill.paymentStatus}
                   </span>
+                  {bill.refundStatus !== 'not_requested' && (
+                    <span className={`px-2 py-1 text-xs rounded-full ${getRefundStatusColor(bill.refundStatus)}`}>
+                      {formatRefundStatus(bill.refundStatus)}
+                      {bill.totalRefundedAmount > 0 ? ` • ₹${bill.totalRefundedAmount.toLocaleString()}` : ''}
+                    </span>
+                  )}
                   {bill.balanceAmount > 0 && (
                     <span className="text-sm text-red-600">
                       Balance: ₹{bill.balanceAmount.toLocaleString()}

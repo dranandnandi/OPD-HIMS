@@ -13,6 +13,7 @@ const convertDatabaseAppointment = (dbAppointment: DatabaseAppointment, patient?
   status: dbAppointment.status,
   appointmentType: dbAppointment.appointment_type,
   notes: dbAppointment.notes,
+  waitingConditionType: (dbAppointment as any).waiting_condition_type ?? undefined,
   createdAt: new Date(dbAppointment.created_at),
   updatedAt: new Date(dbAppointment.updated_at),
   patient,
@@ -27,8 +28,9 @@ const convertToDatabase = (appointment: Omit<Appointment, 'id' | 'createdAt' | '
   duration: appointment.duration,
   status: appointment.status,
   appointment_type: appointment.appointmentType,
-  notes: appointment.notes
-});
+  notes: appointment.notes,
+  ...(appointment.waitingConditionType !== undefined ? { waiting_condition_type: appointment.waitingConditionType } : {}),
+} as any);
 
 export const appointmentService = {
   // Get all appointments
@@ -47,10 +49,11 @@ export const appointmentService = {
       .select(`
         *,
         clinic_id,
-        patients (*),
+        patients!inner (*),
         profiles (*)
       `)
       .eq('clinic_id', profile.clinicId)
+      .eq('patients.is_hidden', false)
       .order('appointment_date', { ascending: true });
 
     if (error) {
@@ -104,10 +107,11 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients (id, name, phone),
+        patients!inner (id, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
+      .eq('patients.is_hidden', false)
       .gte('appointment_date', startDate.toISOString())
       .lte('appointment_date', endDate.toISOString())
       .order('appointment_date', { ascending: true });
@@ -164,7 +168,7 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients (id, name, phone),
+        patients!inner (id, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
@@ -226,6 +230,7 @@ export const appointmentService = {
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
+      .eq('patients.is_hidden', false)
       .eq('doctor_id', doctorId)
       .order('appointment_date', { ascending: true });
 
@@ -346,6 +351,7 @@ export const appointmentService = {
     if (appointment.status) dbAppointment.status = appointment.status;
     if (appointment.appointmentType) dbAppointment.appointment_type = appointment.appointmentType;
     if (appointment.notes !== undefined) dbAppointment.notes = appointment.notes;
+    if (appointment.waitingConditionType !== undefined) dbAppointment.waiting_condition_type = appointment.waitingConditionType;
 
     const { data, error } = await supabase
       .from('appointments')

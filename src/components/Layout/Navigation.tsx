@@ -12,6 +12,7 @@ import {
   LogOut,
   Pill,
   Clock,
+  Timer,
   Star,
   TrendingUp,
   Bot,
@@ -24,20 +25,75 @@ const Navigation: React.FC = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
+  React.useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let cachedOpenForConsultation: boolean | 'parse_error' | null = null;
+    try {
+      const raw = localStorage.getItem('bolt_user_profile');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        cachedOpenForConsultation = parsed?.isOpenForConsultation ?? null;
+      }
+    } catch {
+      cachedOpenForConsultation = 'parse_error';
+    }
+
+    console.log('[NAV DEBUG] user consultation visibility', {
+      userId: user?.id,
+      name: user?.name,
+      roleName: user?.roleName,
+      isOpenForConsultation: user?.isOpenForConsultation,
+      updatedAt: user?.updatedAt,
+      cachedOpenForConsultation,
+      currentPath: location.pathname,
+    });
+  }, [
+    user?.id,
+    user?.name,
+    user?.roleName,
+    user?.isOpenForConsultation,
+    user?.updatedAt,
+    location.pathname,
+  ]);
+
+  const clinicTier = user?.clinic?.clinicTier ?? 'silver';
+  const isBasic = clinicTier === 'basic';
+  const roleName = user?.roleName?.toLowerCase();
+  const canManageClinicDoctors = Boolean(
+    user && (
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      roleName === 'receptionist' ||
+      roleName === 'reception' ||
+      user.permissions.includes('admin') ||
+      user.permissions.includes('all')
+    )
+  );
+
   const navItems = [
     { path: '/', icon: CalendarDays, label: 'Appointments', description: 'Schedule & manage appointments' },
+    ...(user && (roleName === 'admin' || roleName === 'super_admin' || user.permissions.includes('admin') || user.permissions.includes('all'))
+      ? [{ path: '/waiting-sequences', icon: Timer, label: 'Waiting Sequences', description: 'Configure arrival message flow' }]
+      : []),
     { path: '/visits', icon: Activity, label: 'Visits', description: 'View all patient visits' },
     { path: '/patients', icon: Users, label: 'Patients', description: 'Manage patient records' },
-    { path: '/follow-ups', icon: Calendar, label: 'Follow-ups', description: 'Track patient follow-ups' },
-    { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients' },
+    ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups', description: 'Track patient follow-ups' }] : []),
+    ...(!isBasic ? [{ path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients' }] : []),
     { path: '/billing', icon: CreditCard, label: 'Billing', description: 'Manage bills & payments' },
     { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', description: 'Daily payment reconciliation' },
     { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory' },
     { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing' },
-    { path: '/chatbots', icon: Bot, label: 'AI Health Assistant', description: 'Ayurvedic chatbot support' },
+    ...(!isBasic ? [{ path: '/chatbots', icon: Bot, label: 'AI Health Assistant', description: 'Ayurvedic chatbot support' }] : []),
     { path: '/analytics', icon: BarChart3, label: 'Analytics', description: 'Reports & insights' },
     { path: '/settings', icon: Settings, label: 'Settings', description: 'System configuration' },
-    ...(user?.isOpenForConsultation ? [{ path: '/settings/availability', icon: Clock, label: 'My Availability', description: 'Set consultation hours' }] : [])
+    ...(user?.isOpenForConsultation || canManageClinicDoctors
+      ? [{
+        path: '/settings/availability',
+        icon: Clock,
+        label: canManageClinicDoctors ? 'Doctor Availability' : 'My Availability',
+        description: canManageClinicDoctors ? 'Set doctor consultation hours' : 'Set consultation hours'
+      }]
+      : [])
   ];
 
   // Add admin-only navigation items
@@ -45,12 +101,12 @@ const Navigation: React.FC = () => {
     navItems.splice(-1, 0,
       { path: '/settings/master-data', icon: Settings, label: 'AI Master Data', description: 'AI-powered data entry' },
       { path: '/settings/users', icon: Users, label: 'User Management', description: 'Manage clinic staff' },
-      { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI', description: 'Messaging & review settings' }
+      ...(!isBasic ? [{ path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI', description: 'Messaging & review settings' }] : [])
     );
   }
 
   // Add WhatsApp & AI nav item for reception (non-admin)
-  if (user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
+  if (!isBasic && user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
     !(user.permissions.includes('admin') || user.permissions.includes('all'))) {
     navItems.splice(-1, 0,
       { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI', description: 'Messaging & review settings' }
@@ -127,8 +183,8 @@ const Navigation: React.FC = () => {
         {/* Navigation Items */}
         <ul className="space-y-1">
           {navItems.map(({ path, icon: Icon, label, description }) => {
-            // Hide availability link for non-consultation users
-            if (path === '/settings/availability' && !user?.isOpenForConsultation) {
+            // Hide availability link unless this user can set their own or manage clinic doctors.
+            if (path === '/settings/availability' && !user?.isOpenForConsultation && !canManageClinicDoctors) {
               return null;
             }
 

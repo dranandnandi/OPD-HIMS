@@ -480,9 +480,9 @@ const ExaminationTemplateSettings: React.FC = () => {
                                     ) : (
                                         <div className="space-y-3">
                                             {formData.sections.map((section) => (
-                                                <div key={section.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                                                <div key={section.id} className="border border-gray-200 rounded-lg">
                                                     {/* Section Header */}
-                                                    <div className="flex items-center gap-2 px-4 py-3 bg-gray-50">
+                                                    <div className={`flex items-center gap-2 px-4 py-3 bg-gray-50 ${expandedSections.has(section.id) ? 'rounded-t-lg' : 'rounded-lg'}`}>
                                                         <button
                                                             type="button"
                                                             onClick={() => toggleSection(section.id)}

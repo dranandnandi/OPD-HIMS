@@ -58,7 +58,7 @@ serve(async (req) => {
       console.warn(`[${rid}] pdfBase64 looks malformed (non-base64 chars)`);
     }
 
-    // ==== STEP 1: Ask Gemini 2.0 Flash directly with inline PDF ====
+    // ==== STEP 1: Ask Gemini 2.5 Flash directly with inline PDF ====
     const prompt = `
 You are an expert pharmacy invoice extraction AI. Read the attached PDF and output ONLY a JSON object with this schema:
 {
@@ -89,8 +89,8 @@ Rules:
 - Ensure at least medicineName, quantity, unitCostPrice for each line.
 - Return ONLY the JSON. No extra text.`.trim();
 
-    // Model: Gemini 2.0 Flash Experimental
-    const model = "gemini-2.0-flash-exp";
+    // Model: Gemini 2.5 Flash stable
+    const model = "gemini-2.5-flash";
 
     const geminiReq = {
       contents: [

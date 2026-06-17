@@ -25,6 +25,7 @@ export const patientService = {
         .select('id')
         .eq('phone', phone)
         .eq('clinic_id', profile.clinicId)
+        .eq('is_hidden', false)
         .limit(1);
 
       if (error) {
@@ -62,6 +63,7 @@ export const patientService = {
         .from('patients')
         .select('*')
         .eq('clinic_id', profile.clinicId)
+        .eq('is_hidden', false)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -103,6 +105,7 @@ export const patientService = {
         .select('id, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('id', id)
         .eq('clinic_id', profile.clinicId)
+        .eq('is_hidden', false)
         .single();
 
       if (error) {
@@ -206,7 +209,7 @@ export const patientService = {
     }
   },
 
-  // Delete patient
+  // Soft hide patient so existing visits, appointments, bills, and other FK-linked records remain intact.
   async deletePatient(id: string): Promise<void> {
     if (!isSupabaseAvailable()) {
       throw new Error('Supabase client not available. Please check your configuration.');
@@ -220,7 +223,7 @@ export const patientService = {
     try {
       const { error } = await supabase!
         .from('patients')
-        .delete()
+        .update({ is_hidden: true, hidden_at: new Date().toISOString() })
         .eq('id', id)
         .eq('clinic_id', profile.clinicId);
 
@@ -257,6 +260,7 @@ export const patientService = {
         .from('patients')
         .select('id, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('clinic_id', profile.clinicId)
+        .eq('is_hidden', false)
         .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
         .order('created_at', { ascending: false });
 

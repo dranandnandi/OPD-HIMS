@@ -1,6 +1,18 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.abdm_audit_log (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid,
+  clinic_id uuid,
+  action text NOT NULL,
+  request_id uuid NOT NULL,
+  status text NOT NULL,
+  error_message text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT abdm_audit_log_pkey PRIMARY KEY (id),
+  CONSTRAINT abdm_audit_log_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id)
+);
 CREATE TABLE public.api_rate_limits (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   identifier text NOT NULL,
@@ -16,13 +28,14 @@ CREATE TABLE public.appointments (
   patient_id uuid NOT NULL,
   doctor_id uuid,
   appointment_date timestamp with time zone NOT NULL,
-  status USER-DEFINED NOT NULL DEFAULT 'Scheduled'::appointment_status_enum CHECK (status = ANY (ARRAY['Scheduled'::appointment_status_enum, 'Confirmed'::appointment_status_enum, 'In_progress'::appointment_status_enum, 'Completed'::appointment_status_enum, 'Cancelled'::appointment_status_enum, 'No_show'::appointment_status_enum])),
+  status USER-DEFINED NOT NULL DEFAULT 'Scheduled'::appointment_status_enum CHECK (status = ANY (ARRAY['Scheduled'::appointment_status_enum, 'Confirmed'::appointment_status_enum, 'Arrived'::appointment_status_enum, 'In_Progress'::appointment_status_enum, 'Completed'::appointment_status_enum, 'Cancelled'::appointment_status_enum, 'No_Show'::appointment_status_enum])),
   notes text,
   created_at timestamp with time zone DEFAULT now(),
   duration integer,
   appointment_type text DEFAULT 'Consultation'::appointment_type_enum,
   updated_at timestamp with time zone DEFAULT now(),
   clinic_id uuid,
+  waiting_condition_type text,
   CONSTRAINT appointments_pkey PRIMARY KEY (id),
   CONSTRAINT appointments_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
   CONSTRAINT appointments_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.profiles(id),
@@ -68,6 +81,7 @@ CREATE TABLE public.bills (
   refund_notes text,
   pdf_url text,
   pdf_generated_at timestamp with time zone,
+  printPdfUrl text,
   CONSTRAINT bills_pkey PRIMARY KEY (id),
   CONSTRAINT bills_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id),
   CONSTRAINT bills_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
@@ -118,7 +132,13 @@ CREATE TABLE public.clinic_settings (
   pdf_header_url text,
   pdf_footer_url text,
   whatsapp_templates jsonb DEFAULT '{"thank_you": "Thank you for visiting {{clinicName}} today! We hope you feel better soon. Please leave us a review: {{reviewLink}}", "invoice_generated": "Dear {{patientName}}, your invoice #{{billNumber}} for {{totalAmount}} is ready. Download: {{pdfUrl}} - {{clinicName}}", "visit_prescription": "Dear {{patientName}}, your prescription is ready. Download here: {{pdfUrl}} - {{clinicName}}", "appointment_reminder": "Reminder: You have an appointment tomorrow at {{appointmentDate}} with Dr. {{doctorName}}. Please confirm your attendance. - {{clinicName}}", "appointment_confirmation": "Dear {{patientName}}, your appointment with Dr. {{doctorName}} is confirmed for {{appointmentDate}}. Please arrive 10 minutes early. - {{clinicName}}"}'::jsonb,
-  CONSTRAINT clinic_settings_pkey PRIMARY KEY (id)
+  pdf_margins text DEFAULT '180px 20px 150px 20px'::text,
+  pdf_print_margins text DEFAULT '180px 20px 150px 20px'::text,
+  whatsapp_shared_session_user_id uuid,
+  clinic_tier text NOT NULL DEFAULT 'basic'::text CHECK (clinic_tier = ANY (ARRAY['basic'::text, 'silver'::text, 'gold'::text])),
+  waiting_sequence_enabled boolean NOT NULL DEFAULT false,
+  CONSTRAINT clinic_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT clinic_settings_whatsapp_shared_session_user_id_fkey FOREIGN KEY (whatsapp_shared_session_user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.clinic_test_prices (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -131,6 +151,14 @@ CREATE TABLE public.clinic_test_prices (
   CONSTRAINT clinic_test_prices_pkey PRIMARY KEY (id),
   CONSTRAINT clinic_test_prices_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id),
   CONSTRAINT clinic_test_prices_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests_master(id)
+);
+CREATE TABLE public.debug_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  function_name text,
+  message text,
+  details jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT debug_logs_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.device_tokens (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -157,6 +185,22 @@ CREATE TABLE public.diagnoses (
   CONSTRAINT diagnoses_pkey PRIMARY KEY (id),
   CONSTRAINT diagnoses_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id),
   CONSTRAINT diagnoses_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
+);
+CREATE TABLE public.examination_templates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clinic_id uuid NOT NULL,
+  name text NOT NULL,
+  description text,
+  specialization text,
+  template_data jsonb NOT NULL DEFAULT '{"sections": []}'::jsonb,
+  is_active boolean DEFAULT true,
+  usage_count integer DEFAULT 0,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT examination_templates_pkey PRIMARY KEY (id),
+  CONSTRAINT examination_templates_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id),
+  CONSTRAINT examination_templates_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.medicines_master (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -231,6 +275,14 @@ CREATE TABLE public.patients (
   last_visit timestamp with time zone,
   referred_by text,
   clinic_id uuid,
+  abha_number text,
+  abha_address text,
+  abha_linked_at timestamp with time zone,
+  abha_consent_given boolean DEFAULT false,
+  abha_consent_at timestamp with time zone,
+  mobile_verified boolean DEFAULT false,
+  is_hidden boolean NOT NULL DEFAULT false,
+  hidden_at timestamp with time zone,
   CONSTRAINT patients_pkey PRIMARY KEY (id),
   CONSTRAINT patients_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
 );
@@ -373,6 +425,7 @@ CREATE TABLE public.profiles (
   doctor_availability jsonb,
   is_open_for_consultation boolean DEFAULT false,
   auth_id uuid,
+  signatureUrl text,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id),
   CONSTRAINT profiles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id),
@@ -561,6 +614,10 @@ CREATE TABLE public.visits (
   advice_regional text,
   pdf_url text,
   pdf_generated_at timestamp with time zone,
+  print_pdf_url text,
+  print_pdf_generated_at timestamp with time zone,
+  compact_print_pdf_url text,
+  visit_images jsonb,
   CONSTRAINT visits_pkey PRIMARY KEY (id),
   CONSTRAINT visits_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
   CONSTRAINT visits_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.profiles(id),
@@ -578,6 +635,19 @@ CREATE TABLE public.voice_transcripts (
   synced_at timestamp with time zone,
   CONSTRAINT voice_transcripts_pkey PRIMARY KEY (id),
   CONSTRAINT voice_transcripts_visit_id_fkey FOREIGN KEY (visit_id) REFERENCES public.visits(id)
+);
+CREATE TABLE public.waiting_sequences (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clinic_id uuid NOT NULL,
+  condition_type text NOT NULL DEFAULT 'General'::text,
+  step_order integer NOT NULL DEFAULT 1,
+  delay_minutes integer NOT NULL DEFAULT 5,
+  message text NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT waiting_sequences_pkey PRIMARY KEY (id),
+  CONSTRAINT waiting_sequences_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES public.clinic_settings(id)
 );
 CREATE TABLE public.whatsapp_auto_send_rules (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

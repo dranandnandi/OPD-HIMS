@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Shield, CheckCircle } from 'lucide-react';
 import { toTitleCase } from '../../utils/stringUtils';
+import ABHALinkModal from './ABHALinkModal';
+import { abhaService, ABHAProfile } from '../../services/abhaService';
 
 interface PatientModalProps {
   patient: {
     id: string;
     name: string;
     phone: string;
-    age: number;
+    age: number | null;
     gender: 'male' | 'female' | 'other';
     address: string;
     emergency_contact?: string;
     blood_group?: string;
     allergies?: string[];
     referred_by?: string;
+    abha_number?: string;
+    abha_address?: string;
   } | null;
+  clinicId?: string;
   onSave: (patient: {
     name: string;
     phone: string;
@@ -29,9 +34,13 @@ interface PatientModalProps {
   onClose: () => void;
 }
 
-const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose }) => {
+const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, onClose }) => {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showABHAModal, setShowABHAModal] = useState(false);
+  const [linkedABHA, setLinkedABHA] = useState<{ number: string; address?: string } | null>(
+    patient?.abha_number ? { number: patient.abha_number, address: patient.abha_address } : null
+  );
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -47,11 +56,11 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
   useEffect(() => {
     if (patient) {
       setFormData({
-        name: toTitleCase(patient.name),
-        phone: patient.phone,
-        age: patient.age.toString(),
-        gender: patient.gender,
-        address: patient.address,
+        name: toTitleCase(patient.name || ''),
+        phone: patient.phone || '',
+        age: patient.age?.toString() || '',
+        gender: patient.gender || 'male',
+        address: patient.address || '',
         emergency_contact: patient.emergency_contact || '',
         blood_group: patient.blood_group || '',
         allergies: patient.allergies?.join(', ') || '',
@@ -70,7 +79,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
       const patientData = {
         name: toTitleCase(formData.name),
         phone: formData.phone,
-        age: parseInt(formData.age),
+        age: parseInt(formData.age, 10),
         gender: formData.gender,
         address: formData.address,
         emergency_contact: formData.emergency_contact || undefined,
@@ -238,6 +247,41 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
             <p className="text-red-600 text-sm">{formError}</p>
           )}
 
+          {/* ABHA Section — only shown when editing an existing patient */}
+          {patient && (
+            <div className="border rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-600" />
+                <span className="font-medium text-sm">ABHA ID (Ayushman Bharat)</span>
+              </div>
+              {linkedABHA ? (
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-green-700">ABHA Linked</p>
+                    <p className="text-xs font-mono text-gray-600">
+                      {abhaService.formatAbhaNumber(linkedABHA.number)}
+                    </p>
+                    {linkedABHA.address && (
+                      <p className="text-xs text-gray-500">{linkedABHA.address}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">Not linked yet</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowABHAModal(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium border border-blue-600 hover:border-blue-800 rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    Link ABHA ID
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-4 pt-6">
             <button
               type="button"
@@ -256,6 +300,20 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
           </div>
         </form>
       </div>
+
+      {showABHAModal && patient && (
+        <ABHALinkModal
+          patientId={patient.id}
+          patientName={patient.name}
+          patientMobile={patient.phone}
+          clinicId={clinicId}
+          onLinked={(profile: ABHAProfile) => {
+            setLinkedABHA({ number: profile.abhaNumber, address: profile.abhaAddress });
+            setShowABHAModal(false);
+          }}
+          onClose={() => setShowABHAModal(false)}
+        />
+      )}
     </div>
   );
 };

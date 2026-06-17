@@ -2,6 +2,7 @@ import React from 'react';
 import { Visit, Patient, Profile, ClinicSetting } from '../../types';
 import { format } from 'date-fns';
 import { toTitleCase } from '../../utils/stringUtils';
+import { extractImpressionDetails, formatTestTypeLabel } from '../../utils/emrDetailFormatting';
 
 interface PrintableVisitDetailsProps {
   visit: Visit;
@@ -11,13 +12,15 @@ interface PrintableVisitDetailsProps {
 }
 
 const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, patient, doctor, clinicSettings }) => {
+  const { impressionItems, remainingNotes } = extractImpressionDetails(visit.doctorNotes);
+
   return (
     <div className="pdf-container p-8 text-black" style={{ fontFamily: 'Arial, sans-serif' }}>
       {/* Clinic Header */}
       <div className="pdf-header text-center border-b-2 border-gray-300 pb-6 mb-6">
         {clinicSettings.logoUrl && clinicSettings.logoUrl.trim() && !clinicSettings.logoUrl.includes('example.com') && (
-          <img 
-            src={clinicSettings.logoUrl} 
+          <img
+            src={clinicSettings.logoUrl}
             alt={clinicSettings.clinicName}
             className="mx-auto mb-4 h-16 object-contain"
             onError={(e) => {
@@ -30,9 +33,9 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
         <div className="text-sm text-gray-600 space-y-1">
           <p>{clinicSettings.address}</p>
           <div className="flex justify-center gap-4">
-            <span>📞 {clinicSettings.phone}</span>
-            {clinicSettings.email && <span>✉️ {clinicSettings.email}</span>}
-            {clinicSettings.website && <span>🌐 {clinicSettings.website}</span>}
+            <span>Phone: {clinicSettings.phone}</span>
+            {clinicSettings.email && <span>Email: {clinicSettings.email}</span>}
+            {clinicSettings.website && <span>Web: {clinicSettings.website}</span>}
           </div>
           {clinicSettings.registrationNumber && (
             <p>Registration No: {clinicSettings.registrationNumber}</p>
@@ -92,7 +95,7 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             {visit.vitals.temperature && (
               <div className="pdf-no-break-inside border border-gray-300 rounded p-2">
-                <strong>Temperature:</strong> {visit.vitals.temperature}°F
+                <strong>Temperature:</strong> {visit.vitals.temperature} F
               </div>
             )}
             {visit.vitals.bloodPressure && (
@@ -134,6 +137,20 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
                 <strong>{index + 1}. {symptom.name}</strong>
                 {symptom.severity && <span className="ml-2 text-gray-600">({symptom.severity})</span>}
                 {symptom.duration && <div className="text-gray-600">Duration: {symptom.duration}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Impression */}
+      {impressionItems.length > 0 && (
+        <div className="pdf-section mb-6">
+          <h3 className="pdf-section-header font-bold text-gray-800 mb-3">IMPRESSION</h3>
+          <div className="space-y-2 text-sm">
+            {impressionItems.map((item, index) => (
+              <div key={`${item}-${index}`} className="pdf-no-break-inside border border-gray-300 rounded p-3">
+                <strong>{index + 1}.</strong> {item}
               </div>
             ))}
           </div>
@@ -203,10 +220,10 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
           <div className="space-y-2 text-sm">
             {visit.testsOrdered.map((test, index) => (
               <div key={test.id} className="pdf-no-break-inside border border-gray-300 rounded p-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <strong>{index + 1}. {test.testName}</strong>
                   <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs capitalize">
-                    {test.testType} • {test.urgency}
+                    {formatTestTypeLabel(test.testType)} - {test.urgency}
                   </span>
                 </div>
                 {test.instructions && (
@@ -225,7 +242,7 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
           <ul className="text-sm space-y-1">
             {visit.advice.map((advice, index) => (
               <li key={index} className="flex items-start gap-2">
-                <span className="text-blue-600 mt-1">•</span>
+                <span className="text-blue-600 mt-1">*</span>
                 <span>{advice}</span>
               </li>
             ))}
@@ -244,10 +261,10 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
       )}
 
       {/* Doctor's Notes */}
-      {visit.doctorNotes && (
+      {remainingNotes && (
         <div className="pdf-section mb-6">
           <h3 className="font-bold text-gray-800 mb-2">DOCTOR'S NOTES</h3>
-          <p className="text-sm border border-gray-300 rounded p-3 italic">{visit.doctorNotes}</p>
+          <p className="text-sm border border-gray-300 rounded p-3 italic whitespace-pre-line">{remainingNotes}</p>
         </div>
       )}
 

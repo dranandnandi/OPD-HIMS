@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer } from 'lucide-react';
 import { ClinicSetting, AppointmentType } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
@@ -51,6 +52,8 @@ const ClinicSettings: React.FC = () => {
     { id: 'emergency', label: 'Emergency', duration: 15, color: '#EF4444', feeType: 'emergency' },
     { id: 'homevisit', label: 'Home Visit', duration: 45, color: '#F59E0B', feeType: 'custom', customFee: 500 }
   ]);
+
+  const [waitingSequenceEnabled, setWaitingSequenceEnabled] = useState(false);
 
   // PDF Settings
   const [pdfHeaderUrl, setPdfHeaderUrl] = useState('');
@@ -118,6 +121,11 @@ const ClinicSettings: React.FC = () => {
         setPdfFooterUrl((clinicSettings as any).pdfFooterUrl);
       }
 
+      // Load waiting sequence toggle
+      if ((clinicSettings as any).waitingSequenceEnabled !== undefined) {
+        setWaitingSequenceEnabled((clinicSettings as any).waitingSequenceEnabled);
+      }
+
       // Load WhatsApp templates
       if ((clinicSettings as any).whatsappTemplates) {
         setWhatsappTemplates(prev => ({
@@ -161,7 +169,8 @@ const ClinicSettings: React.FC = () => {
         appointmentTypes: appointmentTypes,
         pdfHeaderUrl,
         pdfFooterUrl,
-        whatsappTemplates
+        whatsappTemplates,
+        waitingSequenceEnabled,
       } as any);
       setSettings(updatedSettings);
       alert('Settings saved successfully!');
@@ -764,6 +773,40 @@ const ClinicSettings: React.FC = () => {
             />
           </div>
         </div>
+      </div>
+
+      {/* Waiting Sequence */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Timer className="w-5 h-5 text-teal-600" />
+          <h3 className="text-lg font-semibold text-gray-800">Waiting Room Sequence</h3>
+        </div>
+        <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+          <div>
+            <p className="font-medium text-gray-800">Enable Waiting Sequence Messages</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Auto-send WhatsApp messages (links, info) to patients while they wait, based on their condition type.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer ml-4">
+            <input
+              type="checkbox"
+              checked={waitingSequenceEnabled}
+              onChange={e => setWaitingSequenceEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+          </label>
+        </div>
+        {waitingSequenceEnabled && (
+          <p className="text-sm text-teal-700 mt-3 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
+            Waiting Sequences are now enabled. Configure them from the{' '}
+            <Link to="/waiting-sequences" className="font-semibold underline hover:text-teal-900">
+              Waiting Sequences
+            </Link>{' '}
+            button.
+          </p>
+        )}
       </div>
 
       {/* Working Hours */}

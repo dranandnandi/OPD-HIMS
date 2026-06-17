@@ -29,18 +29,17 @@ export const doctorAvailabilityService = {
       throw new Error('Supabase client not initialized');
     }
 
-    const profile = await authService.getCurrentProfile();
-    if (!profile?.clinicId) {
+    const currentProfile = await authService.getCurrentProfile();
+    if (!currentProfile?.clinicId) {
       throw new Error('User not assigned to a clinic.');
     }
 
     try {
       // Get doctor's specific availability
-      const { data: profile, error } = await supabase
+      const { data: doctorProfile, error } = await supabase
         .from('profiles')
-        .eq('clinic_id', profile.clinicId)
-
         .select('doctor_availability, clinic_id')
+        .eq('clinic_id', currentProfile.clinicId)
         .eq('id', doctorId)
         .single();
 
@@ -49,8 +48,8 @@ export const doctorAvailabilityService = {
       }
 
       // If doctor has specific availability, use it
-      if (profile.doctor_availability) {
-        return profile.doctor_availability;
+      if (doctorProfile.doctor_availability) {
+        return doctorProfile.doctor_availability;
       }
 
       // Otherwise, fall back to clinic working hours

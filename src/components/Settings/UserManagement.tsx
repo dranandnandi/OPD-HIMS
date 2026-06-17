@@ -15,6 +15,7 @@ const UserManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -94,11 +95,17 @@ const UserManagement: React.FC = () => {
   };
 
   const handleSaveUser = async () => {
+    setModalError(null);
+
+    if (!selectedUser && !formData.password) {
+      setModalError('Password is required for new users.');
+      return;
+    }
+
     try {
       setSaving(true);
 
       if (selectedUser) {
-        // Update existing user
         await authService.updateProfile(selectedUser.id, {
           name: toTitleCase(formData.name),
           email: formData.email,
@@ -113,12 +120,6 @@ const UserManagement: React.FC = () => {
           isOpenForConsultation: formData.isOpenForConsultation
         });
       } else {
-        // Create new user
-        if (!formData.password) {
-          alert('Password is required for new users');
-          return;
-        }
-        // Pass the current user's clinic ID to new users
         await authService.createUser({
           ...formData,
           name: toTitleCase(formData.name),
@@ -132,20 +133,23 @@ const UserManagement: React.FC = () => {
 
       setShowModal(false);
       setSelectedUser(null);
-      await loadData(); // Reload users
-      alert(`User ${selectedUser ? 'updated' : 'created'} successfully!`);
+      setModalError(null);
+      await loadData();
     } catch (error) {
       console.error('Error saving user:', error);
 
-      // Handle specific error cases with user-friendly messages
       if (error instanceof Error) {
-        if (error.message.includes('User already registered') || error.message.includes('user_already_exists')) {
-          alert(`A user with email "${formData.email}" already exists in the system. Please use a different email address or edit the existing user instead.`);
+        if (error.message.includes('User already registered') || error.message.includes('user_already_exists') || error.message.includes('already been registered')) {
+          setModalError(`A user with email "${formData.email}" already exists. Use a different email or edit the existing user.`);
+        } else if (error.message.includes('User already exists or needs confirmation')) {
+          setModalError(`A user with email "${formData.email}" already exists in the auth system. Please use a different email.`);
+        } else if (error.message.includes('Failed to create profile')) {
+          setModalError('Account was created but profile setup failed. Please try again — it will complete the setup without creating a duplicate.');
         } else {
-          alert(error.message);
+          setModalError(error.message);
         }
       } else {
-        alert('Failed to save user');
+        setModalError('Failed to save user. Please try again.');
       }
     } finally {
       setSaving(false);
@@ -355,6 +359,7 @@ const UserManagement: React.FC = () => {
                 onClick={() => {
                   setShowModal(false);
                   setSelectedUser(null);
+                  setModalError(null);
                 }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
@@ -608,11 +613,18 @@ const UserManagement: React.FC = () => {
                 </div>
               )}
 
+              {modalError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {modalError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => {
                     setShowModal(false);
                     setSelectedUser(null);
+                    setModalError(null);
                   }}
                   className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle, RefreshCw } from 'lucide-react';
+import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { Visit, Bill } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
 import { visitService } from '../../services/visitService';
@@ -13,6 +13,85 @@ import AddVisitModal from '../Patients/AddVisitModal';
 import { toTitleCase } from '../../utils/stringUtils';
 import { pdfService } from '../../services/pdfService';
 import { WhatsAppAutoSendService } from '../../services/whatsappAutoSendService';
+import { extractImpressionDetails } from '../../utils/emrDetailFormatting';
+
+type ExcelCellValue = string | number | boolean | null | undefined;
+
+const escapeXml = (value: ExcelCellValue) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const sanitizeWorksheetName = (value: string) =>
+  value.replace(/[\\/*?:\[\]]/g, '').slice(0, 31) || 'Sheet';
+
+const buildExcelCell = (value: ExcelCellValue, isHeader = false) => {
+  const styleId = isHeader ? 'Header' : 'Default';
+  const cellValue = value ?? '';
+
+  if (typeof cellValue === 'number' && Number.isFinite(cellValue)) {
+    return `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${cellValue}</Data></Cell>`;
+  }
+
+  if (typeof cellValue === 'boolean') {
+    return `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${cellValue ? 'Yes' : 'No'}</Data></Cell>`;
+  }
+
+  return `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(cellValue)}</Data></Cell>`;
+};
+
+const buildWorksheetXml = (name: string, rows: ExcelCellValue[][]) => `
+  <Worksheet ss:Name="${escapeXml(sanitizeWorksheetName(name))}">
+    <Table>
+      ${rows
+        .map((row, rowIndex) => `
+          <Row>
+            ${row.map((cell) => buildExcelCell(cell, rowIndex === 0)).join('')}
+          </Row>
+        `)
+        .join('')}
+    </Table>
+  </Worksheet>
+`;
+
+const createExcelWorkbookXml = (worksheets: Array<{ name: string; rows: ExcelCellValue[][] }>) => `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook
+  xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:html="http://www.w3.org/TR/REC-html40">
+  <Styles>
+    <Style ss:ID="Default">
+      <Alignment ss:Vertical="Top" ss:WrapText="1" />
+    </Style>
+    <Style ss:ID="Header">
+      <Font ss:Bold="1" />
+      <Interior ss:Color="#DCEBFF" ss:Pattern="Solid" />
+      <Alignment ss:Vertical="Top" ss:WrapText="1" />
+    </Style>
+  </Styles>
+  ${worksheets.map((sheet) => buildWorksheetXml(sheet.name, sheet.rows)).join('')}
+</Workbook>`;
+
+const triggerExcelDownload = (filename: string, worksheets: Array<{ name: string; rows: ExcelCellValue[][] }>) => {
+  const workbookXml = createExcelWorkbookXml(worksheets);
+  const blob = new Blob([workbookXml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;'
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 interface VisitDetailsModalProps {
   visitId: string;
@@ -33,9 +112,18 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   const [exportingPDF, setExportingPDF] = useState(false);
   const [generatingPrintPdf, setGeneratingPrintPdf] = useState(false);
   const [generatingCompactPdf, setGeneratingCompactPdf] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [sendingWhatsAppPrescription, setSendingWhatsAppPrescription] = useState(false);
   const [sendingWhatsAppInvoice, setSendingWhatsAppInvoice] = useState<string | null>(null); // Track which bill is being sent
   const [regeneratingBillPdfId, setRegeneratingBillPdfId] = useState<string | null>(null);
+  const [deletingVisit, setDeletingVisit] = useState(false);
+  const { impressionItems, remainingNotes } = extractImpressionDetails(visit?.doctorNotes);
+  const isAdminUser = !!user && (
+    user.roleName?.toLowerCase() === 'admin' ||
+    user.roleName?.toLowerCase() === 'super_admin' ||
+    user.permissions?.includes('admin') ||
+    user.permissions?.includes('all')
+  );
 
   useEffect(() => {
     if (user && visitId) {
@@ -97,6 +185,163 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       case 'partial': return 'bg-blue-100 text-blue-800';
       case 'overdue': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getRefundStatusColor = (status: Bill['refundStatus']) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'partial': return 'bg-orange-100 text-orange-800';
+      case 'refunded': return 'bg-emerald-100 text-emerald-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatRefundStatus = (status: Bill['refundStatus']) =>
+    status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const handleDownloadExcel = async () => {
+    if (!visit || !user || !isAdminUser) {
+      return;
+    }
+
+    try {
+      setExportingExcel(true);
+
+      const patient = visit.patient;
+      const doctorName = visit.doctor?.name || doctors.find((doctor) => doctor.id === visit.doctorId)?.name || 'Unassigned';
+      const visitDate = format(visit.date, 'dd-MMM-yyyy');
+      const visitTime = format(visit.date, 'hh:mm a');
+      const filenameSafePatient = (patient?.name || 'patient').replace(/[^a-z0-9]+/gi, '_');
+      const workbookSheets = [
+        {
+          name: 'Visit Summary',
+          rows: [
+            ['Field', 'Value'],
+            ['Visit ID', visit.id],
+            ['Visit Date', visitDate],
+            ['Visit Time', visitTime],
+            ['Doctor', doctorName],
+            ['Chief Complaint', visit.chiefComplaint || ''],
+            ['Follow-up Date', visit.followUpDate ? format(visit.followUpDate, 'dd-MMM-yyyy') : ''],
+            ['Patient ID', patient?.id || ''],
+            ['Patient Name', patient?.name || ''],
+            ['Phone', patient?.phone || ''],
+            ['Age', patient?.age ?? ''],
+            ['Gender', patient?.gender ? toTitleCase(patient.gender) : ''],
+            ['Address', patient?.address || ''],
+            ['Emergency Contact', patient?.emergency_contact || ''],
+            ['Blood Group', patient?.blood_group || ''],
+            ['Allergies', patient?.allergies?.join(', ') || ''],
+            ['Referred By', patient?.referred_by || ''],
+            ['Advice', visit.advice?.join(' | ') || ''],
+            ['Doctor Notes', visit.doctorNotes || ''],
+            ['Impression', impressionItems.join(' | ') || ''],
+            ['Additional Notes', remainingNotes || '']
+          ]
+        },
+        {
+          name: 'Vitals',
+          rows: [
+            ['Vital', 'Value'],
+            ['Temperature (F)', visit.vitals.temperature ?? ''],
+            ['Blood Pressure', visit.vitals.bloodPressure || ''],
+            ['Pulse', visit.vitals.pulse ?? ''],
+            ['Weight (kg)', visit.vitals.weight ?? ''],
+            ['Height (cm)', visit.vitals.height ?? ''],
+            ['Respiratory Rate', visit.vitals.respiratoryRate ?? ''],
+            ['Oxygen Saturation (%)', visit.vitals.oxygenSaturation ?? '']
+          ]
+        },
+        {
+          name: 'Symptoms',
+          rows: [
+            ['Name', 'Severity', 'Duration', 'Notes'],
+            ...(visit.symptoms.length > 0
+              ? visit.symptoms.map((symptom) => [
+                  symptom.name,
+                  symptom.severity ? toTitleCase(symptom.severity) : '',
+                  symptom.duration || '',
+                  symptom.notes || ''
+                ])
+              : [['No symptoms recorded', '', '', '']])
+          ]
+        },
+        {
+          name: 'Diagnoses',
+          rows: [
+            ['Diagnosis', 'ICD-10', 'Primary', 'Notes'],
+            ...(visit.diagnoses.length > 0
+              ? visit.diagnoses.map((diagnosis) => [
+                  diagnosis.name,
+                  diagnosis.icd10Code || '',
+                  diagnosis.isPrimary,
+                  diagnosis.notes || ''
+                ])
+              : [['No diagnoses recorded', '', '', '']])
+          ]
+        },
+        {
+          name: 'Prescriptions',
+          rows: [
+            ['Medicine', 'Dosage', 'Frequency', 'Duration', 'Instructions', 'Quantity', 'Refills'],
+            ...(visit.prescriptions.length > 0
+              ? visit.prescriptions.map((prescription) => [
+                  prescription.medicine,
+                  prescription.dosage || '',
+                  prescription.frequency || '',
+                  prescription.duration || '',
+                  prescription.instructions || '',
+                  prescription.quantity ?? '',
+                  prescription.refills ?? ''
+                ])
+              : [['No prescriptions recorded', '', '', '', '', '', '']])
+          ]
+        },
+        {
+          name: 'Tests',
+          rows: [
+            ['Test Name', 'Type', 'Urgency', 'Status', 'Instructions', 'Ordered Date', 'Expected Date'],
+            ...(visit.testsOrdered.length > 0
+              ? visit.testsOrdered.map((test) => [
+                  test.testName,
+                  toTitleCase(test.testType),
+                  toTitleCase(test.urgency),
+                  toTitleCase(test.status.replace(/_/g, ' ')),
+                  test.instructions || '',
+                  format(test.orderedDate, 'dd-MMM-yyyy'),
+                  test.expectedDate ? format(test.expectedDate, 'dd-MMM-yyyy hh:mm a') : ''
+                ])
+              : [['No tests ordered', '', '', '', '', '', '']])
+          ]
+        },
+        {
+          name: 'Bills',
+          rows: [
+            ['Bill Number', 'Bill Date', 'Total Amount', 'Paid Amount', 'Balance', 'Payment Status', 'Refund Status', 'Refunded Amount', 'Due Date'],
+            ...(bills.length > 0
+              ? bills.map((bill) => [
+                  bill.billNumber,
+                  format(bill.billDate, 'dd-MMM-yyyy'),
+                  bill.totalAmount,
+                  bill.paidAmount,
+                  bill.balanceAmount,
+                  toTitleCase(bill.paymentStatus),
+                  formatRefundStatus(bill.refundStatus),
+                  bill.totalRefundedAmount,
+                  bill.dueDate ? format(bill.dueDate, 'dd-MMM-yyyy') : ''
+                ])
+              : [['No bills linked to this visit', '', '', '', '', '', '', '', '']])
+          ]
+        }
+      ];
+
+      triggerExcelDownload(`visit_${filenameSafePatient}_${visitDate}.xls`, workbookSheets);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('Failed to export Excel. Please try again.');
+    } finally {
+      setExportingExcel(false);
     }
   };
 
@@ -245,14 +490,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
 
       const currentVisit = latestVisit || visit;
 
-      // Check if print PDF already exists - if so, just open it
-      if (currentVisit.print_pdf_url) {
-        console.log('Using cached print PDF:', currentVisit.print_pdf_url);
-        window.open(currentVisit.print_pdf_url, '_blank');
-        return;
-      }
-
-      console.log('No cached print PDF found, generating new one...');
+      console.log('Generating fresh print PDF to include latest EMR sections...');
 
       // Find the doctor for this visit
       let doctor = doctors.find(d => d.id === currentVisit.doctorId) || currentVisit.doctor;
@@ -276,6 +514,8 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
         patient: currentVisit.patient,
         doctor: doctor,
         clinicSettings: user.clinic
+      }, {
+        forceRegenerate: true
       });
 
       // Artificial delay
@@ -299,7 +539,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     }
   };
 
-  // Handle viewing prescription PDF - opens in new tab (uses cached PDF if available)
+  // Handle viewing visit summary PDF - opens in new tab (uses cached PDF if available)
   const handleViewPrescriptionPdf = async () => {
     if (!visit) return;
 
@@ -309,7 +549,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       setVisit(latestVisit);
       // If PDF already exists in database, use it directly
       if (latestVisit.pdf_url) {
-        console.log('Opening cached prescription PDF:', latestVisit.pdf_url);
+        console.log('Opening cached visit summary PDF:', latestVisit.pdf_url);
         window.open(latestVisit.pdf_url, '_blank');
         return;
       }
@@ -531,6 +771,33 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   const handleVisitUpdated = () => {
     setShowEditVisitModal(false);
     loadVisitData(); // Reload visit data to show changes
+  };
+
+  const handleDeleteVisit = async () => {
+    if (!visit) return;
+
+    const patientName = visit.patient?.name || 'Unknown Patient';
+    const confirmDelete = confirm(
+      `Are you sure you want to delete this visit for ${patientName}?\n\nThis action cannot be undone and will remove all related records (symptoms, diagnoses, prescriptions, tests, etc.).`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      setDeletingVisit(true);
+      await visitService.deleteVisit(visit.id);
+      
+      // Close modal and notify parent component to reload
+      onClose();
+      
+      // Show success message
+      alert('Visit deleted successfully.');
+    } catch (error) {
+      console.error('Error deleting visit:', error);
+      alert(`Failed to delete visit: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setDeletingVisit(false);
+    }
   };
 
   // Handle generating compact 1-page prescription
@@ -827,7 +1094,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                   className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   <Eye className="w-4 h-4" />
-                  {exportingPDF ? 'Loading...' : visit?.pdf_url ? 'View Prescription' : 'Generate & View'}
+                  {exportingPDF ? 'Loading...' : visit?.pdf_url ? 'View Summary' : 'Generate & View'}
                 </button>
                 <button
                   onClick={handleExportPDF}
@@ -837,6 +1104,17 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                   <Download className="w-4 h-4" />
                   {exportingPDF ? 'Exporting...' : 'Download PDF'}
                 </button>
+                {isAdminUser && (
+                  <button
+                    onClick={handleDownloadExcel}
+                    disabled={exportingExcel}
+                    className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    title="Download visit details in Excel format"
+                  >
+                    <Download className="w-4 h-4" />
+                    {exportingExcel ? 'Preparing Excel...' : 'Download Excel'}
+                  </button>
+                )}
                 <button
                   onClick={handleGeneratePrintPdf}
                   disabled={generatingPrintPdf}
@@ -876,6 +1154,15 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                 >
                   <Pill className="w-4 h-4" />
                   Dispense Medicines
+                </button>
+                <button
+                  onClick={handleDeleteVisit}
+                  disabled={deletingVisit}
+                  className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  title="Delete this visit and all related records"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {deletingVisit ? 'Deleting...' : 'Delete Visit'}
                 </button>
               </div>
 
@@ -998,6 +1285,24 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                             <p className="text-gray-400 text-xs italic">No findings recorded</p>
                           )}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Impression */}
+              {impressionItems.length > 0 && (
+                <div className="card-standard p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <ClipboardList className="w-5 h-5 text-amber-600" />
+                    Impression
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {impressionItems.map((item, index) => (
+                      <div key={`${item}-${index}`} className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm font-medium text-amber-900">{index + 1}. {item}</p>
                       </div>
                     ))}
                   </div>
@@ -1146,15 +1451,15 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                       return null;
                     })()}
 
-                    {visit.doctorNotes && (
+                    {remainingNotes && (
                       <div>
                         <h4 className="font-medium text-gray-700 mb-2">Doctor's Notes</h4>
-                        <p className="text-gray-600 italic bg-gray-50 p-3 rounded-lg">{visit.doctorNotes}</p>
+                        <p className="text-gray-600 italic bg-gray-50 p-3 rounded-lg whitespace-pre-line">{remainingNotes}</p>
                       </div>
                     )}
 
                     {(!visit.advice || visit.advice.length === 0) &&
-                      !visit.doctorNotes &&
+                      !remainingNotes &&
                       !((visit as any).adviceLanguage || (visit as any).advice_language) && (
                         <p className="text-gray-500 italic text-center py-8">No advice or notes recorded</p>
                       )}
@@ -1188,6 +1493,12 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                           <span className={`px-3 py-1 text-xs rounded-lg font-medium ${getStatusColor(bill.paymentStatus)}`}>
                             {bill.paymentStatus}
                           </span>
+                          {bill.refundStatus !== 'not_requested' && (
+                            <span className={`px-3 py-1 text-xs rounded-lg font-medium ${getRefundStatusColor(bill.refundStatus)}`}>
+                              {formatRefundStatus(bill.refundStatus)}
+                              {bill.totalRefundedAmount > 0 ? ` • ₹${bill.totalRefundedAmount.toLocaleString()}` : ''}
+                            </span>
+                          )}
                           {bill.balanceAmount > 0 && (
                             <span className="text-sm text-red-600 font-medium">
                               Balance: ₹{bill.balanceAmount.toLocaleString()}

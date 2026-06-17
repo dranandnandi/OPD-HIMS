@@ -2,15 +2,32 @@ export interface Patient {
   id: string;
   name: string;
   phone: string;
-  age: number;
+  age: number | null;
   gender: 'male' | 'female' | 'other';
-  address: string;
+  address: string | null;
   emergency_contact?: string;
   blood_group?: string;
   allergies?: string[];
   referred_by?: string;
   createdAt: Date;
   lastVisit?: Date;
+  // ABHA (Ayushman Bharat Health Account) fields — ABDM compliance
+  abha_number?: string;
+  abha_address?: string;
+  abha_linked_at?: Date;
+  abha_consent_given?: boolean;
+  mobile_verified?: boolean;
+  is_hidden?: boolean;
+  hidden_at?: Date;
+}
+
+export interface ABHAProfile {
+  abhaNumber: string;
+  abhaAddress: string;
+  name: string;
+  gender: string;
+  dob: string;
+  mobile: string;
 }
 
 export * from './whatsapp';
@@ -65,6 +82,7 @@ export interface Appointment {
   status: 'Scheduled' | 'Confirmed' | 'Arrived' | 'In_Progress' | 'Completed' | 'Cancelled' | 'No_Show';
   appointmentType: 'Consultation' | 'Follow_Up' | 'Emergency' | 'Routine_Checkup';
   notes?: string;
+  waitingConditionType?: string;
   createdAt: Date;
   updatedAt: Date;
   patient?: Patient;
@@ -92,6 +110,8 @@ export interface PhysicalExamination {
   aiGenerated?: boolean;
   specialization?: string;
   generatedAt?: Date;
+  templateId?: string;
+  templateName?: string;
 }
 
 // Examination Template (clinic-level reusable templates)
@@ -541,6 +561,10 @@ export interface ClinicSetting {
   gmbLink?: string;
   // WhatsApp Shared Session
   whatsappSharedSessionUserId?: string;
+  // Subscription tier
+  clinicTier?: 'basic' | 'silver' | 'gold';
+  // Waiting Sequence
+  waitingSequenceEnabled?: boolean;
   // WhatsApp Message Templates
   whatsappTemplates?: {
     visit_prescription?: string;

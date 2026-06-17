@@ -1,14 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Clock, Calendar, AlertCircle } from 'lucide-react';
+import { Save, Clock, Calendar, AlertCircle, Users } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
+import { Profile } from '../../types';
+import { authService } from '../../services/authService';
 import { getCurrentProfile } from '../../services/profileService';
 import { doctorAvailabilityService, DoctorAvailability } from '../../services/doctorAvailabilityService';
+
+const canManageClinicDoctors = (user: Profile | null | undefined) => {
+  const roleName = user?.roleName?.toLowerCase();
+  return Boolean(
+    user && (
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      roleName === 'receptionist' ||
+      roleName === 'reception' ||
+      user.permissions.includes('admin') ||
+      user.permissions.includes('all')
+    )
+  );
+};
 
 const DoctorAvailabilitySettings: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<Profile[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
 
   const [availability, setAvailability] = useState<DoctorAvailability>({
     monday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
@@ -22,22 +40,69 @@ const DoctorAvailabilitySettings: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      loadAvailability();
+      loadDoctors();
     }
   }, [user]);
 
-  const loadAvailability = async () => {
+  useEffect(() => {
+    if (selectedDoctorId) {
+      loadAvailability(selectedDoctorId);
+    }
+  }, [selectedDoctorId]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('[AVAILABILITY DEBUG] route guard values', {
+      userId: user?.id,
+      name: user?.name,
+      roleName: user?.roleName,
+      isOpenForConsultation: user?.isOpenForConsultation,
+      updatedAt: user?.updatedAt,
+    });
+  }, [user]);
+
+  const loadDoctors = async () => {
     if (!user) return;
 
     try {
+      setLoading(true);
+      setError(null);
+
       const profile = await getCurrentProfile();
       if (!profile?.clinicId) {
         throw new Error('User not assigned to a clinic.');
       }
 
+      if (canManageClinicDoctors(user)) {
+        const clinicDoctors = await authService.getDoctors();
+        setDoctors(clinicDoctors);
+        setSelectedDoctorId(prev =>
+          prev && clinicDoctors.some(doctor => doctor.id === prev)
+            ? prev
+            : clinicDoctors[0]?.id || ''
+        );
+      } else if (user.isOpenForConsultation) {
+        setDoctors([user]);
+        setSelectedDoctorId(user.id);
+      } else {
+        setDoctors([]);
+        setSelectedDoctorId('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load doctors');
+      console.error('Error loading doctors:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAvailability = async (doctorId = selectedDoctorId) => {
+    if (!doctorId) return;
+
+    try {
       setLoading(true);
       setError(null);
-      const doctorAvailability = await doctorAvailabilityService.getDoctorAvailability(user.id);
+      const doctorAvailability = await doctorAvailabilityService.getDoctorAvailability(doctorId);
       setAvailability(doctorAvailability);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load availability');
@@ -48,7 +113,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user || !selectedDoctorId) return;
 
     const profile = await getCurrentProfile();
     if (!profile?.clinicId) {
@@ -57,7 +122,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
     }
     try {
       setSaving(true);
-      await doctorAvailabilityService.updateDoctorAvailability(user.id, availability);
+      await doctorAvailabilityService.updateDoctorAvailability(selectedDoctorId, availability);
       alert('Availability updated successfully!');
     } catch (err) {
       console.error('Error saving availability:', err);
@@ -85,7 +150,10 @@ const DoctorAvailabilitySettings: React.FC = () => {
     );
   }
 
-  if (!user.isOpenForConsultation) {
+  const selectedDoctor = doctors.find(doctor => doctor.id === selectedDoctorId);
+  const managerView = canManageClinicDoctors(user);
+
+  if (!managerView && !user.isOpenForConsultation) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
@@ -119,7 +187,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">{error}</div>
         <button
-          onClick={loadAvailability}
+          onClick={loadDoctors}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
           Retry
@@ -128,12 +196,32 @@ const DoctorAvailabilitySettings: React.FC = () => {
     );
   }
 
+  if (!selectedDoctorId) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-yellow-600 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-yellow-800 mb-2">No Consultation Doctors</h3>
+          <p className="text-yellow-700">
+            Add a doctor or mark an existing doctor as open for consultation before setting availability.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">My Availability</h2>
-          <p className="text-gray-600">Set your consultation hours and availability</p>
+          <h2 className="text-2xl font-bold text-gray-800">
+            {managerView ? 'Doctor Availability' : 'My Availability'}
+          </h2>
+          <p className="text-gray-600">
+            {managerView
+              ? 'Set consultation hours for doctors in this clinic'
+              : 'Set your consultation hours and availability'}
+          </p>
         </div>
         <button
           onClick={handleSave}
@@ -144,6 +232,38 @@ const DoctorAvailabilitySettings: React.FC = () => {
           {saving ? 'Saving...' : 'Save Availability'}
         </button>
       </div>
+
+      {managerView && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-semibold text-gray-800">Select Doctor</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Doctor</label>
+              <select
+                value={selectedDoctorId}
+                onChange={(e) => setSelectedDoctorId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {doctors.map(doctor => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.name}{doctor.specialization ? ` - ${doctor.specialization}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedDoctor && (
+              <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+                {selectedDoctor.email}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Availability Settings */}
       <div className="bg-white rounded-lg shadow-md p-6">

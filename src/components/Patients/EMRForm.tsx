@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Trash2, Calendar, Zap, Image, Upload, Camera, Link, X, Loader2, Sparkles, Eye } from 'lucide-react';
 import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered, Profile, PhysicalExamination, VoiceTranscript, VisitImage } from '../../types';
 import PhysicalExaminationSection from './PhysicalExaminationSection';
@@ -43,6 +43,7 @@ const getCurrentLocalTime = () => {
 const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, initialVisitDate, initialVisitTime, appointmentId: appointmentIdProp, onSave }) => {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [medicines, setMedicines] = useState<string[]>([]);
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [frequencies, setFrequencies] = useState<Array<{ code: string, label: string, timesPerDay: number | null }>>([]);
@@ -602,20 +603,21 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   };
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+
     if (!user) { // user from useAuth()
       alert('You must be logged in to save a visit');
       return;
     }
 
-    const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      alert('User not assigned to a clinic. Cannot save visit.');
-      return;
-    }
-
-
+    savingRef.current = true;
+    setSaving(true);
     try {
-      setSaving(true);
+      const profile = await getCurrentProfile();
+      if (!profile?.clinicId) {
+        alert('User not assigned to a clinic. Cannot save visit.');
+        return;
+      }
 
       const visitData: Omit<Visit, 'id' | 'createdAt' | 'updatedAt' | 'patient' | 'doctor'> = {
         patientId: patient.id,
@@ -685,6 +687,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
       console.error('Error saving visit:', error);
       alert(error instanceof Error ? error.message : `Failed to ${existingVisit ? 'update' : 'save'} visit. Please try again.`);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

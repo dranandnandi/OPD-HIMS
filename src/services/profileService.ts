@@ -9,6 +9,8 @@ const LOCAL_STORAGE_PROFILE_KEY = 'bolt_user_profile';
 export const saveProfileToLocalStorage = (profile: Profile) => {
   try {
     localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(profile));
+    // Keep in-memory cache aligned with persisted profile state.
+    setCachedProfile(profile);
     if (import.meta.env.DEV) {
       console.log('✅ [LocalStorage] Profile saved.');
     }
@@ -32,6 +34,8 @@ export const getProfileFromLocalStorage = (): Profile | null => {
       if (import.meta.env.DEV) {
         console.log('📦 [LocalStorage] Loaded cached profile.');
       }
+      // Promote local storage profile to in-memory cache for consistency.
+      setCachedProfile(profile);
       return profile;
     }
   } catch (e) {
@@ -100,6 +104,7 @@ export const convertDatabaseProfile = (
       pdfFooterUrl: clinic.pdf_footer_url,
       pdfMargins: clinic.pdf_margins,
       pdfPrintMargins: clinic.pdf_print_margins,
+      clinicTier: (clinic.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'basic',
     }
     : undefined,
 });
@@ -208,15 +213,58 @@ export async function getCurrentProfile(providedUserId?: string, providedAccessT
       return getProfileFromLocalStorage();
     }
 
-    // Convert the profile data to the expected format with proper date objects
+    const cachedProfile = getProfileFromLocalStorage();
+
+    // Convert the profile data to the expected format with proper date objects.
+    // Some edge deployments may omit consultation fields; keep behavior stable via fallbacks.
+    const normalizedProfile = result.profile || {};
+    let resolvedIsOpenForConsultation =
+      normalizedProfile.isOpenForConsultation ??
+      normalizedProfile.is_open_for_consultation ??
+      cachedProfile?.isOpenForConsultation;
+
+    let resolvedDoctorAvailability =
+      normalizedProfile.doctorAvailability ??
+      normalizedProfile.doctor_availability ??
+      cachedProfile?.doctorAvailability;
+
+    // Last-resort fallback: read live profile fields directly from DB.
+    // This avoids stale/partial edge responses forcing false defaults in UI.
+    if ((resolvedIsOpenForConsultation === undefined || resolvedDoctorAvailability === undefined) && supabaseClient && userId) {
+      const { data: liveProfile, error: liveProfileError } = await supabaseClient
+        .from('profiles')
+        .select('is_open_for_consultation, doctor_availability')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!liveProfileError && liveProfile) {
+        if (resolvedIsOpenForConsultation === undefined) {
+          resolvedIsOpenForConsultation = liveProfile.is_open_for_consultation;
+        }
+        if (resolvedDoctorAvailability === undefined) {
+          resolvedDoctorAvailability = liveProfile.doctor_availability;
+        }
+      }
+
+      if (import.meta.env.DEV) {
+        console.log('🩹 [Profile Normalize] Live profile fallback', {
+          resolvedIsOpenForConsultation,
+          hasDoctorAvailability: !!resolvedDoctorAvailability,
+          liveProfileError: liveProfileError?.message,
+        });
+      }
+    }
+
     const profile: Profile = {
-      ...result.profile,
-      createdAt: new Date(result.profile.createdAt),
-      updatedAt: new Date(result.profile.updatedAt),
-      clinic: result.profile.clinic ? {
-        ...result.profile.clinic,
-        createdAt: result.profile.clinic.createdAt ? new Date(result.profile.clinic.createdAt) : undefined,
-        updatedAt: result.profile.clinic.updatedAt ? new Date(result.profile.clinic.updatedAt) : undefined,
+      ...normalizedProfile,
+      isOpenForConsultation: resolvedIsOpenForConsultation ?? false,
+      doctorAvailability: resolvedDoctorAvailability,
+      createdAt: new Date(normalizedProfile.createdAt || normalizedProfile.created_at),
+      updatedAt: new Date(normalizedProfile.updatedAt || normalizedProfile.updated_at),
+      clinic: normalizedProfile.clinic ? {
+        ...normalizedProfile.clinic,
+        createdAt: normalizedProfile.clinic.createdAt ? new Date(normalizedProfile.clinic.createdAt) : undefined,
+        updatedAt: normalizedProfile.clinic.updatedAt ? new Date(normalizedProfile.clinic.updatedAt) : undefined,
       } : undefined
     }
 

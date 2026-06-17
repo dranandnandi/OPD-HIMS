@@ -63,10 +63,31 @@ const ProfileSettings: React.FC = () => {
         emergencyFee: formData.emergencyFee ? parseFloat(formData.emergencyFee) : undefined,
         isOpenForConsultation: formData.isOpenForConsultation
       };
-      await authService.updateProfile(user.id, updateData);
+      const updatedProfile = await authService.updateProfile(user.id, updateData);
+
+      if (import.meta.env.DEV) {
+        console.log('[PROFILE DEBUG] updateProfile response', {
+          userId: updatedProfile.id,
+          isOpenForConsultation: updatedProfile.isOpenForConsultation,
+          updatedAt: updatedProfile.updatedAt,
+        });
+      }
       
       // Refresh the user profile in the application state
       tryLoadLocalProfile();
+
+      if (import.meta.env.DEV) {
+        try {
+          const raw = localStorage.getItem('bolt_user_profile');
+          const parsed = raw ? JSON.parse(raw) : null;
+          console.log('[PROFILE DEBUG] localStorage after save', {
+            isOpenForConsultation: parsed?.isOpenForConsultation,
+            updatedAt: parsed?.updatedAt,
+          });
+        } catch (e) {
+          console.log('[PROFILE DEBUG] localStorage parse failed', e);
+        }
+      }
       
       alert('Profile updated successfully!');
     } catch (error) {

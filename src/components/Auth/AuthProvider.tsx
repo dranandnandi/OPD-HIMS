@@ -70,7 +70,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const isProfileChanged = (newProfile: Profile | null, oldProfile: Profile | null): boolean => {
     if ((newProfile === null) !== (oldProfile === null)) return true;
     if (newProfile === null && oldProfile === null) return false;
-    return newProfile!.id !== oldProfile!.id;
+
+    // Refresh auth state when key profile fields change (same user id, updated profile).
+    return (
+      newProfile!.id !== oldProfile!.id ||
+      newProfile!.updatedAt?.toString() !== oldProfile!.updatedAt?.toString() ||
+      newProfile!.isOpenForConsultation !== oldProfile!.isOpenForConsultation ||
+      newProfile!.roleName !== oldProfile!.roleName ||
+      JSON.stringify(newProfile!.permissions || []) !== JSON.stringify(oldProfile!.permissions || [])
+    );
   };
 
   const updateUserIfChanged = (newProfile: Profile | null) => {

@@ -67,7 +67,7 @@ IMPORTANT PERSONALIZATION INSTRUCTIONS:
 Generate only the review text, nothing else.`
 
     // Call Gemini API using API key
-    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

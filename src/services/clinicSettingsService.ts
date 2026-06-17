@@ -33,7 +33,9 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   gmbLink: dbSetting.gmb_link,
   whatsappSharedSessionUserId: dbSetting.whatsapp_shared_session_user_id,
   prescriptionFrequencies: dbSetting.prescription_frequencies,
-  appointmentTypes: dbSetting.appointment_types
+  appointmentTypes: dbSetting.appointment_types,
+  clinicTier: (dbSetting.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'silver',
+  waitingSequenceEnabled: dbSetting.waiting_sequence_enabled ?? false,
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -63,7 +65,8 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   gmb_link: setting.gmbLink,
   whatsapp_shared_session_user_id: setting.whatsappSharedSessionUserId,
   prescription_frequencies: setting.prescriptionFrequencies,
-  appointment_types: setting.appointmentTypes
+  appointment_types: setting.appointmentTypes,
+  clinic_tier: setting.clinicTier,
 });
 
 export const clinicSettingsService = {
@@ -170,6 +173,7 @@ export const clinicSettingsService = {
     if (settings.gmbLink !== undefined) dbSettings.gmb_link = settings.gmbLink;
     if (settings.prescriptionFrequencies !== undefined) dbSettings.prescription_frequencies = settings.prescriptionFrequencies;
     if (settings.appointmentTypes !== undefined) dbSettings.appointment_types = settings.appointmentTypes;
+    if (settings.waitingSequenceEnabled !== undefined) dbSettings.waiting_sequence_enabled = settings.waitingSequenceEnabled;
     if (settings.pdfHeaderUrl !== undefined) dbSettings.pdf_header_url = settings.pdfHeaderUrl;
     if (settings.pdfFooterUrl !== undefined) dbSettings.pdf_footer_url = settings.pdfFooterUrl;
     if (settings.pdfMargins !== undefined) dbSettings.pdf_margins = settings.pdfMargins;
