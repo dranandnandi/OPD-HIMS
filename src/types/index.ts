@@ -1,5 +1,7 @@
 export interface Patient {
   id: string;
+  patientNumber?: string;
+  patient_number?: string;
   name: string;
   phone: string;
   age: number | null;
@@ -551,6 +553,8 @@ export interface ClinicSetting {
   pdfFooterUrl?: string;
   pdfMargins?: string;
   pdfPrintMargins?: string;
+  invoicePaperSize?: 'A4' | 'A5';
+  invoiceMargins?: string;
   // WhatsApp and AI Review Settings
   enableManualWhatsappSend?: boolean;
   enableBlueticksApiSend?: boolean;
@@ -563,8 +567,15 @@ export interface ClinicSetting {
   whatsappSharedSessionUserId?: string;
   // Subscription tier
   clinicTier?: 'basic' | 'silver' | 'gold';
+  // IPD module access (platform-managed, like clinicTier)
+  ipdEnabled?: boolean;
   // Waiting Sequence
   waitingSequenceEnabled?: boolean;
+  // Lab Test Integration
+  labTestIntegrationEnabled?: boolean;
+  // LIMS Outbound Integration (sending orders to external LIMS)
+  limsApiUrl?: string;
+  limsApiKey?: string;
   // WhatsApp Message Templates
   whatsappTemplates?: {
     visit_prescription?: string;
@@ -659,6 +670,45 @@ export interface AnalyticsData {
   topDiagnoses: { name: string; count: number }[];
   topMedicines: { name: string; count: number }[];
   monthlyVisits: { month: string; visits: number }[];
+}
+
+export type AnalyticsRangeKey = '30d' | '3m' | '6m' | '1y';
+
+export interface AnalyticsRange {
+  startDate: string;
+  endDate: string;
+  previousStartDate: string;
+  previousEndDate: string;
+  bucket: 'day' | 'month';
+  timezone: string;
+}
+
+export interface AnalyticsSummary {
+  range: AnalyticsRange;
+  metrics: {
+    totalPatients: number;
+    newPatients: number;
+    previousNewPatients: number;
+    todayVisits: number;
+    totalVisits: number;
+    previousTotalVisits: number;
+    avgDailyVisits: number;
+    followupsDue: number;
+    netRevenue: number;
+    previousNetRevenue: number;
+    todayRevenue: number;
+    paymentCount: number;
+    outstandingBalance: number;
+    avgConsultationFee: number;
+  };
+  visitTrend: { period: string; visits: number }[];
+  revenueTrend: { period: string; revenue: number }[];
+  topDiagnoses: { name: string; count: number }[];
+  topMedicines: { name: string; count: number }[];
+  appointmentStatuses: { status: string; count: number }[];
+  paymentMethods: { method: string; amount: number; count: number }[];
+  serviceCategories: { category: string; amount: number; count: number }[];
+  peakVisitHours: { hour: number; count: number }[];
 }
 
 export interface Supplier {

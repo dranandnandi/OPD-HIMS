@@ -393,3 +393,17 @@
   border-bottom: 1px solid #ccc;
   padding-bottom: 5px;
 }
+/* --- IPD module: CKEditor document-like editing surface for discharge summaries --- */
+.ipd-document-editor .ck-editor__editable {
+  min-height: 60vh;
+  padding: 2rem 2.5rem;
+  background: white;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.ipd-document-editor .ck-content h2 { font-size: 1.15rem; font-weight: 700; margin: 0.6em 0 0.3em; }
+.ipd-document-editor .ck-content h3 { font-size: 0.95rem; font-weight: 600; color: #1F5065; margin: 0.8em 0 0.25em; }
+.ipd-document-editor .ck-content table { border-collapse: collapse; width: 100%; }
+.ipd-document-editor .ck-content table td, .ipd-document-editor .ck-content table th {
+  border: 1px solid #d1d5db; padding: 3px 6px;
+}

@@ -96,8 +96,8 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+      <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-6 border-b mb-6">
           <h2>
             {patient ? 'Edit Patient' : 'Add New Patient'}

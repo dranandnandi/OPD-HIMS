@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patient, Profile, VisitImage } from '../types';
 import { getCurrentProfile } from './profileService';
+import { limsService } from './limsService';
 import type { DatabaseVisit, DatabaseSymptom, DatabaseDiagnosis, DatabasePrescription, DatabaseTestOrdered, DatabaseTestResult } from '../lib/supabase';
 
 const deduplicatePrescriptions = <T extends {
@@ -219,6 +220,8 @@ export const visitService = {
       testResultsByVisit.get(visit.id) || [],
       visit.patients ? {
         id: visit.patients.id,
+        patientNumber: visit.patients.patient_number,
+        patient_number: visit.patients.patient_number,
         name: visit.patients.name,
         phone: visit.patients.phone,
         age: visit.patients.age,
@@ -332,6 +335,8 @@ export const visitService = {
       testResultsByVisit.get(visit.id) || [],
       visit.patients ? {
         id: visit.patients.id,
+        patientNumber: visit.patients.patient_number,
+        patient_number: visit.patients.patient_number,
         name: visit.patients.name,
         phone: visit.patients.phone,
         age: visit.patients.age,
@@ -486,11 +491,37 @@ export const visitService = {
         throw new Error('Failed to retrieve created visit');
       }
 
+      // Send tests to LIMS if enabled (non-blocking)
+      if (visit.testsOrdered.length > 0 && createdVisit.patient) {
+        this.sendTestsToLimsIfEnabled(visitId, createdVisit.patient, visit.testsOrdered, createdVisit.doctor?.name);
+      }
+
       return createdVisit;
 
     } catch (error) {
       console.error('Error creating visit:', error);
       throw new Error('Failed to create visit with related data');
+    }
+  },
+
+  // Helper: Send tests to LIMS if integration is enabled (fire-and-forget)
+  async sendTestsToLimsIfEnabled(
+    visitId: string,
+    patient: Patient,
+    tests: TestOrdered[],
+    referringDoctor?: string
+  ): Promise<void> {
+    try {
+      const isEnabled = await limsService.isLimsEnabled();
+      if (!isEnabled) return;
+
+      const labTests = tests.filter(t => t.testType === 'lab' && t.status === 'ordered');
+      if (labTests.length === 0) return;
+
+      const result = await limsService.sendOrderToLims(visitId, patient, labTests, referringDoctor);
+      console.log('LIMS order sent successfully:', result.limsSampleId);
+    } catch (error) {
+      console.error('Failed to send tests to LIMS (non-blocking):', error);
     }
   },
 
@@ -549,6 +580,8 @@ export const visitService = {
       testResults,
       visit.patients ? {
         id: visit.patients.id,
+        patientNumber: visit.patients.patient_number,
+        patient_number: visit.patients.patient_number,
         name: visit.patients.name,
         phone: visit.patients.phone,
         age: visit.patients.age,
@@ -715,6 +748,11 @@ export const visitService = {
         throw new Error('Failed to retrieve updated visit');
       }
 
+      // Send tests to LIMS if enabled (non-blocking)
+      if (visit.testsOrdered && visit.testsOrdered.length > 0 && updatedVisit.patient) {
+        this.sendTestsToLimsIfEnabled(id, updatedVisit.patient, visit.testsOrdered, updatedVisit.doctor?.name);
+      }
+
       return updatedVisit;
 
     } catch (error) {
@@ -809,6 +847,8 @@ export const visitService = {
       testResultsByVisit.get(visit.id) || [],
       visit.patients ? {
         id: visit.patients.id,
+        patientNumber: visit.patients.patient_number,
+        patient_number: visit.patients.patient_number,
         name: visit.patients.name,
         phone: visit.patients.phone,
         age: visit.patients.age,

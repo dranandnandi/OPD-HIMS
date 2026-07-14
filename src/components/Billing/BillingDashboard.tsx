@@ -223,7 +223,12 @@ const BillingDashboard: React.FC = () => {
         email: user.clinic.email || '',
         logo: user.clinic.logo || null,
         headerText: user.clinic.headerText || '',
-        footerText: user.clinic.footerText || ''
+        footerText: user.clinic.footerText || '',
+        pdfHeaderUrl: (user.clinic as any).pdfHeaderUrl,
+        pdfFooterUrl: (user.clinic as any).pdfFooterUrl,
+        pdfMargins: (user.clinic as any).pdfMargins,
+        invoicePaperSize: (user.clinic as any).invoicePaperSize,
+        invoiceMargins: (user.clinic as any).invoiceMargins
       } : null;
 
       const consultationItem = bill.billItems?.find(
@@ -288,7 +293,12 @@ const BillingDashboard: React.FC = () => {
         email: user.clinic.email || '',
         logo: user.clinic.logo || null,
         headerText: user.clinic.headerText || '',
-        footerText: user.clinic.footerText || ''
+        footerText: user.clinic.footerText || '',
+        pdfHeaderUrl: (user.clinic as any).pdfHeaderUrl,
+        pdfFooterUrl: (user.clinic as any).pdfFooterUrl,
+        pdfMargins: (user.clinic as any).pdfMargins,
+        invoicePaperSize: (user.clinic as any).invoicePaperSize,
+        invoiceMargins: (user.clinic as any).invoiceMargins
       };
 
       const consultationItem = bill.billItems?.find(

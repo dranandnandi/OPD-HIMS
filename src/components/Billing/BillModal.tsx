@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, Calculator, Search, User, Download, RotateCcw, Eye, RefreshCw, MessageCircle } from 'lucide-react';
+import { X, Plus, Trash2, Calculator, Search, User, Download, RotateCcw, Eye, RefreshCw, MessageCircle, Printer } from 'lucide-react';
 import { Patient, BillItem, Profile, Visit, RefundRequest, AppointmentType, Appointment, ClinicSetting } from '../../types';
 import { getCurrentProfile } from '../../services/profileService';
 import { billingService } from '../../services/billingService';
@@ -29,6 +29,8 @@ interface BillModalProps {
   isReadOnly?: boolean;
   patients?: Patient[]; // Pass patients from parent to avoid duplicate fetch
 }
+
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
 
 const BillModal: React.FC<BillModalProps> = ({
   bill,
@@ -553,7 +555,8 @@ const BillModal: React.FC<BillModalProps> = ({
 
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.phone.includes(searchTerm)
+    patient.phone.includes(searchTerm) ||
+    getPatientNumber(patient).includes(searchTerm)
   );
 
   const handlePatientSelect = (patient: Patient) => {
@@ -753,6 +756,86 @@ const BillModal: React.FC<BillModalProps> = ({
       alert('Failed to export PDF. Please try again.');
     } finally {
       setExportingPDF(false);
+    }
+  };
+
+  // Handle generating print version PDF (no header/footer for letterhead)
+  const handleGeneratePrintPDF = async () => {
+    if (!bill || !bill.patient || (!user?.clinic && !clinicSettings)) {
+      alert('Missing required data for PDF export');
+      return;
+    }
+
+    try {
+      setGeneratingPrintPdf(true);
+
+      const doctorIdToUse = selectedDoctorId || bill.visit?.doctorId;
+      let doctor = doctors.find(d => d.id === doctorIdToUse);
+
+      if (!doctor && doctorIdToUse) {
+        const allDoctors = await authService.getAllDoctors();
+        doctor = allDoctors.find(d => d.id === doctorIdToUse);
+      }
+
+      if (!doctor) {
+        const consultationItem = billItems.find((item: any) => item.itemType === 'consultation');
+        if (consultationItem && consultationItem.itemName.includes(' - ')) {
+          const extractedName = consultationItem.itemName.split(' - ')[1].trim();
+          doctor = {
+            id: 'temp',
+            name: extractedName,
+            role: 'doctor',
+            email: '',
+            phone: '',
+            specialization: '',
+            qualification: '',
+            registrationNo: '',
+            roleId: 'temp',
+            roleName: 'doctor',
+            permissions: [],
+            isActive: true,
+            clinicId: 'temp',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          } as unknown as Profile;
+        }
+      }
+
+      const pdfUrl = await pdfService.generatePrintPdf('bill', {
+        bill: {
+          ...bill,
+          totalAmount: formData.totalAmount,
+          paidAmount: formData.paidAmount,
+          balanceAmount: formData.balanceAmount,
+          paymentStatus: formData.paymentStatus,
+          paymentMethod: formData.paymentMethod as any,
+          billDate: new Date(formData.billDate),
+          notes: formData.notes,
+          billItems: billItems.map((item: any) => ({
+            ...item,
+            id: item.id || 'temp-id',
+            billId: bill.id,
+            createdAt: item.createdAt || new Date()
+          })),
+          visit: {
+            ...bill.visit,
+            doctorId: doctorIdToUse
+          }
+        },
+        patient: bill.patient,
+        doctor: doctor,
+        clinicSettings: clinicSettings || user?.clinic!
+      }, {
+        forceRegenerate: true
+      });
+
+      window.open(pdfUrl, '_blank');
+
+    } catch (error) {
+      console.error('Error generating print PDF:', error);
+      alert('Failed to generate print PDF. Please try again.');
+    } finally {
+      setGeneratingPrintPdf(false);
     }
   };
 
@@ -1046,7 +1129,7 @@ const BillModal: React.FC<BillModalProps> = ({
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
                   type="text"
-                  placeholder="Search patients by name or phone..."
+                  placeholder="Search patients by no, name, or phone..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1063,7 +1146,10 @@ const BillModal: React.FC<BillModalProps> = ({
                         className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                       >
                         <div className="font-medium">{toTitleCase(patient.name)}</div>
-                        <div className="text-sm text-gray-600">{patient.phone} • {patient.age} years</div>
+                        <div className="text-sm text-gray-600">
+                          {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+                          {patient.phone} • {patient.age} years
+                        </div>
                       </button>
                     ))
                   ) : (
@@ -1079,7 +1165,10 @@ const BillModal: React.FC<BillModalProps> = ({
                 <User className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="font-medium text-blue-800">{toTitleCase(selectedPatient.name)}</p>
-                  <p className="text-sm text-blue-600">{selectedPatient.phone} • {selectedPatient.age} years</p>
+                  <p className="text-sm text-blue-600">
+                    {getPatientNumber(selectedPatient) && `${getPatientNumber(selectedPatient)} • `}
+                    {selectedPatient.phone} • {selectedPatient.age} years
+                  </p>
                 </div>
               </div>
               {!bill && (
@@ -1488,6 +1577,25 @@ const BillModal: React.FC<BillModalProps> = ({
                     {exportingPDF ? 'Generating...' : 'Generate PDF'}
                   </button>
                 )}
+                {/* Print Version Button - For letterhead printing */}
+                <button
+                  onClick={handleGeneratePrintPDF}
+                  disabled={generatingPrintPdf}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  title="Generate print version (no header/footer for letterhead)"
+                >
+                  {generatingPrintPdf ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Printing...
+                    </>
+                  ) : (
+                    <>
+                      <Printer className="w-4 h-4" />
+                      Print Version
+                    </>
+                  )}
+                </button>
                 {/* WhatsApp Invoice Button - Show if bill exists */}
                 {bill && (
                   <button

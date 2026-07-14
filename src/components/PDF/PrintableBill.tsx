@@ -11,6 +11,7 @@ interface PrintableBillProps {
 }
 
 const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, clinicSettings }) => {
+  const patientNumber = patient.patientNumber || patient.patient_number;
   const consultationItem = bill.billItems.find(
     (item) => item.itemType === 'consultation' && typeof item.itemName === 'string'
   );
@@ -80,6 +81,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
           <h3 className="font-bold text-gray-800 mb-3">PATIENT DETAILS</h3>
           <div className="text-sm space-y-1">
             <p><strong>Name:</strong> {toTitleCase(patient.name)}</p>
+            {patientNumber && <p><strong>Patient No:</strong> {patientNumber}</p>}
             <p><strong>Phone:</strong> {patient.phone}</p>
             <p><strong>Age:</strong> {patient.age} years</p>
             <p><strong>Gender:</strong> {toTitleCase(patient.gender)}</p>

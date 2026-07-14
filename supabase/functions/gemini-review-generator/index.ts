@@ -82,7 +82,12 @@ Generate only the review text, nothing else.`
           temperature: 0.7,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 150,
+          maxOutputTokens: 300,
+          // Gemini 2.5 spends "thinking" tokens against maxOutputTokens by
+          // default, which truncates the review; a 50-word review needs none.
+          thinkingConfig: {
+            thinkingBudget: 0,
+          },
         },
         safetySettings: [
           {

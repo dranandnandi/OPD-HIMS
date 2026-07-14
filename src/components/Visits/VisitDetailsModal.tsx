@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, CheckCircle, XCircle, Stethoscope, Phone, Clock, Download, Edit, ClipboardList, Eye, Printer, MessageCircle, RefreshCw, Trash2, BedDouble } from 'lucide-react';
 import { Visit, Bill } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
 import { visitService } from '../../services/visitService';
@@ -100,6 +101,7 @@ interface VisitDetailsModalProps {
 
 const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [visit, setVisit] = useState<Visit | null>(null);
   const [bills, setBills] = useState<Bill[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -124,6 +126,19 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     user.permissions?.includes('admin') ||
     user.permissions?.includes('all')
   );
+
+  // IPD conversion: clinic must have the IPD module and the user admission rights
+  const canAdmitToIpd = (user?.clinic?.ipdEnabled ?? false) &&
+    (isAdminUser || user?.permissions?.includes('ipd_admissions'));
+
+  const handleAdmitToIpd = () => {
+    if (!visit) return;
+    const params = new URLSearchParams({ patient_id: visit.patientId });
+    if (visit.doctorId) params.set('doctor_id', visit.doctorId);
+    params.set('visit_id', visit.id);
+    onClose();
+    navigate(`/ipd/admissions/new?${params.toString()}`);
+  };
 
   useEffect(() => {
     if (user && visitId) {
@@ -1155,6 +1170,16 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                   <Pill className="w-4 h-4" />
                   Dispense Medicines
                 </button>
+                {canAdmitToIpd && (
+                  <button
+                    onClick={handleAdmitToIpd}
+                    className="flex items-center gap-2 bg-navy-600 text-white px-4 py-2 rounded-lg hover:bg-navy-700 transition-colors"
+                    title="Convert this visit to an inpatient admission (patient & doctor pre-filled)"
+                  >
+                    <BedDouble className="w-4 h-4" />
+                    Admit to IPD
+                  </button>
+                )}
                 <button
                   onClick={handleDeleteVisit}
                   disabled={deletingVisit}

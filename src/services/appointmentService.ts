@@ -64,6 +64,8 @@ export const appointmentService = {
       appointment,
       appointment.patients ? {
         id: appointment.patients.id,
+        patientNumber: appointment.patients.patient_number,
+        patient_number: appointment.patients.patient_number,
         name: appointment.patients.name,
         phone: appointment.patients.phone,
         age: appointment.patients.age,
@@ -107,7 +109,7 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients!inner (id, name, phone),
+        patients!inner (id, patient_number, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
@@ -125,6 +127,8 @@ export const appointmentService = {
       appointment,
       appointment.patients ? {
         id: appointment.patients.id,
+        patientNumber: appointment.patients.patient_number,
+        patient_number: appointment.patients.patient_number,
         name: appointment.patients.name,
         phone: appointment.patients.phone,
         age: appointment.patients.age,
@@ -168,7 +172,7 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients!inner (id, name, phone),
+        patients!inner (id, patient_number, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
@@ -183,6 +187,8 @@ export const appointmentService = {
       appointment,
       appointment.patients ? {
         id: appointment.patients.id,
+        patientNumber: appointment.patients.patient_number,
+        patient_number: appointment.patients.patient_number,
         name: appointment.patients.name,
         phone: appointment.patients.phone,
         age: appointment.patients.age,
@@ -226,7 +232,7 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients (id, name, phone),
+        patients (id, patient_number, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
@@ -242,6 +248,8 @@ export const appointmentService = {
       appointment,
       appointment.patients ? {
         id: appointment.patients.id,
+        patientNumber: appointment.patients.patient_number,
+        patient_number: appointment.patients.patient_number,
         name: appointment.patients.name,
         phone: appointment.patients.phone,
         age: appointment.patients.age,
@@ -288,7 +296,7 @@ export const appointmentService = {
       .insert([{ ...dbAppointment, clinic_id: profile.clinicId }])
       .select(`
         *,
-        patients (id, name, phone),
+        patients (id, patient_number, name, phone),
         profiles (id, name, specialization)
       `)
       .single();
@@ -301,6 +309,8 @@ export const appointmentService = {
       data,
       data.patients ? {
         id: data.patients.id,
+        patientNumber: data.patients.patient_number,
+        patient_number: data.patients.patient_number,
         name: data.patients.name,
         phone: data.patients.phone,
         age: data.patients.age,
@@ -373,6 +383,8 @@ export const appointmentService = {
       data,
       data.patients ? {
         id: data.patients.id,
+        patientNumber: data.patients.patient_number,
+        patient_number: data.patients.patient_number,
         name: data.patients.name,
         phone: data.patients.phone,
         age: data.patients.age,
@@ -439,7 +451,7 @@ export const appointmentService = {
       .from('appointments')
       .select(`
         *,
-        patients (id, name, phone),
+        patients (id, patient_number, name, phone),
         profiles (id, name, specialization)
       `)
       .eq('clinic_id', profile.clinicId)
@@ -458,6 +470,8 @@ export const appointmentService = {
       data,
       data.patients ? {
         id: data.patients.id,
+        patientNumber: data.patients.patient_number,
+        patient_number: data.patients.patient_number,
         name: data.patients.name,
         phone: data.patients.phone,
         age: data.patients.age,

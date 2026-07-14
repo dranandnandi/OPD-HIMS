@@ -190,7 +190,7 @@ Return only the JSON object, no additional text.`
           name: parsedData.suggestedData?.masterData?.name || userInput,
           category: parsedData.suggestedData?.masterData?.category || 'other',
           ...(parsedData.itemType === 'test' && {
-            type: ['lab', 'radiology', 'other'].includes(parsedData.suggestedData?.masterData?.type) 
+            type: ['lab', 'radiology', 'procedure', 'other'].includes(parsedData.suggestedData?.masterData?.type) 
               ? parsedData.suggestedData.masterData.type : 'lab',
             normalRange: parsedData.suggestedData?.masterData?.normalRange || null,
             units: parsedData.suggestedData?.masterData?.units || null,
@@ -233,10 +233,11 @@ Return only the JSON object, no additional text.`
     )
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
     return new Response(
       JSON.stringify({ 
         error: 'Failed to process input with AI',
-        details: error.message 
+        details: message 
       }),
       { 
         status: 500, 

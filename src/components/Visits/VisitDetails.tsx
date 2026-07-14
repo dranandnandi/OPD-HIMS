@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, Image, X, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, Image, X, ExternalLink, BedDouble, Download } from 'lucide-react';
 import { Visit, Bill, VisitImage } from '../../types';
 import { visitService } from '../../services/visitService';
 import { billingService } from '../../services/billingService';
@@ -24,6 +24,24 @@ const VisitDetails: React.FC = () => {
   const [showDispenseModal, setShowDispenseModal] = useState(false);
   const [dispensedItemsForBilling, setDispensedItemsForBilling] = useState<any[]>([]);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // IPD conversion: clinic must have the IPD module and the user admission rights
+  const isAdminUser = !!user && (
+    user.roleName?.toLowerCase() === 'admin' ||
+    user.roleName?.toLowerCase() === 'super_admin' ||
+    user.permissions?.includes('admin') ||
+    user.permissions?.includes('all')
+  );
+  const canAdmitToIpd = (user?.clinic?.ipdEnabled ?? false) &&
+    (isAdminUser || user?.permissions?.includes('ipd_admissions'));
+
+  const handleAdmitToIpd = () => {
+    if (!visit) return;
+    const params = new URLSearchParams({ patient_id: visit.patientId });
+    if (visit.doctorId) params.set('doctor_id', visit.doctorId);
+    params.set('visit_id', visit.id);
+    navigate(`/ipd/admissions/new?${params.toString()}`);
+  };
 
   useEffect(() => {
     if (user && visitId) {
@@ -206,6 +224,16 @@ const VisitDetails: React.FC = () => {
           <Pill className="w-4 h-4" />
           Dispense Medicines
         </button>
+        {canAdmitToIpd && (
+          <button
+            onClick={handleAdmitToIpd}
+            className="flex items-center gap-2 bg-navy-600 text-white px-4 py-2 rounded-lg hover:bg-navy-700 transition-colors"
+            title="Convert this visit to an inpatient admission (patient & doctor pre-filled)"
+          >
+            <BedDouble className="w-4 h-4" />
+            Admit to IPD
+          </button>
+        )}
       </div>
 
       {/* Visit Overview */}

@@ -14,6 +14,9 @@ serve(async (req) => {
 
   const botSecret = Deno.env.get("HIMS_BOT_SECRET");
   if (botSecret && req.headers.get("x-hims-bot-secret") !== botSecret) {
+    console.error("[cancel] REJECTED 401: bad or missing x-hims-bot-secret header", {
+      secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -24,7 +27,10 @@ serve(async (req) => {
     const body = await req.json();
     const { clinicId, appointmentId } = body;
 
+    console.log("[cancel] request:", { clinicId, appointmentId });
+
     if (!clinicId || !appointmentId) {
+      console.error("[cancel] REJECTED 400: missing fields", { clinicId, appointmentId });
       return new Response(
         JSON.stringify({ error: "clinicId and appointmentId are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -45,6 +51,11 @@ serve(async (req) => {
       .single();
 
     if (fetchError || !existing) {
+      console.error("[cancel] REJECTED 404: appointment not found", {
+        appointmentId,
+        clinicId,
+        dbError: fetchError?.message || null,
+      });
       return new Response(
         JSON.stringify({ error: "Appointment not found for this clinic" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -59,6 +70,7 @@ serve(async (req) => {
     }
 
     if (existing.status === "Completed") {
+      console.error("[cancel] REJECTED 409: appointment already Completed", { appointmentId });
       return new Response(
         JSON.stringify({ error: "Cannot cancel a completed appointment" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -73,19 +85,26 @@ serve(async (req) => {
       .eq("clinic_id", clinicId);
 
     if (updateError) {
-      console.error("hims-cancel-appointment update error:", updateError);
+      console.error("[cancel] REJECTED 400: update failed", {
+        appointmentId,
+        clinicId,
+        dbError: updateError.message,
+        dbCode: updateError.code,
+      });
       return new Response(JSON.stringify({ error: updateError.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log("[cancel] SUCCESS: appointment cancelled", { appointmentId });
+
     return new Response(
       JSON.stringify({ appointmentId, status: "Cancelled" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("hims-cancel-appointment unexpected error:", err);
+    console.error("[cancel] REJECTED 500: unexpected error:", (err as Error).message, (err as Error).stack);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

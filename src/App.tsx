@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './components/Auth/AuthProvider';
 import { useAuth } from './components/Auth/useAuth';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -61,6 +62,15 @@ import GMBReviewRequests from './components/GMBReviewRequests/GMBReviewRequests'
 
 // Verify Prescription (public page — no auth required)
 import VerifyPrescription from './pages/VerifyPrescription';
+
+// IPD module — lazy-loaded so OPD-only users never download it (CKEditor/xlsx are heavy)
+const IpdCensusPage = React.lazy(() => import('./modules/ipd/pages/CensusPage'));
+const IpdBedBoardPage = React.lazy(() => import('./modules/ipd/pages/BedBoardPage'));
+const IpdNewAdmissionPage = React.lazy(() => import('./modules/ipd/pages/NewAdmissionPage'));
+const IpdAdmissionDetailsPage = React.lazy(() => import('./modules/ipd/pages/AdmissionDetailsPage'));
+const IpdBillingPage = React.lazy(() => import('./modules/ipd/pages/BillingPage'));
+const IpdStoresPage = React.lazy(() => import('./modules/ipd/pages/StoresPage'));
+const IpdMastersPage = React.lazy(() => import('./modules/ipd/pages/MastersPage'));
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -206,6 +216,74 @@ const TierRoute: React.FC<{ minTier?: 'silver' | 'gold'; children: React.ReactNo
 
   return <>{children}</>;
 };
+
+// IPD Route - clinic must have IPD enabled (platform flag) AND user needs the ipd_* permission
+const IpdRoute: React.FC<{ perm: string; children: React.ReactNode }> = ({ perm, children }) => {
+  const { user, hasPermission } = useAuth();
+
+  const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
+  const roleName = user?.roleName?.toLowerCase();
+  const isAdmin = Boolean(
+    user && (
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      hasPermission('admin') ||
+      hasPermission('all')
+    )
+  );
+
+  if (!ipdEnabled) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-8 bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">IPD Module Not Enabled</h2>
+          <p className="text-gray-500 mb-1">
+            The inpatient (IPD) module is not enabled for your clinic.
+          </p>
+          <p className="text-sm text-gray-400">
+            Contact The Doctorpreneur Academy to enable IPD for your clinic.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin && !hasPermission(perm)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// /ipd landing: send the user to the first IPD page they may open
+const IpdHome: React.FC = () => {
+  const { user, hasPermission } = useAuth();
+  const roleName = user?.roleName?.toLowerCase();
+  const isAdmin = Boolean(
+    user && (roleName === 'admin' || roleName === 'super_admin' || hasPermission('admin') || hasPermission('all'))
+  );
+  const order: Array<[string, string]> = [
+    ['/ipd/census', 'ipd_census'],
+    ['/ipd/admissions/new', 'ipd_admissions'],
+    ['/ipd/billing', 'ipd_billing'],
+    ['/ipd/stores', 'ipd_stores'],
+    ['/ipd/masters', 'ipd_masters'],
+  ];
+  const target = order.find(([, perm]) => isAdmin || hasPermission(perm));
+  return <Navigate to={target ? target[0] : '/'} replace />;
+};
+
+// Suspense fallback for lazy-loaded IPD pages
+const IpdPageLoader: React.FC = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+  </div>
+);
 
 // Admin-or-Reception Route Component - Requires admin/super_admin OR receptionist role
 const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -532,6 +610,37 @@ const AppContent: React.FC = () => {
         </ProtectedRoute>
       } />
 
+      {/* IPD Module (clinic-gated via ipd_enabled + user ipd_* permissions) */}
+      <Route path="/ipd" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <IpdHome />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {([
+        ['census', 'ipd_census', <IpdCensusPage />],
+        ['bed-board', 'ipd_census', <IpdBedBoardPage />],
+        ['admissions/new', 'ipd_admissions', <IpdNewAdmissionPage />],
+        ['admissions/:id', 'ipd_admissions', <IpdAdmissionDetailsPage />],
+        ['billing', 'ipd_billing', <IpdBillingPage />],
+        ['stores', 'ipd_stores', <IpdStoresPage />],
+        ['masters', 'ipd_masters', <IpdMastersPage />],
+      ] as Array<[string, string, React.ReactElement]>).map(([path, perm, element]) => (
+        <Route key={path} path={`/ipd/${path}`} element={
+          <ProtectedRoute>
+            <AppLayout>
+              <IpdRoute perm={perm}>
+                <React.Suspense fallback={<IpdPageLoader />}>
+                  {element}
+                </React.Suspense>
+              </IpdRoute>
+            </AppLayout>
+          </ProtectedRoute>
+        } />
+      ))}
+
       {/* Catch all route - redirect to home */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -544,6 +653,7 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <AuthProvider>
         <Router>
+          <Toaster position="top-right" />
           <AppContent />
         </Router>
       </AuthProvider>

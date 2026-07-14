@@ -13,6 +13,7 @@ interface PrintableVisitDetailsProps {
 
 const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, patient, doctor, clinicSettings }) => {
   const { impressionItems, remainingNotes } = extractImpressionDetails(visit.doctorNotes);
+  const patientNumber = patient.patientNumber || patient.patient_number;
 
   return (
     <div className="pdf-container p-8 text-black" style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -57,6 +58,7 @@ const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, pa
           <h3 className="font-bold text-gray-800 mb-3">PATIENT DETAILS</h3>
           <div className="text-sm space-y-1">
             <p><strong>Name:</strong> {toTitleCase(patient.name)}</p>
+            {patientNumber && <p><strong>Patient No:</strong> {patientNumber}</p>}
             <p><strong>Phone:</strong> {patient.phone}</p>
             <p><strong>Age:</strong> {patient.age} years</p>
             <p><strong>Gender:</strong> {toTitleCase(patient.gender)}</p>

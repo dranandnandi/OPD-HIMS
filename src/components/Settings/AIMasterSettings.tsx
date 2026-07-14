@@ -12,7 +12,7 @@ interface AISuggestion {
     masterData: {
       name: string;
       category: string;
-      type?: 'lab' | 'radiology' | 'other';
+      type?: 'lab' | 'radiology' | 'procedure' | 'other';
       dosageForm?: string;
       strength?: string;
       genericName?: string;

@@ -43,7 +43,7 @@ export interface Database {
           Update: Partial<Omit<DatabaseRefundRequest, 'id' | 'created_at' | 'updated_at'>>;
         };
         Row: DatabasePatient;
-        Insert: Omit<DatabasePatient, 'id' | 'created_at' | 'last_visit'>;
+        Insert: Omit<DatabasePatient, 'id' | 'patient_number' | 'created_at' | 'last_visit'>;
         Update: Partial<Omit<DatabasePatient, 'id' | 'created_at' | 'last_visit'>>;
       };
       appointments: {
@@ -241,6 +241,7 @@ export interface DatabaseProfile {
 
 export interface DatabasePatient {
   id: string;
+  patient_number: string;
   name: string;
   phone: string;
   age: number | null;
@@ -269,7 +270,7 @@ export interface DatabaseAppointment {
   doctor_id: string;
   appointment_date: string;
   duration: number;
-  status: 'Scheduled' | 'Confirmed' | 'In_Progress' | 'Completed' | 'Cancelled' | 'No_Show';
+  status: 'Scheduled' | 'Confirmed' | 'Arrived' | 'In_Progress' | 'Completed' | 'Cancelled' | 'No_Show';
   appointment_type: 'Consultation' | 'Follow_Up' | 'Emergency' | 'Routine_Checkup';
   notes?: string;
   created_at: string;
@@ -542,13 +543,20 @@ export interface DatabaseClinicSetting {
   gmb_link?: string;
   whatsapp_shared_session_user_id?: string;
   clinic_tier?: 'basic' | 'silver' | 'gold';
+  ipd_enabled?: boolean;
   waiting_sequence_enabled?: boolean;
+  lab_test_integration_enabled?: boolean;
+  lims_api_url?: string;
+  lims_api_key?: string;
   prescription_frequencies?: Array<{ code: string; label: string; timesPerDay: number | null }>;
   appointment_types?: Array<{ id: string; label: string; duration: number; color: string; feeType?: string; customFee?: number; fee?: number }>;
   whatsapp_templates?: Record<string, string>;
   pdf_header_url?: string;
   pdf_footer_url?: string;
   pdf_margins?: string;
+  pdf_print_margins?: string;
+  invoice_paper_size?: 'A4' | 'A5';
+  invoice_margins?: string;
 }
 
 export interface DatabaseMedicineMaster {

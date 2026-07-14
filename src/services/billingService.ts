@@ -149,6 +149,8 @@ export const billingService = {
       paymentsByBill.get(bill.id) || [],
       bill.patients ? {
         id: bill.patients.id,
+        patientNumber: bill.patients.patient_number,
+        patient_number: bill.patients.patient_number,
         name: bill.patients.name,
         phone: bill.patients.phone,
         age: bill.patients.age,
@@ -255,6 +257,8 @@ export const billingService = {
       paymentRecords,
       bill.patients ? {
         id: bill.patients.id,
+        patientNumber: bill.patients.patient_number,
+        patient_number: bill.patients.patient_number,
         name: bill.patients.name,
         phone: bill.patients.phone,
         age: bill.patients.age,
@@ -340,6 +344,8 @@ export const billingService = {
       [],
       bill.patients ? {
         id: bill.patients.id,
+        patientNumber: bill.patients.patient_number,
+        patient_number: bill.patients.patient_number,
         name: bill.patients.name,
         phone: bill.patients.phone,
         age: bill.patients.age,
@@ -567,6 +573,8 @@ export const billingService = {
       [],
       bill.patients ? {
         id: bill.patients.id,
+        patientNumber: bill.patients.patient_number,
+        patient_number: bill.patients.patient_number,
         name: bill.patients.name,
         phone: bill.patients.phone,
         age: bill.patients.age,

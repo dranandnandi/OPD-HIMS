@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Plus, Trash2, Calendar, User, Search } from 'lucide-react';
-import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered } from '../../types';
+import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered, MedicineMaster, TestMaster } from '../../types';
 import { patientService } from '../../services/patientService';
 import { visitService } from '../../services/visitService';
 import { masterDataService } from '../../services/masterDataService';
@@ -23,6 +23,8 @@ interface EMRFormProps {
   };
 }
 
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
+
 const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
   const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -30,8 +32,13 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [medicines, setMedicines] = useState<string[]>([]);
+  const [medicines, setMedicines] = useState<MedicineMaster[]>([]);
+  const [medicineSuggestions, setMedicineSuggestions] = useState<{ [key: number]: MedicineMaster[] }>({});
+  const [showMedicineSuggestions, setShowMedicineSuggestions] = useState<{ [key: number]: boolean }>({});
   const [frequencies, setFrequencies] = useState<Array<{code: string, label: string, timesPerDay: number | null}>>([]);
+  const [testsMaster, setTestsMaster] = useState<TestMaster[]>([]);
+  const [testSuggestions, setTestSuggestions] = useState<{ [key: number]: TestMaster[] }>({});
+  const [showTestSuggestions, setShowTestSuggestions] = useState<{ [key: number]: boolean }>({});
   
   const [formData, setFormData] = useState({
     chiefComplaint: '',
@@ -68,6 +75,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
       loadPatients();
       loadMedicines();
       loadFrequencies();
+      loadTests();
     }
   }, [user]);
 
@@ -75,10 +83,75 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
     try {
       const clinicId = user?.clinicId;
       const medicineData = await masterDataService.getMedicines(clinicId);
-      setMedicines(medicineData.map(m => m.name));
+      setMedicines(medicineData);
     } catch (error) {
       console.error('Error loading medicines:', error);
     }
+  };
+
+  const searchMedicineSuggestions = (query: string, index: number) => {
+    if (!query.trim()) {
+      setMedicineSuggestions(prev => ({ ...prev, [index]: [] }));
+      setShowMedicineSuggestions(prev => ({ ...prev, [index]: false }));
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const filtered = medicines.filter(medicine =>
+      medicine.name.toLowerCase().includes(lowerQuery) ||
+      medicine.genericName?.toLowerCase().includes(lowerQuery) ||
+      medicine.brandName?.toLowerCase().includes(lowerQuery)
+    ).slice(0, 10);
+
+    setMedicineSuggestions(prev => ({ ...prev, [index]: filtered }));
+    setShowMedicineSuggestions(prev => ({ ...prev, [index]: filtered.length > 0 }));
+  };
+
+  const selectMedicineFromMaster = (medicine: MedicineMaster, index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      prescriptions: prev.prescriptions.map((prescription, i) => i === index ? {
+        ...prescription,
+        medicine: medicine.name,
+        dosage: prescription.dosage || medicine.strength || prescription.dosage
+      } : prescription)
+    }));
+    setShowMedicineSuggestions(prev => ({ ...prev, [index]: false }));
+  };
+
+  const loadTests = async () => {
+    try {
+      const testData = await masterDataService.getTests();
+      setTestsMaster(testData);
+    } catch (error) {
+      console.error('Error loading tests:', error);
+    }
+  };
+
+  const searchTestSuggestions = (query: string, index: number) => {
+    if (!query.trim()) {
+      setTestSuggestions(prev => ({ ...prev, [index]: [] }));
+      setShowTestSuggestions(prev => ({ ...prev, [index]: false }));
+      return;
+    }
+    const lowerQuery = query.toLowerCase();
+    const filtered = testsMaster.filter(test =>
+      test.name.toLowerCase().includes(lowerQuery)
+    ).slice(0, 10);
+    setTestSuggestions(prev => ({ ...prev, [index]: filtered }));
+    setShowTestSuggestions(prev => ({ ...prev, [index]: filtered.length > 0 }));
+  };
+
+  const selectTestFromMaster = (test: TestMaster, index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      testsOrdered: prev.testsOrdered.map((t, i) => i === index ? {
+        ...t,
+        testName: test.name,
+        testType: test.type as 'lab' | 'radiology' | 'procedure' | 'other'
+      } : t)
+    }));
+    setShowTestSuggestions(prev => ({ ...prev, [index]: false }));
   };
 
   const loadFrequencies = async () => {
@@ -135,7 +208,8 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
 
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.phone.includes(searchTerm)
+    patient.phone.includes(searchTerm) ||
+    getPatientNumber(patient).includes(searchTerm)
   );
 
   const handlePatientSelect = (patient: Patient) => {
@@ -235,7 +309,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
       ...prev,
       testsOrdered: [...prev.testsOrdered, {
         testName: '',
-        testType: 'lab' as 'lab' | 'radiology' | 'other',
+        testType: 'lab' as 'lab' | 'radiology' | 'procedure' | 'other',
         instructions: undefined,
         urgency: 'routine' as 'routine' | 'urgent' | 'stat',
         status: 'ordered' as 'ordered' | 'sample_collected' | 'in_progress' | 'completed' | 'cancelled',
@@ -374,7 +448,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
-                placeholder="Search patients by name or phone..."
+                placeholder="Search patients by no, name, or phone..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -393,7 +467,10 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
                       className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                     >
                       <div className="font-medium">{patient.name}</div>
-                      <div className="text-sm text-gray-600">{patient.phone} • {patient.age} years</div>
+                      <div className="text-sm text-gray-600">
+                        {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+                        {patient.phone} • {patient.age} years
+                      </div>
                     </button>
                   ))
                 ) : (
@@ -608,21 +685,47 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
           {formData.prescriptions.map((prescription, index) => (
             <div key={prescription.id} className="border border-gray-200 rounded-lg p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div>
+                <div className="relative">
                   <label className="block text-xs text-gray-600 mb-1">Medicine</label>
                   <input
-                    list={`medicines-${index}`}
                     type="text"
                     value={prescription.medicine}
-                    onChange={(e) => updatePrescription(index, 'medicine', e.target.value)}
+                    onChange={(e) => {
+                      updatePrescription(index, 'medicine', e.target.value);
+                      searchMedicineSuggestions(e.target.value, index);
+                    }}
+                    onFocus={() => {
+                      if (prescription.medicine) {
+                        searchMedicineSuggestions(prescription.medicine, index);
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setShowMedicineSuggestions(prev => ({ ...prev, [index]: false })), 200);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Medicine name"
+                    placeholder="Type to search or enter custom"
                   />
-                  <datalist id={`medicines-${index}`}>
-                    {medicines.map(medicine => (
-                      <option key={medicine} value={medicine} />
-                    ))}
-                  </datalist>
+                  {showMedicineSuggestions[index] && medicineSuggestions[index]?.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {medicineSuggestions[index].map((suggestion) => (
+                        <div
+                          key={suggestion.id}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          onMouseDown={() => selectMedicineFromMaster(suggestion, index)}
+                        >
+                          <div className="font-medium text-sm">{suggestion.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {[suggestion.category, suggestion.dosageForm, suggestion.strength].filter(Boolean).join(' - ')}
+                          </div>
+                          {(suggestion.genericName || suggestion.brandName) && (
+                            <div className="text-xs text-gray-400">
+                              {[suggestion.genericName, suggestion.brandName].filter(Boolean).join(' / ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Dosage</label>
@@ -708,15 +811,43 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
           {formData.testsOrdered.map((test, index) => (
             <div key={index} className="border border-gray-200 rounded-lg p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div>
+                <div className="relative">
                   <label className="block text-xs text-gray-600 mb-1">Test Name</label>
                   <input
                     type="text"
                     value={test.testName}
-                    onChange={(e) => updateTestOrdered(index, 'testName', e.target.value)}
+                    onChange={(e) => {
+                      updateTestOrdered(index, 'testName', e.target.value);
+                      searchTestSuggestions(e.target.value, index);
+                    }}
+                    onFocus={() => {
+                      if (test.testName) {
+                        searchTestSuggestions(test.testName, index);
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setShowTestSuggestions(prev => ({ ...prev, [index]: false })), 200);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Test name"
+                    placeholder="Type to search or enter custom"
                   />
+                  {showTestSuggestions[index] && testSuggestions[index]?.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {testSuggestions[index].map((suggestion) => (
+                        <div
+                          key={suggestion.id}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          onMouseDown={() => selectTestFromMaster(suggestion, index)}
+                        >
+                          <div className="font-medium text-sm">{suggestion.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {suggestion.type.charAt(0).toUpperCase() + suggestion.type.slice(1)}
+                            {suggestion.category && ` • ${suggestion.category}`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Type</label>
@@ -727,6 +858,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ ocrData }) => {
                   >
                     <option value="lab">Lab</option>
                     <option value="radiology">Radiology</option>
+                    <option value="procedure">Procedure</option>
                     <option value="other">Other</option>
                   </select>
                 </div>

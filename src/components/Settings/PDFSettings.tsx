@@ -8,6 +8,9 @@ interface PDFSettingsProps {
     clinicId: string;
 }
 
+const A4_INVOICE_MARGINS = '180px 20px 150px 20px';
+const A5_INVOICE_MARGINS = '50px 10px 34px 10px';
+
 export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -17,7 +20,9 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
     const [settings, setSettings] = useState({
         pdfHeaderUrl: '',
         pdfFooterUrl: '',
-        pdfMargins: '180px 20px 150px 20px',
+        pdfMargins: A4_INVOICE_MARGINS,
+        invoicePaperSize: 'A4' as 'A4' | 'A5',
+        invoiceMargins: A4_INVOICE_MARGINS,
     });
 
     // Load current settings
@@ -29,7 +34,7 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
         try {
             const { data, error } = await supabase
                 .from('clinic_settings')
-                .select('pdf_header_url, pdf_footer_url, pdf_margins')
+                .select('pdf_header_url, pdf_footer_url, pdf_margins, invoice_paper_size, invoice_margins')
                 .eq('id', clinicId)
                 .single();
 
@@ -39,7 +44,9 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                 setSettings({
                     pdfHeaderUrl: data.pdf_header_url || '',
                     pdfFooterUrl: data.pdf_footer_url || '',
-                    pdfMargins: data.pdf_margins || '180px 20px 150px 20px',
+                    pdfMargins: data.pdf_margins || A4_INVOICE_MARGINS,
+                    invoicePaperSize: data.invoice_paper_size || 'A4',
+                    invoiceMargins: data.invoice_margins || (data.invoice_paper_size === 'A5' ? A5_INVOICE_MARGINS : A4_INVOICE_MARGINS),
                 });
             }
         } catch (error) {
@@ -155,6 +162,8 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                     pdf_header_url: settings.pdfHeaderUrl,
                     pdf_footer_url: settings.pdfFooterUrl,
                     pdf_margins: settings.pdfMargins,
+                    invoice_paper_size: settings.invoicePaperSize,
+                    invoice_margins: settings.invoiceMargins,
                 })
                 .eq('id', clinicId);
 
@@ -279,6 +288,62 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                         </label>
                     </div>
                 )}
+            </div>
+
+            {/* Invoice/Bill Settings */}
+            <div className="border-t border-gray-200 pt-6 mt-6">
+                <h4 className="text-md font-semibold text-gray-800 mb-4">Invoice / Bill Settings</h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Invoice Paper Size
+                        </label>
+                        <select
+                            value={settings.invoicePaperSize}
+                            onChange={(e) => {
+                                const nextPaperSize = e.target.value as 'A4' | 'A5';
+                                setSettings(prev => ({
+                                    ...prev,
+                                    invoicePaperSize: nextPaperSize,
+                                    invoiceMargins: prev.invoiceMargins === A4_INVOICE_MARGINS || prev.invoiceMargins === A5_INVOICE_MARGINS
+                                        ? (nextPaperSize === 'A5' ? A5_INVOICE_MARGINS : A4_INVOICE_MARGINS)
+                                        : prev.invoiceMargins
+                                }));
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="A4">A4 (210 x 297 mm)</option>
+                            <option value="A5">A5 (148 x 210 mm)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            A5 is half the size of A4, good for compact invoices
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Invoice Margins (Top Right Bottom Left)
+                        </label>
+                        <input
+                            type="text"
+                            value={settings.invoiceMargins}
+                            onChange={(e) => setSettings(prev => ({ ...prev, invoiceMargins: e.target.value }))}
+                            placeholder={settings.invoicePaperSize === 'A5' ? A5_INVOICE_MARGINS : A4_INVOICE_MARGINS}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                            Default for {settings.invoicePaperSize}: {settings.invoicePaperSize === 'A5' ? A5_INVOICE_MARGINS : A4_INVOICE_MARGINS}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> Invoices will use the same header/footer images as prescriptions.
+                        The header and footer will appear on invoice PDFs automatically.
+                    </p>
+                </div>
             </div>
 
             {/* Tips */}

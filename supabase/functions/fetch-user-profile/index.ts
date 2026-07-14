@@ -101,7 +101,8 @@ serve(async (req) => {
           pdf_footer_url,
           pdf_margins,
           pdf_print_margins,
-          clinic_tier
+          clinic_tier,
+          ipd_enabled
         )
       `)
       .eq('id', user.id)
@@ -184,7 +185,10 @@ serve(async (req) => {
         pdfFooterUrl: dbProfile.clinic_settings.pdf_footer_url,
         pdfMargins: dbProfile.clinic_settings.pdf_margins,
         pdfPrintMargins: dbProfile.clinic_settings.pdf_print_margins,
+        invoicePaperSize: dbProfile.clinic_settings.invoice_paper_size,
+        invoiceMargins: dbProfile.clinic_settings.invoice_margins,
         clinicTier: dbProfile.clinic_settings.clinic_tier ?? 'basic',
+        ipdEnabled: dbProfile.clinic_settings.ipd_enabled ?? false,
       } : undefined
     }
 

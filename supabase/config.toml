@@ -1,0 +1,2 @@
+[functions.verify-prescription]
+verify_jwt = false

@@ -5,6 +5,7 @@ export interface WaitingSequence {
   id: string;
   clinicId: string;
   conditionType: string;
+  sequenceStage?: string;
   stepOrder: number;
   delayMinutes: number;
   message: string;
@@ -21,6 +22,7 @@ const fromDb = (row: any): WaitingSequence => ({
   id: row.id,
   clinicId: row.clinic_id,
   conditionType: row.condition_type,
+  sequenceStage: row.sequence_stage,
   stepOrder: row.step_order,
   delayMinutes: row.delay_minutes,
   message: row.message,
@@ -107,6 +109,7 @@ export const waitingSequenceService = {
       .from('waiting_sequences')
       .select('*')
       .eq('clinic_id', params.clinicId)
+      .eq('sequence_stage', 'waiting')
       .eq('condition_type', params.conditionType)
       .eq('is_active', true)
       .order('step_order');
@@ -118,6 +121,7 @@ export const waitingSequenceService = {
         .from('waiting_sequences')
         .select('*')
         .eq('clinic_id', params.clinicId)
+        .eq('sequence_stage', 'waiting')
         .eq('condition_type', 'General')
         .eq('is_active', true)
         .order('step_order');
@@ -132,8 +136,7 @@ export const waitingSequenceService = {
 
     for (const step of steps) {
       const scheduledAt = new Date(params.arrivalTime.getTime() + step.delay_minutes * 60 * 1000);
-      console.log(`[WaitingSeq] step ${step.step_order}: scheduledAt=${scheduledAt.toISOString()} apptTime=${params.appointmentTime.toISOString()} skip=${scheduledAt >= params.appointmentTime}`);
-      if (scheduledAt >= params.appointmentTime) continue;
+      console.log(`[WaitingSeq] step ${step.step_order}: scheduledAt=${scheduledAt.toISOString()} arrivalTime=${params.arrivalTime.toISOString()}`);
 
       await WhatsAppAutoSendService.queueMessage({
         clinicId: params.clinicId,

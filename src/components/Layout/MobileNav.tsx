@@ -14,12 +14,15 @@ import {
   LogOut,
   User,
   Pill,
-  Clock,
-  Timer,
   Star,
   TrendingUp,
   Bot,
-  RefreshCw
+  RefreshCw,
+  LayoutDashboard,
+  BedDouble,
+  UserPlus,
+  Receipt,
+  Warehouse
 } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import InstallPWA from '../PWA/InstallPWA';
@@ -31,55 +34,80 @@ const MobileNav: React.FC = () => {
 
   const clinicTier = user?.clinic?.clinicTier ?? 'silver';
   const isBasic = clinicTier === 'basic';
+  const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
   const roleName = user?.roleName?.toLowerCase();
-  const canManageClinicDoctors = Boolean(
+  const permissions = user?.permissions ?? [];
+  const isAdmin = Boolean(
     user && (
       roleName === 'admin' ||
       roleName === 'super_admin' ||
-      roleName === 'receptionist' ||
-      roleName === 'reception' ||
-      user.permissions.includes('admin') ||
-      user.permissions.includes('all')
+      permissions.includes('admin') ||
+      permissions.includes('all')
     )
   );
+  const hasIpdPermission = (perm: string) =>
+    isAdmin || permissions.includes(perm) || permissions.includes('all');
 
-  const navItems = [
-    { path: '/', icon: CalendarDays, label: 'Appointments' },
-    ...(user && (roleName === 'admin' || roleName === 'super_admin' || user.permissions.includes('admin') || user.permissions.includes('all'))
-      ? [{ path: '/waiting-sequences', icon: Timer, label: 'Waiting Sequences' }]
+  // Same grouped structure as the desktop sidebar (Navigation.tsx). Items
+  // moved off the menu (Waiting Sequences, Doctor Availability, AI Master
+  // Data, User Management, WhatsApp & AI, IPD Masters) live in Settings.
+  const ipdItems = ipdEnabled
+    ? [
+      { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', perm: 'ipd_census' },
+      { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', perm: 'ipd_census' },
+      { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', perm: 'ipd_admissions' },
+      { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', perm: 'ipd_billing' },
+      { path: '/ipd/stores', icon: Warehouse, label: 'Stores', perm: 'ipd_stores' },
+    ].filter(({ perm }) => hasIpdPermission(perm))
+    : [];
+
+  const navGroups = [
+    {
+      label: 'Front Desk',
+      items: [
+        { path: '/', icon: CalendarDays, label: 'Appointments' },
+        { path: '/patients', icon: Users, label: 'Patients' },
+      ],
+    },
+    {
+      label: 'OPD',
+      items: [
+        { path: '/visits', icon: Activity, label: 'Visits' },
+        ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups' }] : []),
+      ],
+    },
+    ...(ipdItems.length > 0 ? [{ label: 'IPD', items: ipdItems }] : []),
+    {
+      label: 'Billing',
+      items: [
+        { path: '/billing', icon: CreditCard, label: 'OPD Billing' },
+        { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection' },
+      ],
+    },
+    {
+      label: 'Pharmacy',
+      items: [
+        { path: '/pharmacy', icon: Pill, label: 'Pharmacy' },
+        { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload' },
+      ],
+    },
+    ...(!isBasic
+      ? [{
+        label: 'Growth & AI',
+        items: [
+          { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' },
+          { path: '/chatbots', icon: Bot, label: 'AI Health Assistant' },
+        ],
+      }]
       : []),
-    { path: '/visits', icon: Activity, label: 'Visits' },
-    { path: '/patients', icon: Users, label: 'Patients' },
-    ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups' }] : []),
-    ...(!isBasic ? [{ path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' }] : []),
-    { path: '/billing', icon: CreditCard, label: 'Billing' },
-    { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection' },
-    { path: '/pharmacy', icon: Pill, label: 'Pharmacy' },
-    { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload' },
-    ...(!isBasic ? [{ path: '/chatbots', icon: Bot, label: 'AI Health Assistant' }] : []),
-    { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
-    ...(user?.isOpenForConsultation || canManageClinicDoctors
-      ? [{ path: '/settings/availability', icon: Clock, label: canManageClinicDoctors ? 'Doctor Availability' : 'My Availability' }]
-      : [])
+    {
+      label: 'General',
+      items: [
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/settings', icon: Settings, label: 'Settings' },
+      ],
+    },
   ];
-
-  // Add admin-only navigation items
-  if (user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin' || user.permissions.includes('admin') || user.permissions.includes('all'))) {
-    navItems.splice(-1, 0,
-      { path: '/settings/master-data', icon: Settings, label: 'AI Master Data' },
-      { path: '/settings/users', icon: Users, label: 'User Management' },
-      ...(!isBasic ? [{ path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI' }] : [])
-    );
-  }
-
-  // Add WhatsApp & AI nav item for reception (non-admin)
-  if (!isBasic && user && (user.roleName?.toLowerCase() === 'receptionist' || user.roleName?.toLowerCase() === 'reception') &&
-    !(user.permissions.includes('admin') || user.permissions.includes('all'))) {
-    navItems.splice(-1, 0,
-      { path: '/settings/whatsapp-ai', icon: Settings, label: 'WhatsApp & AI' }
-    );
-  }
 
   const handleSignOut = async () => {
     try {
@@ -215,30 +243,32 @@ const MobileNav: React.FC = () => {
 
           {/* Navigation Items */}
           <div className="flex-1 p-6 overflow-y-auto">
-            <ul className="space-y-2">
-              {navItems.map(({ path, icon: Icon, label }) => {
-                // Hide availability link unless this user can set their own or manage clinic doctors.
-                if (path === '/settings/availability' && !user?.isOpenForConsultation && !canManageClinicDoctors) {
-                  return null;
-                }
-
-                return (
-                  <li key={path}>
-                    <Link
-                      to={path}
-                      onClick={closeMenu}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${location.pathname === path
-                          ? 'bg-blue-50 text-blue-600 border-r-2 border-blue-600'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-                        }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span className="font-medium">{label}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="space-y-4">
+              {navGroups.map((group) => (
+                <div key={group.label}>
+                  <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    {group.label}
+                  </p>
+                  <ul className="space-y-1">
+                    {group.items.map(({ path, icon: Icon, label }) => (
+                      <li key={path}>
+                        <Link
+                          to={path}
+                          onClick={closeMenu}
+                          className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${location.pathname === path
+                            ? 'bg-blue-50 text-blue-600 border-r-2 border-blue-600'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
+                            }`}
+                        >
+                          <Icon className="w-5 h-5" />
+                          <span className="font-medium">{label}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
 
             {/* Quick Actions */}
             <div className="mt-8 pt-6 border-t border-gray-200">

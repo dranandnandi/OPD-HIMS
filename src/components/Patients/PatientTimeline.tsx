@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Calendar, FileText, Activity, Search, Filter, Plus } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Activity, Search, Filter, Plus, QrCode } from 'lucide-react';
 import { Patient, Visit } from '../../types';
 import { visitService } from '../../services/visitService';
 import { format } from 'date-fns';
 import { useAuth } from '../Auth/useAuth';
 import AddVisitModal from './AddVisitModal';
 import { toTitleCase, getInitials } from '../../utils/stringUtils';
+import { printPatientQr } from '../../utils/patientQrPrint';
 
 interface PatientTimelineProps {
   patient: Patient;
   onBack: () => void;
 }
+
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
 
 const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) => {
   const { user } = useAuth();
@@ -56,6 +59,15 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
     setShowAddVisitModal(true);
   };
 
+  const handlePrintPatientQr = async () => {
+    try {
+      await printPatientQr(patient, user?.clinic?.clinicName);
+    } catch (printError) {
+      console.error('Error printing patient QR:', printError);
+      alert(printError instanceof Error ? printError.message : 'Failed to print patient QR. Please try again.');
+    }
+  };
+
   const handleVisitAdded = () => {
     setShowAddVisitModal(false);
     loadVisits(); // Reload visits to show the new one
@@ -80,15 +92,28 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
         </div>
         <div className="flex-1">
           <h2>{toTitleCase(patient.name)}</h2>
-          <p className="text-gray-600">{patient.phone} • {patient.age} years • {patient.gender}</p>
+          <p className="text-gray-600">
+            {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+            {patient.phone} • {patient.age} years • {patient.gender}
+          </p>
         </div>
-        <button
-          onClick={handleAddVisit}
-          className="primary-button flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Visit
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handlePrintPatientQr}
+            className="flex items-center gap-2 bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-900 transition-colors"
+            title="Print patient QR"
+          >
+            <QrCode className="w-4 h-4" />
+            Print QR
+          </button>
+          <button
+            onClick={handleAddVisit}
+            className="primary-button flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Visit
+          </button>
+        </div>
       </div>
 
 

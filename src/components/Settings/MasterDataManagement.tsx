@@ -30,6 +30,7 @@ const MasterDataManagement: React.FC = () => {
   const [showAddMedicineModal, setShowAddMedicineModal] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState<MedicineWithPrice | null>(null);
   const [editingTest, setEditingTest] = useState<TestWithPrice | null>(null);
+  const [showAddTestModal, setShowAddTestModal] = useState(false);
   const [selectedPriceItem, setSelectedPriceItem] = useState<{ type: 'medicine' | 'test'; id: string; name: string } | null>(null);
 
   // Update activeTab when location state changes
@@ -245,7 +246,19 @@ const MasterDataManagement: React.FC = () => {
               />
             </>
           ) : activeTab === 'tests' ? (
-            <TestsTable
+            <>
+              {isAdmin && (
+                <div className="mb-4 flex justify-end">
+                  <button
+                    onClick={() => setShowAddTestModal(true)}
+                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Test/Procedure
+                  </button>
+                </div>
+              )}
+              <TestsTable
               tests={filteredTests}
               onEdit={(test) => {
                 if (isAdmin) {
@@ -275,6 +288,7 @@ const MasterDataManagement: React.FC = () => {
                 setShowPricingModal(true);
               }}
             />
+            </>
           ) : (
             <PricingTable
               medicinePrices={medicinePrices}
@@ -335,6 +349,24 @@ const MasterDataManagement: React.FC = () => {
             }
           }}
           onClose={() => setEditingMedicine(null)}
+        />
+      )}
+
+      {/* Add Test Modal */}
+      {showAddTestModal && (
+        <AddTestModal
+          onSave={async (testData) => {
+            try {
+              await masterDataService.addTest(testData);
+              setShowAddTestModal(false);
+              await loadData();
+              alert('Test/Procedure added successfully!');
+            } catch (error) {
+              console.error('Error adding test:', error);
+              alert('Failed to add test/procedure. Please try again.');
+            }
+          }}
+          onClose={() => setShowAddTestModal(false)}
         />
       )}
 
@@ -1455,6 +1487,176 @@ const AddMedicineModal: React.FC<{
             >
               <Save className="w-4 h-4" />
               Save Medicine
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Add Test Modal Component
+const AddTestModal: React.FC<{
+  onSave: (test: Omit<TestMaster, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onClose: () => void;
+}> = ({ onSave, onClose }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    category: 'other' as string,
+    type: 'lab' as 'lab' | 'radiology' | 'procedure' | 'other',
+    normalRange: '',
+    units: '',
+    description: '',
+    preparationInstructions: '',
+    isActive: true
+  });
+
+  const testCategories = [
+    'blood', 'cardiac', 'imaging', 'neurology', 'pathology', 'urine', 'other'
+  ];
+
+  const testTypes = [
+    { value: 'lab', label: 'Lab Test' },
+    { value: 'radiology', label: 'Radiology' },
+    { value: 'procedure', label: 'Procedure' },
+    { value: 'other', label: 'Other' }
+  ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      alert('Test/Procedure name is required');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-800">Add New Test/Procedure</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Test/Procedure Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Complete Blood Count"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {testCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'lab' | 'radiology' | 'procedure' | 'other' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {testTypes.map(type => (
+                  <option key={type.value} value={type.value}>{type.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Normal Range</label>
+              <input
+                type="text"
+                value={formData.normalRange}
+                onChange={(e) => setFormData({ ...formData, normalRange: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., 4.5-11.0 x10^9/L"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Units</label>
+              <input
+                type="text"
+                value={formData.units}
+                onChange={(e) => setFormData({ ...formData, units: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., mg/dL, cells/μL"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Brief description of the test/procedure"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Preparation Instructions</label>
+              <textarea
+                value={formData.preparationInstructions}
+                onChange={(e) => setFormData({ ...formData, preparationInstructions: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Fasting required for 12 hours"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="testIsActive"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="testIsActive" className="text-sm font-medium text-gray-700">
+                  Active (available for ordering)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              Save Test/Procedure
             </button>
           </div>
         </form>

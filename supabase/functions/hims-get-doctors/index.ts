@@ -23,6 +23,9 @@ serve(async (req) => {
   }
 
   if (req.headers.get("x-hims-bot-secret") !== botSecret) {
+    console.error("[get-doctors] REJECTED 401: bad or missing x-hims-bot-secret header", {
+      secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -33,7 +36,10 @@ serve(async (req) => {
     const body = await req.json();
     const { clinicId, specialization, searchQuery } = body;
 
+    console.log("[get-doctors] request:", { clinicId, specialization, searchQuery });
+
     if (!clinicId) {
+      console.error("[get-doctors] REJECTED 400: clinicId is missing");
       return new Response(JSON.stringify({ error: "clinicId is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -63,7 +69,7 @@ serve(async (req) => {
     const { data, error } = await query;
 
     if (error) {
-      console.error("hims-get-doctors error:", error);
+      console.error("[get-doctors] REJECTED 400: query error", { clinicId, dbError: error.message, dbCode: error.code });
       return new Response(JSON.stringify({ error: error.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -79,11 +85,16 @@ serve(async (req) => {
       isOpenForConsultation: d.is_open_for_consultation,
     }));
 
+    console.log("[get-doctors] SUCCESS:", {
+      count: doctors.length,
+      doctors: doctors.map((d) => ({ id: d.id, name: d.name })),
+    });
+
     return new Response(JSON.stringify({ doctors }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("hims-get-doctors unexpected error:", err);
+    console.error("[get-doctors] REJECTED 500: unexpected error:", (err as Error).message, (err as Error).stack);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

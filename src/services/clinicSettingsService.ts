@@ -35,7 +35,17 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   prescriptionFrequencies: dbSetting.prescription_frequencies,
   appointmentTypes: dbSetting.appointment_types,
   clinicTier: (dbSetting.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'silver',
+  ipdEnabled: dbSetting.ipd_enabled ?? false,
   waitingSequenceEnabled: dbSetting.waiting_sequence_enabled ?? false,
+  labTestIntegrationEnabled: dbSetting.lab_test_integration_enabled ?? false,
+  limsApiUrl: dbSetting.lims_api_url,
+  limsApiKey: dbSetting.lims_api_key,
+  pdfHeaderUrl: dbSetting.pdf_header_url,
+  pdfFooterUrl: dbSetting.pdf_footer_url,
+  pdfMargins: dbSetting.pdf_margins,
+  pdfPrintMargins: dbSetting.pdf_print_margins,
+  invoicePaperSize: dbSetting.invoice_paper_size as 'A4' | 'A5' | undefined,
+  invoiceMargins: dbSetting.invoice_margins,
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -67,6 +77,9 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   prescription_frequencies: setting.prescriptionFrequencies,
   appointment_types: setting.appointmentTypes,
   clinic_tier: setting.clinicTier,
+  lab_test_integration_enabled: setting.labTestIntegrationEnabled,
+  lims_api_url: setting.limsApiUrl,
+  lims_api_key: setting.limsApiKey,
 });
 
 export const clinicSettingsService = {
@@ -174,9 +187,14 @@ export const clinicSettingsService = {
     if (settings.prescriptionFrequencies !== undefined) dbSettings.prescription_frequencies = settings.prescriptionFrequencies;
     if (settings.appointmentTypes !== undefined) dbSettings.appointment_types = settings.appointmentTypes;
     if (settings.waitingSequenceEnabled !== undefined) dbSettings.waiting_sequence_enabled = settings.waitingSequenceEnabled;
+    if (settings.labTestIntegrationEnabled !== undefined) dbSettings.lab_test_integration_enabled = settings.labTestIntegrationEnabled;
+    if (settings.limsApiUrl !== undefined) dbSettings.lims_api_url = settings.limsApiUrl;
+    if (settings.limsApiKey !== undefined) dbSettings.lims_api_key = settings.limsApiKey;
     if (settings.pdfHeaderUrl !== undefined) dbSettings.pdf_header_url = settings.pdfHeaderUrl;
     if (settings.pdfFooterUrl !== undefined) dbSettings.pdf_footer_url = settings.pdfFooterUrl;
     if (settings.pdfMargins !== undefined) dbSettings.pdf_margins = settings.pdfMargins;
+    if (settings.invoicePaperSize !== undefined) dbSettings.invoice_paper_size = settings.invoicePaperSize;
+    if (settings.invoiceMargins !== undefined) dbSettings.invoice_margins = settings.invoiceMargins;
     if (settings.whatsappSharedSessionUserId !== undefined) dbSettings.whatsapp_shared_session_user_id = settings.whatsappSharedSessionUserId;
 
     const { data, error } = await supabase
@@ -314,6 +332,21 @@ export const clinicSettingsService = {
   async updateWorkingHours(workingHours: ClinicSetting['workingHours']): Promise<ClinicSetting> {
     const settings = await this.getOrCreateClinicSettings();
     return await this.updateClinicSettings(settings.id, { workingHours });
+  },
+
+  // Platform-managed flag (like clinic_tier): deliberately not part of the
+  // regular update path so a normal clinic-settings save can never flip it.
+  async setIpdEnabled(clinicId: string, enabled: boolean): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const { error } = await supabase
+      .from('clinic_settings')
+      .update({ ipd_enabled: enabled })
+      .eq('id', clinicId);
+    if (error) {
+      throw new Error(`Failed to update IPD access: ${error.message}`);
+    }
   },
 
   // Check if clinic is open at a specific time

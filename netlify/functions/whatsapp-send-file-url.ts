@@ -24,18 +24,29 @@ const handler: Handler = async (event) => {
       return error('User not found in WhatsApp backend. Please ensure you are logged in and synced.', 404);
     }
 
+    const fileName = body.fileName || (() => {
+      try {
+        return decodeURIComponent(new URL(body.fileUrl).pathname.split('/').pop() || 'attachment.pdf');
+      } catch {
+        return 'attachment.pdf';
+      }
+    })();
+
+    // The backend does not expose a per-user /whatsapp/send-file-url route.
+    // URL-based documents are handled by the external reports endpoint.
     const payload = await forwardToWhatsApp({
-      path: `/api/users/${backendUserId}/whatsapp/send-file-url`,
+      path: '/api/external/reports/send-url',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        phone: body.phone || body.to,
+        userId: backendUserId,
+        phoneNumber: body.phone || body.to,
         fileUrl: body.fileUrl,
         caption: body.caption,
-        labId: body.labId || body.clinicId
+        fileName,
+        templateData: body.templateData
       })
     });
-
     return ok(payload);
   } catch (err) {
     return error(err instanceof Error ? err.message : 'Failed to send WhatsApp file via URL');

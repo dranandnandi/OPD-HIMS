@@ -17,7 +17,11 @@ import {
   MessageCircle,
   Building,
   Zap,
-  FileImage
+  FileImage,
+  Timer,
+  Clock,
+  UserCog,
+  BedDouble
 } from 'lucide-react';
 import { PDFSettings } from './PDFSettings';
 
@@ -78,9 +82,35 @@ const Settings: React.FC = () => {
   ];
 
   // Combine tabs based on user role
+  const roleNameLower = user?.roleName?.toLowerCase();
+  const permissionsList = user?.permissions ?? [];
+  const isAdminUser = Boolean(
+    user && (
+      roleNameLower === 'admin' ||
+      roleNameLower === 'super_admin' ||
+      permissionsList.includes('admin') ||
+      permissionsList.includes('all')
+    )
+  );
+  const isReception = roleNameLower === 'receptionist' || roleNameLower === 'reception';
+  const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
+
   const tabs = user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin')
     ? [...baseTabs, ...adminTabs]
     : baseTabs;
+
+  // These live on their own routes (removed from the main sidebar to keep it
+  // compact) and are surfaced here as direct links.
+  const linkTabs = [
+    ...(isAdminUser ? [{ to: '/waiting-sequences', label: 'Waiting Sequences', icon: Timer }] : []),
+    ...(user?.isOpenForConsultation || isAdminUser || isReception
+      ? [{ to: '/settings/availability', label: 'Doctor Availability', icon: Clock }]
+      : []),
+    ...(isAdminUser ? [{ to: '/settings/users', label: 'User Management', icon: UserCog }] : []),
+    ...(ipdEnabled && (isAdminUser || permissionsList.includes('ipd_masters'))
+      ? [{ to: '/ipd/masters', label: 'IPD Masters', icon: BedDouble }]
+      : []),
+  ];
 
   // Load clinic settings from database
   useEffect(() => {
@@ -134,6 +164,26 @@ const Settings: React.FC = () => {
                 </li>
               ))}
             </ul>
+            {linkTabs.length > 0 && (
+              <>
+                <p className="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  More
+                </p>
+                <ul className="space-y-2">
+                  {linkTabs.map(({ to, label, icon: Icon }) => (
+                    <li key={to}>
+                      <Link
+                        to={to}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors text-gray-600 hover:bg-gray-50"
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span>{label}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </nav>
         </div>
 

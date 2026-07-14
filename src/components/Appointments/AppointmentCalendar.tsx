@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, User, Phone, Edit, Trash2, Stethoscope, UserCheck, AlertTriangle, Heart, MessageCircle, Filter, ChevronLeft, ChevronRight, Activity, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, Clock, Plus, User, Phone, Edit, Trash2, Stethoscope, UserCheck, AlertTriangle, Heart, MessageCircle, Filter, ChevronLeft, ChevronRight, Activity, CheckCircle, XCircle, QrCode } from 'lucide-react';
 import { Appointment, Patient, Profile, AppointmentType } from '../../types';
 import { appointmentService } from '../../services/appointmentService';
 import { patientService } from '../../services/patientService';
+import { visitService } from '../../services/visitService';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { authService } from '../../services/authService';
 import { useAuth } from '../Auth/useAuth';
@@ -15,6 +16,45 @@ import AppointmentCard from './AppointmentCard';
 import ArrivedConditionModal from './ArrivedConditionModal';
 import { toTitleCase } from '../../utils/stringUtils';
 import { waitingSequenceService } from '../../services/waitingSequenceService';
+
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
+
+type BarcodeDetectorResult = { rawValue?: string };
+type BarcodeDetectorInstance = {
+  detect: (source: CanvasImageSource) => Promise<BarcodeDetectorResult[]>;
+};
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+
+const getBarcodeDetector = () =>
+  (window as Window & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+
+const extractPatientLookupFromScan = (scanValue: string) => {
+  const trimmed = scanValue.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsedUrl = new URL(trimmed);
+    return (
+      parsedUrl.searchParams.get('patientId') ||
+      parsedUrl.searchParams.get('patient_id') ||
+      parsedUrl.searchParams.get('id') ||
+      trimmed
+    );
+  } catch {
+    // Not a URL, continue to JSON/raw parsing.
+  }
+
+  try {
+    const parsedJson = JSON.parse(trimmed);
+    if (typeof parsedJson === 'object' && parsedJson) {
+      return String(parsedJson.patientId || parsedJson.patient_id || parsedJson.id || trimmed).trim();
+    }
+  } catch {
+    // Not JSON; scanners commonly send only the patient id.
+  }
+
+  return trimmed;
+};
 
 const AppointmentCalendar: React.FC = () => {
   const { user } = useAuth();
@@ -665,6 +705,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
   const [showPatientSearchResults, setShowPatientSearchResults] = useState(false);
+  const [showQrScan, setShowQrScan] = useState(false);
+  const [qrScanValue, setQrScanValue] = useState('');
+  const [qrScanStatus, setQrScanStatus] = useState('');
+  const [scanningQr, setScanningQr] = useState(false);
+  const qrScanInputRef = useRef<HTMLInputElement | null>(null);
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null);
+  const qrStreamRef = useRef<MediaStream | null>(null);
+  const qrScanLoopRef = useRef<number | null>(null);
+  const [cameraScanning, setCameraScanning] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(
     appointment ? patients.find(p => p.id === appointment.patientId) || null : null
   );
@@ -748,10 +797,35 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   });
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (showQrScan) {
+      setTimeout(() => qrScanInputRef.current?.focus(), 0);
+    }
+  }, [showQrScan]);
+
+  const stopCameraScan = () => {
+    if (qrScanLoopRef.current !== null) {
+      window.cancelAnimationFrame(qrScanLoopRef.current);
+      qrScanLoopRef.current = null;
+    }
+
+    qrStreamRef.current?.getTracks().forEach((track) => track.stop());
+    qrStreamRef.current = null;
+
+    if (qrVideoRef.current) {
+      qrVideoRef.current.srcObject = null;
+    }
+
+    setCameraScanning(false);
+  };
+
+  useEffect(() => () => stopCameraScan(), []);
+
   // Filter patients based on search term
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-    patient.phone.includes(patientSearchTerm)
+    patient.phone.includes(patientSearchTerm) ||
+    getPatientNumber(patient).includes(patientSearchTerm)
   ).slice(0, 10); // Limit to 10 results for performance
 
   const handlePatientSearch = (searchTerm: string) => {
@@ -766,11 +840,157 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     setShowPatientSearchResults(false);
   };
 
+  const findPatientFromLookup = async (lookupValue: string) => {
+    const normalizedLookup = lookupValue.trim().toLowerCase();
+    const localPatient = patients.find((patient) =>
+      patient.id.toLowerCase() === normalizedLookup ||
+      getPatientNumber(patient).toLowerCase() === normalizedLookup ||
+      patient.phone === lookupValue.trim()
+    );
+
+    if (localPatient) {
+      return localPatient;
+    }
+
+    const patientById = await patientService.getPatientById(lookupValue.trim());
+    if (patientById) {
+      return patientById;
+    }
+
+    const searchMatches = await patientService.searchPatients(lookupValue.trim());
+    return searchMatches.find((patient) =>
+      patient.id.toLowerCase() === normalizedLookup ||
+      getPatientNumber(patient).toLowerCase() === normalizedLookup ||
+      patient.phone === lookupValue.trim()
+    ) || null;
+  };
+
+  const getLastDoctorIdForPatient = async (patientId: string) => {
+    const patientAppointments = await appointmentService.getPatientAppointments(patientId);
+    const lastAppointmentDoctorId = patientAppointments.find((patientAppointment) => patientAppointment.doctorId)?.doctorId;
+    if (lastAppointmentDoctorId && doctors.some((doctor) => doctor.id === lastAppointmentDoctorId)) {
+      return lastAppointmentDoctorId;
+    }
+
+    const patientVisits = await visitService.getPatientVisits(patientId);
+    const lastVisitDoctorId = patientVisits.find((visit) => visit.doctorId)?.doctorId;
+    if (lastVisitDoctorId && doctors.some((doctor) => doctor.id === lastVisitDoctorId)) {
+      return lastVisitDoctorId;
+    }
+
+    return '';
+  };
+
+  const handleQrPatientSelect = async (scanValue: string) => {
+    const lookupValue = extractPatientLookupFromScan(scanValue);
+    if (!lookupValue) {
+      setQrScanStatus('Scan a patient QR or paste the scanned value.');
+      return;
+    }
+
+    try {
+      setScanningQr(true);
+      setQrScanStatus('Finding patient...');
+
+      const scannedPatient = await findPatientFromLookup(lookupValue);
+      if (!scannedPatient) {
+        setQrScanStatus('No patient found for this QR.');
+        return;
+      }
+
+      const lastDoctorId = await getLastDoctorIdForPatient(scannedPatient.id);
+      setSelectedPatient(scannedPatient);
+      setFormData((currentFormData) => ({
+        ...currentFormData,
+        patientId: scannedPatient.id,
+        doctorId: lastDoctorId || currentFormData.doctorId
+      }));
+      setPatientSearchTerm('');
+      setShowPatientSearchResults(false);
+      setQrScanValue('');
+      setShowQrScan(false);
+      setQrScanStatus(lastDoctorId ? 'Patient selected with last doctor.' : 'Patient selected. Choose a doctor.');
+    } catch (scanError) {
+      console.error('Error selecting patient from QR:', scanError);
+      setQrScanStatus('Could not read this patient QR. Please try again.');
+    } finally {
+      setScanningQr(false);
+    }
+  };
+
+  const startCameraScan = async () => {
+    const BarcodeDetector = getBarcodeDetector();
+    if (!BarcodeDetector) {
+      setQrScanStatus('Camera QR scanning is not supported in this browser. Use the scan input or paste the patient QR value.');
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setQrScanStatus('Camera access is not available. Use the scan input or paste the patient QR value.');
+      return;
+    }
+
+    try {
+      setQrScanStatus('Opening camera...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' }
+        },
+        audio: false
+      });
+
+      qrStreamRef.current = stream;
+      setCameraScanning(true);
+
+      const video = qrVideoRef.current;
+      if (!video) {
+        stream.getTracks().forEach((track) => track.stop());
+        setQrScanStatus('Camera preview is not ready. Please try again.');
+        return;
+      }
+
+      video.srcObject = stream;
+      await video.play();
+
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      setQrScanStatus('Point the camera at the patient QR.');
+
+      const scanFrame = async () => {
+        const activeVideo = qrVideoRef.current;
+        if (!activeVideo || !qrStreamRef.current) return;
+
+        try {
+          if (activeVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            const results = await detector.detect(activeVideo);
+            const rawValue = results[0]?.rawValue;
+            if (rawValue) {
+              stopCameraScan();
+              await handleQrPatientSelect(rawValue);
+              return;
+            }
+          }
+        } catch (scanError) {
+          console.error('Camera QR scan error:', scanError);
+        }
+
+        qrScanLoopRef.current = window.requestAnimationFrame(scanFrame);
+      };
+
+      qrScanLoopRef.current = window.requestAnimationFrame(scanFrame);
+    } catch (cameraError) {
+      console.error('Error opening camera for QR scan:', cameraError);
+      stopCameraScan();
+      setQrScanStatus('Could not open camera. Allow camera permission or use the scan input.');
+    }
+  };
+
   const clearPatientSelection = () => {
     setSelectedPatient(null);
     setFormData({ ...formData, patientId: '' });
     setPatientSearchTerm('');
     setShowPatientSearchResults(false);
+    setQrScanStatus('');
+    stopCameraScan();
   };
 
   const handleSaveNewPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'lastVisit'>) => {
@@ -821,7 +1041,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     }
   };
 
+  const handleVisitCreatedFromAppointment = async () => {
+    if (!appointment) return;
+
+    try {
+      await appointmentService.updateAppointment(appointment.id, { status: 'In_Progress' });
+      setFormData(prev => ({ ...prev, status: 'In_Progress' }));
+      setShowAddVisitModal(false);
+      onSave({ ...appointment, status: 'In_Progress' });
+    } catch (error) {
+      console.error('Error updating appointment status after visit creation:', error);
+      alert('Visit was saved, but appointment status could not be updated.');
+      setShowAddVisitModal(false);
+    }
+  };
+
   return (
+    <>
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b">
@@ -837,28 +1073,40 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
         </div>
 
 
-        {/* New Patient Modal */}
-        {showNewPatientModal && (
-          <PatientModal
-            patient={null}
-            onSave={handleSaveNewPatient}
-            onClose={() => setShowNewPatientModal(false)}
-          />
-        )}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-sm font-medium text-gray-700">
                 Patient *
               </label>
-              <button
-                type="button"
-                onClick={() => setShowNewPatientModal(true)}
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm"
-              >
-                <Plus className="w-3 h-3" />
-                Add New Patient
-              </button>
+              <div className="flex items-center gap-3">
+                {!selectedPatient && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowQrScan((isVisible) => {
+                        if (isVisible) {
+                          stopCameraScan();
+                        }
+                        return !isVisible;
+                      });
+                      setQrScanStatus('');
+                    }}
+                    className="flex items-center gap-1 text-gray-700 hover:text-gray-900 text-sm"
+                  >
+                    <QrCode className="w-3 h-3" />
+                    Scan QR
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowNewPatientModal(true)}
+                  className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add New Patient
+                </button>
+              </div>
             </div>
 
             {/* Selected Patient Display */}
@@ -868,7 +1116,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   <User className="w-5 h-5 text-blue-600" />
                   <div>
                     <p className="font-medium text-blue-800">{toTitleCase(selectedPatient.name)}</p>
-                    <p className="text-sm text-blue-600">{selectedPatient.phone} • {selectedPatient.age} years</p>
+                    <p className="text-sm text-blue-600">
+                      {getPatientNumber(selectedPatient) && `${getPatientNumber(selectedPatient)} • `}
+                      {selectedPatient.phone} • {selectedPatient.age} years
+                    </p>
                   </div>
                 </div>
                 <button
@@ -881,15 +1132,63 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
               </div>
             ) : (
               /* Patient Search */
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search patients by name or phone..."
-                  value={patientSearchTerm}
-                  onChange={(e) => handlePatientSearch(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required={!selectedPatient}
-                />
+              <>
+                {showQrScan && (
+                  <div className="mb-3 rounded-lg border border-gray-300 bg-gray-50 p-3">
+                    <div className="flex gap-2">
+                      <input
+                        ref={qrScanInputRef}
+                        type="text"
+                        placeholder="Scan patient QR here..."
+                        value={qrScanValue}
+                        onChange={(e) => setQrScanValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleQrPatientSelect(qrScanValue);
+                          }
+                        }}
+                        className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleQrPatientSelect(qrScanValue)}
+                        disabled={scanningQr}
+                        className="px-3 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50"
+                      >
+                        {scanningQr ? 'Checking...' : 'Use'}
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={cameraScanning ? stopCameraScan : startCameraScan}
+                        className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        <QrCode className="w-3 h-3" />
+                        {cameraScanning ? 'Stop Camera' : 'Use Camera'}
+                      </button>
+                    </div>
+                    <video
+                      ref={qrVideoRef}
+                      className={`mt-3 w-full rounded-lg border border-gray-300 bg-black ${cameraScanning ? 'block' : 'hidden'}`}
+                      muted
+                      playsInline
+                    />
+                    {qrScanStatus && (
+                      <p className="mt-2 text-xs text-gray-600">{qrScanStatus}</p>
+                    )}
+                  </div>
+                )}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search patients by no, name, or phone..."
+                    value={patientSearchTerm}
+                    onChange={(e) => handlePatientSearch(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required={!selectedPatient}
+                  />
 
                 {/* Search Results */}
                 {showPatientSearchResults && filteredPatients.length > 0 && (
@@ -902,7 +1201,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                         className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                       >
                         <div className="font-medium">{toTitleCase(patient.name)}</div>
-                        <div className="text-sm text-gray-600">{patient.phone} • {patient.age} years</div>
+                        <div className="text-sm text-gray-600">
+                          {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+                          {patient.phone} • {patient.age} years
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -914,7 +1216,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     <div className="text-center text-gray-500">No patients found</div>
                   </div>
                 )}
-              </div>
+                </div>
+              </>
+            )}
+            {selectedPatient && qrScanStatus && (
+              <p className="mt-2 text-xs text-gray-600">{qrScanStatus}</p>
             )}
           </div>
 
@@ -1065,13 +1371,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
           </div>
 
           <div className="flex justify-end gap-3 pt-4">
-            {appointment && formData.status === 'Completed' && selectedPatient && (
+            {appointment && selectedPatient && !['Cancelled', 'No_Show'].includes(formData.status) && (
               <button
                 type="button"
                 onClick={() => setShowAddVisitModal(true)}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
-                Add Visit
+                Create Visit
               </button>
             )}
             <button
@@ -1095,12 +1401,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
         {showAddVisitModal && selectedPatient && (
           <AddVisitModal
             patient={selectedPatient}
-            onSave={() => setShowAddVisitModal(false)}
+            appointmentId={appointment?.id}
+            appointmentDate={appointment?.appointmentDate}
+            doctorId={formData.doctorId}
+            onSave={handleVisitCreatedFromAppointment}
             onClose={() => setShowAddVisitModal(false)}
           />
         )}
       </div>
     </div>
+    {showNewPatientModal && (
+      <PatientModal
+        patient={null}
+        onSave={handleSaveNewPatient}
+        onClose={() => setShowNewPatientModal(false)}
+      />
+    )}
+    </>
   );
 };
 

@@ -62,7 +62,7 @@ const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'create
 // Convert app test master to database test master type
 const convertTestToDatabase = (test: Omit<TestMaster, 'id' | 'createdAt' | 'updatedAt'>): Omit<DatabaseTestMaster, 'id' | 'created_at' | 'updated_at'> => ({
   name: test.name,
-  category: test.category,
+  category: test.category.toLowerCase() as DatabaseTestMaster['category'],
   type: test.type,
   normal_range: test.normalRange,
   units: test.units,
@@ -495,7 +495,7 @@ export const masterDataService = {
     const dbTest: any = {};
 
     if (test.name) dbTest.name = test.name;
-    if (test.category) dbTest.category = test.category;
+    if (test.category) dbTest.category = test.category.toLowerCase();
     if (test.type) dbTest.type = test.type;
     if (test.normalRange !== undefined) dbTest.normal_range = test.normalRange;
     if (test.units !== undefined) dbTest.units = test.units;

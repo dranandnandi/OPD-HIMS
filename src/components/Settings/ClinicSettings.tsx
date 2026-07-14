@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer } from 'lucide-react';
+import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer, TestTube, BedDouble } from 'lucide-react';
 import { ClinicSetting, AppointmentType } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
@@ -54,6 +54,11 @@ const ClinicSettings: React.FC = () => {
   ]);
 
   const [waitingSequenceEnabled, setWaitingSequenceEnabled] = useState(false);
+  const [ipdEnabled, setIpdEnabled] = useState(false);
+  const [ipdSaving, setIpdSaving] = useState(false);
+  const [labTestIntegrationEnabled, setLabTestIntegrationEnabled] = useState(false);
+  const [limsApiUrl, setLimsApiUrl] = useState('');
+  const [limsApiKey, setLimsApiKey] = useState('');
 
   // PDF Settings
   const [pdfHeaderUrl, setPdfHeaderUrl] = useState('');
@@ -126,6 +131,19 @@ const ClinicSettings: React.FC = () => {
         setWaitingSequenceEnabled((clinicSettings as any).waitingSequenceEnabled);
       }
 
+      // Load IPD module flag (platform-managed)
+      setIpdEnabled(clinicSettings.ipdEnabled ?? false);
+
+      if ((clinicSettings as any).labTestIntegrationEnabled !== undefined) {
+        setLabTestIntegrationEnabled((clinicSettings as any).labTestIntegrationEnabled);
+      }
+      if ((clinicSettings as any).limsApiUrl) {
+        setLimsApiUrl((clinicSettings as any).limsApiUrl);
+      }
+      if ((clinicSettings as any).limsApiKey) {
+        setLimsApiKey((clinicSettings as any).limsApiKey);
+      }
+
       // Load WhatsApp templates
       if ((clinicSettings as any).whatsappTemplates) {
         setWhatsappTemplates(prev => ({
@@ -171,6 +189,9 @@ const ClinicSettings: React.FC = () => {
         pdfFooterUrl,
         whatsappTemplates,
         waitingSequenceEnabled,
+        labTestIntegrationEnabled,
+        limsApiUrl,
+        limsApiKey,
       } as any);
       setSettings(updatedSettings);
       alert('Settings saved successfully!');
@@ -775,6 +796,83 @@ const ClinicSettings: React.FC = () => {
         </div>
       </div>
 
+      {/* Lab Test Integration */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <TestTube className="w-5 h-5 text-indigo-600" />
+          <h3 className="text-lg font-semibold text-gray-800">Lab Test Integration (LIMS)</h3>
+        </div>
+
+        {/* Enable toggle */}
+        <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg mb-4">
+          <div>
+            <p className="font-medium text-gray-800">Enable LIMS Integration</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Send lab test orders to external LIMS and receive results automatically.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer ml-4">
+            <input
+              type="checkbox"
+              checked={labTestIntegrationEnabled}
+              onChange={e => setLabTestIntegrationEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+
+        {/* LIMS Configuration (shown when enabled) */}
+        {labTestIntegrationEnabled && (
+          <div className="space-y-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <p className="text-sm text-indigo-700 font-medium">
+              Configure your external LIMS connection. Get the API URL and Key from your LIMS provider.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                LIMS API URL
+              </label>
+              <input
+                type="url"
+                value={limsApiUrl}
+                onChange={e => setLimsApiUrl(e.target.value)}
+                placeholder="https://your-lims.com/functions/v1/hims-order-create"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                The endpoint URL where lab orders will be sent
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                LIMS API Key
+              </label>
+              <input
+                type="password"
+                value={limsApiKey}
+                onChange={e => setLimsApiKey(e.target.value)}
+                placeholder="Enter your LIMS API key"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                API key provided by your LIMS (stored securely, sent as x-lab-api-key header)
+              </p>
+            </div>
+
+            {limsApiUrl && limsApiKey && (
+              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                LIMS integration configured. Lab tests will be sent automatically when ordered.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Waiting Sequence */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center gap-2 mb-4">
@@ -807,6 +905,57 @@ const ClinicSettings: React.FC = () => {
             button.
           </p>
         )}
+      </div>
+
+      {/* IPD Module Access (platform-managed, super_admin only can change) */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <BedDouble className="w-5 h-5 text-indigo-600" />
+          <h3 className="text-lg font-semibold text-gray-800">IPD Module (Inpatient)</h3>
+        </div>
+        <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+          <div>
+            <p className="font-medium text-gray-800">
+              IPD access for this clinic:{' '}
+              <span className={ipdEnabled ? 'text-green-600' : 'text-gray-500'}>
+                {ipdEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Census, bed board, admissions, IPD billing and stores. Individual staff access is
+              controlled via IPD permissions in User Management.
+            </p>
+            {user?.roleName?.toLowerCase() !== 'super_admin' && (
+              <p className="text-xs text-gray-400 mt-1">
+                This is managed by The Doctorpreneur Academy — contact support to change it.
+              </p>
+            )}
+          </div>
+          {user?.roleName?.toLowerCase() === 'super_admin' && (
+            <label className="relative inline-flex items-center cursor-pointer ml-4">
+              <input
+                type="checkbox"
+                checked={ipdEnabled}
+                disabled={ipdSaving || !settings}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  if (!settings) return;
+                  setIpdSaving(true);
+                  try {
+                    await clinicSettingsService.setIpdEnabled(settings.id, next);
+                    setIpdEnabled(next);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to update IPD access');
+                  } finally {
+                    setIpdSaving(false);
+                  }
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          )}
+        </div>
       </div>
 
       {/* Working Hours */}

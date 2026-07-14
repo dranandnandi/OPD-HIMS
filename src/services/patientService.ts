@@ -102,7 +102,7 @@ export const patientService = {
     try {
       const { data, error } = await supabase!
         .from('patients')
-        .select('id, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
+        .select('id, patient_number, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('id', id)
         .eq('clinic_id', profile.clinicId)
         .eq('is_hidden', false)
@@ -244,7 +244,7 @@ export const patientService = {
     }
   },
 
-  // Search patients by name or phone
+  // Search patients by readable patient number, name, or phone
   async searchPatients(query: string): Promise<Patient[]> {
     if (!isSupabaseAvailable()) {
       throw new Error('Supabase client not available. Please check your configuration.');
@@ -258,10 +258,10 @@ export const patientService = {
     try {
       const { data, error } = await supabase!
         .from('patients')
-        .select('id, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
+        .select('id, patient_number, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('clinic_id', profile.clinicId)
         .eq('is_hidden', false)
-        .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+        .or(`patient_number.ilike.%${query}%,name.ilike.%${query}%,phone.ilike.%${query}%`)
         .order('created_at', { ascending: false });
 
       if (error) {

@@ -61,6 +61,7 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
   hideActions = false
 }) => {
   const [showStatusDropdown, setShowStatusDropdown] = React.useState(false);
+  const patientNumber = appointment.patient?.patientNumber || appointment.patient?.patient_number;
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -142,6 +143,11 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
         <div className="appointment-card-patient mb-1">
           {toTitleCase(appointment.patient?.name || 'Unknown Patient')}
         </div>
+        {patientNumber && (
+          <div className="text-xs font-medium text-blue-700 mb-1">
+            Patient No: {patientNumber}
+          </div>
+        )}
         <div className="appointment-card-contact">
           <Phone className="w-3 h-3" />
           {appointment.patient?.phone || 'No phone'}

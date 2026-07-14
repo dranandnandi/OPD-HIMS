@@ -57,6 +57,9 @@ serve(async (req) => {
 
   const botSecret = Deno.env.get("HIMS_BOT_SECRET");
   if (botSecret && req.headers.get("x-hims-bot-secret") !== botSecret) {
+    console.error("[get-slots] REJECTED 401: bad or missing x-hims-bot-secret header", {
+      secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -67,7 +70,10 @@ serve(async (req) => {
     const body = await req.json();
     const { clinicId, doctorId, date } = body; // date: "YYYY-MM-DD"
 
+    console.log("[get-slots] request:", { clinicId, doctorId, date });
+
     if (!clinicId || !doctorId || !date) {
+      console.error("[get-slots] REJECTED 400: missing fields", { clinicId, doctorId, date });
       return new Response(
         JSON.stringify({ error: "clinicId, doctorId, and date are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -90,6 +96,12 @@ serve(async (req) => {
       .single();
 
     if (profileError || !doctorProfile) {
+      console.error("[get-slots] REJECTED 404: doctor lookup failed", {
+        doctorId,
+        clinicId,
+        dbError: profileError?.message || null,
+        hint: "doctor must exist in profiles with this clinic_id, is_active=true AND is_open_for_consultation=true",
+      });
       return new Response(
         JSON.stringify({ error: "Doctor not found for this clinic" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -104,6 +116,10 @@ serve(async (req) => {
       .single();
 
     if (clinicError || !clinicData) {
+      console.error("[get-slots] REJECTED 404: clinic_settings row not found", {
+        clinicId,
+        dbError: clinicError?.message || null,
+      });
       return new Response(
         JSON.stringify({ error: "Clinic settings not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -119,6 +135,12 @@ serve(async (req) => {
     const dayAvail: DayAvailability | undefined = availabilitySource[dayName];
 
     if (!dayAvail || !dayAvail.isOpen) {
+      console.log("[get-slots] no availability:", {
+        dayName,
+        usingDoctorAvailability: !!doctorProfile.doctor_availability,
+        dayConfigured: !!dayAvail,
+        isOpen: dayAvail?.isOpen ?? null,
+      });
       return new Response(
         JSON.stringify({ slots: [], message: `Doctor is not available on ${dayName}` }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -178,11 +200,19 @@ serve(async (req) => {
       slots.push({ timeSlot: formatSlot(current), available });
     }
 
+    console.log("[get-slots] SUCCESS:", {
+      doctorName: doctorProfile.name,
+      date,
+      totalSlots: slots.length,
+      availableSlots: slots.filter((s) => s.available).length,
+      alreadyBooked: bookedStartMinutes.size,
+    });
+
     return new Response(JSON.stringify({ doctorName: doctorProfile.name, date, slots }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("hims-get-slots unexpected error:", err);
+    console.error("[get-slots] REJECTED 500: unexpected error:", (err as Error).message, (err as Error).stack);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

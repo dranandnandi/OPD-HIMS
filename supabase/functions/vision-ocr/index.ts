@@ -27,11 +27,11 @@ Deno.serve(async (req) => {
     // Clean the base64 string
     const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '')
 
-    // Get API key from Supabase secret
-    const apiKey = Deno.env.get('ALLGOOGLE_KEY')
+    // Get Vision API key from Supabase secret
+    const apiKey = Deno.env.get('ALLGOOGLE_KEY2')
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'Google API key not configured' }),
+        JSON.stringify({ error: 'Google Vision API key not configured' }),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

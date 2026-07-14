@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Plus, Phone, User, Eye, FileText, Download, Trash2 } from 'lucide-react';
+import { Search, Plus, Phone, User, Eye, FileText, Download, Trash2, QrCode } from 'lucide-react';
 import { Appointment, Bill, Patient, Visit } from '../../types';
 import { patientService } from '../../services/patientService';
 import { authService } from '../../services/authService';
@@ -11,6 +11,7 @@ import PatientTimeline from './PatientTimeline';
 import AddVisitModal from './AddVisitModal';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase, getInitials } from '../../utils/stringUtils';
+import { printPatientQr } from '../../utils/patientQrPrint';
 
 type ExcelCellValue = string | number | boolean | null | undefined;
 type PatientWithOptionalBloodGroup = Patient & { bloodGroup?: string };
@@ -87,6 +88,7 @@ const formatDateTimeValue = (value?: Date) => {
 };
 
 const formatDoctorName = (name?: string) => (name ? `Dr. ${toTitleCase(name)}` : '');
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
 
 const PatientListWithTimeline: React.FC = () => {
   const { user } = useAuth();
@@ -157,6 +159,7 @@ const PatientListWithTimeline: React.FC = () => {
     (patient) =>
       patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       patient.phone.includes(searchTerm) ||
+      getPatientNumber(patient).includes(searchTerm) ||
       patient.id.includes(searchTerm)
   );
 
@@ -218,6 +221,7 @@ const PatientListWithTimeline: React.FC = () => {
       const patientRows: ExcelCellValue[][] = [
         [
           'Patient Name',
+          'Patient Number',
           'Phone',
           'Age',
           'Gender',
@@ -234,6 +238,7 @@ const PatientListWithTimeline: React.FC = () => {
         ],
         ...selectedFilteredPatients.map((patient) => [
           toTitleCase(patient.name),
+          getPatientNumber(patient),
           patient.phone,
           patient.age,
           patient.gender,
@@ -253,6 +258,7 @@ const PatientListWithTimeline: React.FC = () => {
       const appointmentRows: ExcelCellValue[][] = [
         [
           'Patient Name',
+          'Patient Number',
           'Appointment ID',
           'Appointment Date',
           'Doctor',
@@ -265,6 +271,7 @@ const PatientListWithTimeline: React.FC = () => {
         ],
         ...appointments.map((appointment: Appointment) => [
           toTitleCase(appointment.patient?.name || selectedFilteredPatients.find((patient) => patient.id === appointment.patientId)?.name || ''),
+          getPatientNumber(appointment.patient || selectedFilteredPatients.find((patient) => patient.id === appointment.patientId)),
           appointment.id,
           formatDateTimeValue(appointment.appointmentDate),
           formatDoctorName(appointment.doctor?.name),
@@ -280,6 +287,7 @@ const PatientListWithTimeline: React.FC = () => {
       const visitRows: ExcelCellValue[][] = [
         [
           'Patient Name',
+          'Patient Number',
           'Visit ID',
           'Visit Date',
           'Doctor',
@@ -295,6 +303,7 @@ const PatientListWithTimeline: React.FC = () => {
         ],
         ...visits.map((visit: Visit) => [
           toTitleCase(visit.patient?.name || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)?.name || ''),
+          getPatientNumber(visit.patient || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)),
           visit.id,
           formatDateTimeValue(visit.date),
           formatDoctorName(visit.doctor?.name),
@@ -311,10 +320,11 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const diagnosisRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Visit ID', 'Visit Date', 'Diagnosis', 'Primary', 'ICD10 Code', 'Notes'],
+        ['Patient Name', 'Patient Number', 'Visit ID', 'Visit Date', 'Diagnosis', 'Primary', 'ICD10 Code', 'Notes'],
         ...visits.flatMap((visit: Visit) =>
           visit.diagnoses.map((diagnosis) => [
             toTitleCase(visit.patient?.name || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)?.name || ''),
+            getPatientNumber(visit.patient || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)),
             visit.id,
             formatDateTimeValue(visit.date),
             diagnosis.name,
@@ -326,10 +336,11 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const prescriptionRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Visit ID', 'Visit Date', 'Medicine', 'Dosage', 'Frequency', 'Duration', 'Quantity', 'Refills', 'Instructions'],
+        ['Patient Name', 'Patient Number', 'Visit ID', 'Visit Date', 'Medicine', 'Dosage', 'Frequency', 'Duration', 'Quantity', 'Refills', 'Instructions'],
         ...visits.flatMap((visit: Visit) =>
           visit.prescriptions.map((prescription) => [
             toTitleCase(visit.patient?.name || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)?.name || ''),
+            getPatientNumber(visit.patient || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)),
             visit.id,
             formatDateTimeValue(visit.date),
             prescription.medicine,
@@ -344,10 +355,11 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const testRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Visit ID', 'Visit Date', 'Test Name', 'Type', 'Urgency', 'Status', 'Instructions', 'Ordered Date', 'Expected Date'],
+        ['Patient Name', 'Patient Number', 'Visit ID', 'Visit Date', 'Test Name', 'Type', 'Urgency', 'Status', 'Instructions', 'Ordered Date', 'Expected Date'],
         ...visits.flatMap((visit: Visit) =>
           visit.testsOrdered.map((test) => [
             toTitleCase(visit.patient?.name || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)?.name || ''),
+            getPatientNumber(visit.patient || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)),
             visit.id,
             formatDateTimeValue(visit.date),
             test.testName,
@@ -364,6 +376,7 @@ const PatientListWithTimeline: React.FC = () => {
       const billRows: ExcelCellValue[][] = [
         [
           'Patient Name',
+          'Patient Number',
           'Bill ID',
           'Bill Number',
           'Visit ID',
@@ -380,6 +393,7 @@ const PatientListWithTimeline: React.FC = () => {
         ],
         ...bills.map((bill: Bill) => [
           toTitleCase(bill.patient?.name || selectedFilteredPatients.find((patient) => patient.id === bill.patientId)?.name || ''),
+          getPatientNumber(bill.patient || selectedFilteredPatients.find((patient) => patient.id === bill.patientId)),
           bill.id,
           bill.billNumber,
           bill.visitId || '',
@@ -397,10 +411,11 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const billItemRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Bill Number', 'Bill ID', 'Item Type', 'Item Name', 'Quantity', 'Unit Price', 'Total Price', 'Discount', 'Tax', 'Refunded Quantity', 'Refunded Amount', 'Last Refund Reason'],
+        ['Patient Name', 'Patient Number', 'Bill Number', 'Bill ID', 'Item Type', 'Item Name', 'Quantity', 'Unit Price', 'Total Price', 'Discount', 'Tax', 'Refunded Quantity', 'Refunded Amount', 'Last Refund Reason'],
         ...bills.flatMap((bill: Bill) =>
           bill.billItems.map((item) => [
             toTitleCase(bill.patient?.name || selectedFilteredPatients.find((patient) => patient.id === bill.patientId)?.name || ''),
+            getPatientNumber(bill.patient || selectedFilteredPatients.find((patient) => patient.id === bill.patientId)),
             bill.billNumber,
             bill.id,
             item.itemType,
@@ -418,10 +433,11 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const symptomRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Visit ID', 'Visit Date', 'Symptom', 'Severity', 'Duration', 'Notes'],
+        ['Patient Name', 'Patient Number', 'Visit ID', 'Visit Date', 'Symptom', 'Severity', 'Duration', 'Notes'],
         ...visits.flatMap((visit: Visit) =>
           visit.symptoms.map((symptom) => [
             toTitleCase(visit.patient?.name || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)?.name || ''),
+            getPatientNumber(visit.patient || selectedFilteredPatients.find((patient) => patient.id === visit.patientId)),
             visit.id,
             formatDateTimeValue(visit.date),
             symptom.name,
@@ -493,6 +509,15 @@ const PatientListWithTimeline: React.FC = () => {
     } catch (err) {
       console.error('Error deleting patient:', err);
       alert(err instanceof Error ? err.message : 'Failed to delete patient. Please try again.');
+    }
+  };
+
+  const handlePrintPatientQr = async (patient: Patient) => {
+    try {
+      await printPatientQr(patient, user?.clinic?.clinicName);
+    } catch (printError) {
+      console.error('Error printing patient QR:', printError);
+      alert(printError instanceof Error ? printError.message : 'Failed to print patient QR. Please try again.');
     }
   };
 
@@ -590,7 +615,7 @@ const PatientListWithTimeline: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Search by name or phone..."
+              placeholder="Search by patient no, name, or phone..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="input-field pl-12"
@@ -643,6 +668,9 @@ const PatientListWithTimeline: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">{toTitleCase(patient.name)}</h3>
+                  {getPatientNumber(patient) && (
+                    <p className="text-xs font-medium text-blue-700">Patient No: {getPatientNumber(patient)}</p>
+                  )}
                   <p className="text-sm text-gray-600">{patient.age} years - {patient.gender}</p>
                 </div>
               </div>
@@ -701,6 +729,14 @@ const PatientListWithTimeline: React.FC = () => {
               >
                 <FileText className="w-4 h-4" />
                 Add Visit
+              </button>
+              <button
+                onClick={() => handlePrintPatientQr(patient)}
+                className="flex items-center gap-1 bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-900 transition-colors text-sm"
+                title="Print patient QR"
+              >
+                <QrCode className="w-4 h-4" />
+                Print QR
               </button>
               <button
                 onClick={() => handleDeletePatient(patient)}

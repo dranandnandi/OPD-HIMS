@@ -252,6 +252,10 @@ serve(async (req) => {
         ? `Print_Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
         : `Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
+      // Get invoice paper size (default A4)
+      const invoicePaperSize = clinicSettings?.invoicePaperSize || 'A4';
+      const isA5 = invoicePaperSize === 'A5';
+
       htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -265,57 +269,84 @@ serve(async (req) => {
               -webkit-filter: grayscale(100%) !important;
               print-color-adjust: exact !important;
             }
-            
-            /* Hide headers and footers */
+
+            /* Hide headers and footers for letterhead */
             .custom-header, .custom-footer, .header, .footer {
               display: none !important;
             }
-            
+
             /* Force black text */
             body, p, div, span, h1, h2, h3 {
               color: #000 !important;
             }
-            
+
             /* Remove backgrounds */
             .status, th {
               background: #ddd !important;
               color: #000 !important;
             }
-            
+
             /* Simplify borders */
             .header, .details-section > div, table, th, td {
               border-color: #000 !important;
             }
             ` : ''}
             /* === END PRINT VERSION STYLING === */
-            
+
+            /* === A5 COMPACT STYLING === */
+            ${isA5 ? `
+            @page { size: A5; margin: 0; }
+            html, body { width: 100%; min-height: 0; }
+            body { font-size: 9px !important; margin: 0 !important; line-height: 1.2 !important; }
+            .bill-title { margin-bottom: 8px !important; padding-bottom: 6px !important; border-bottom-width: 1px !important; }
+            .bill-title p { margin: 2px 0 !important; font-size: 9px !important; }
+            .details-section { margin-bottom: 8px !important; gap: 8px !important; }
+            .details-section > div { padding: 6px !important; border-radius: 4px !important; }
+            .details-section h3 { font-size: 9px !important; margin: 0 0 4px !important; padding-bottom: 3px !important; }
+            .details-section p { margin: 1px 0 !important; font-size: 8px !important; line-height: 1.2 !important; }
+            body > h3, .bill-details-heading { margin: 0 0 5px !important; padding-bottom: 4px !important; font-size: 10px !important; border-bottom-width: 1px !important; }
+            table { font-size: 8px !important; margin-bottom: 8px !important; page-break-inside: avoid !important; }
+            th, td { padding: 3px 4px !important; font-size: 8px !important; line-height: 1.15 !important; }
+            .summary { width: 160px !important; padding: 5px 7px !important; border-radius: 4px !important; page-break-inside: avoid !important; }
+            .summary div { font-size: 8px !important; padding: 2px 0 !important; }
+            .summary .total { margin-top: 3px !important; padding-top: 4px !important; font-size: 9px !important; border-top-width: 1px !important; }
+            h2 { font-size: 12px !important; line-height: 1.1 !important; }
+            .status { padding: 2px 5px !important; font-size: 8px !important; }
+            .notes-section { margin-top: 8px !important; page-break-inside: avoid !important; }
+            .notes-section h3 { margin: 0 0 4px !important; font-size: 10px !important; }
+            .notes-section p { padding: 6px !important; margin: 0 !important; font-size: 8px !important; }
+            ` : ''}
+            /* === END A5 STYLING === */
+
             body { font-family: Arial, sans-serif; margin: 20px; color: #333; line-height: 1.4; }
             .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
             .header h1 { margin: 0; font-size: 24px; color: #0066FF; }
             .header p { margin: 5px 0; font-size: 12px; }
-            .details-section { display: flex; justify-content: space-between; margin-bottom: 20px; }
-            .details-section > div { width: 48%; border: 1px solid #eee; padding: 15px; border-radius: 5px; }
-            .details-section h3 { margin-top: 0; font-size: 16px; color: #0066FF; }
+            .details-section { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 15px; }
+            .details-section > div { flex: 1; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: #fafafa; }
+            .details-section h3 { margin-top: 0; font-size: 14px; color: #0066FF; border-bottom: 1px solid #eee; padding-bottom: 8px; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #eee; padding: 8px; text-align: left; font-size: 12px; }
-            th { background-color: #f9f9f9; font-weight: bold; }
-            .summary { width: 300px; margin-left: auto; border: 1px solid #eee; padding: 15px; border-radius: 5px; }
-            .summary div { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
-            .summary .total { font-weight: bold; border-top: 1px solid #eee; margin-top: 10px; padding-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; font-size: 12px; }
+            th { background: linear-gradient(135deg, #0066FF 0%, #0088FF 100%); color: white; font-weight: 600; }
+            tr:nth-child(even) { background-color: #f8f9fa; }
+            .summary { width: 300px; margin-left: auto; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: #fafafa; }
+            .summary div { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+            .summary .total { font-weight: bold; border-top: 2px solid #0066FF; margin-top: 10px; padding-top: 10px; font-size: 16px; }
             .footer { text-align: center; font-size: 10px; color: #777; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px; }
-            .status { display: inline-block; padding: 5px 10px; border-radius: 3px; font-size: 12px; font-weight: bold; }
+            .status { display: inline-block; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; }
             .status-paid { background-color: #d4edda; color: #155724; }
             .status-pending { background-color: #fff3cd; color: #856404; }
             .status-partial { background-color: #cce7ff; color: #004085; }
             .status-overdue { background-color: #f8d7da; color: #721c24; }
+            .bill-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #0066FF; }
           </style>
         </head>
         <body>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <div class="bill-title">
             <div>
-              <h2 style="margin: 0;">BILL / INVOICE</h2>
-              <p style="margin: 5px 0;"><strong>Bill No:</strong> ${bill.billNumber}</p>
-              <p style="margin: 5px 0;"><strong>Date:</strong> ${new Date(bill.billDate).toLocaleDateString('en-IN')}</p>
+              <h2 style="margin: 0; color: #0066FF;">📋 BILL / INVOICE</h2>
+              <p style="margin: 5px 0; font-size: 12px;"><strong>Bill No:</strong> ${bill.billNumber}</p>
+              <p style="margin: 5px 0; font-size: 12px;"><strong>Date:</strong> ${new Date(bill.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
             </div>
             <div>
               <span class="status status-${bill.paymentStatus}">${bill.paymentStatus.toUpperCase()}</span>
@@ -324,25 +355,23 @@ serve(async (req) => {
 
           <div class="details-section">
             <div>
-              <h3>PATIENT DETAILS</h3>
+              <h3>👤 PATIENT DETAILS</h3>
               <p><strong>Name:</strong> ${patient.name}</p>
               <p><strong>Phone:</strong> ${patient.phone}</p>
-              <p><strong>Age:</strong> ${patient.age} years</p>
-              <p><strong>Gender:</strong> ${patient.gender}</p>
+              <p><strong>Age:</strong> ${patient.age} years | <strong>Gender:</strong> ${patient.gender}</p>
               ${patient.bloodGroup ? `<p><strong>Blood Group:</strong> ${patient.bloodGroup}</p>` : ''}
-              <p><strong>Address:</strong> ${patient.address}</p>
+              ${patient.address ? `<p><strong>Address:</strong> ${patient.address}</p>` : ''}
             </div>
             <div>
-              <h3>DOCTOR DETAILS</h3>
-              ${doctorDisplayName ? `<p><strong>Name:</strong> ${doctorDisplayName}</p>` : ''}
+              <h3>👨‍⚕️ DOCTOR DETAILS</h3>
+              ${doctorDisplayName ? `<p><strong>Name:</strong> ${doctorDisplayName}</p>` : '<p><em>Not specified</em></p>'}
               ${doctor?.specialization ? `<p><strong>Specialization:</strong> ${doctor.specialization}</p>` : ''}
               ${doctor?.qualification ? `<p><strong>Qualification:</strong> ${doctor.qualification}</p>` : ''}
-              ${doctor?.registrationNo ? `<p><strong>Registration No:</strong> ${doctor.registrationNo}</p>` : ''}
-              ${doctor?.phone ? `<p><strong>Phone:</strong> ${doctor.phone}</p>` : ''}
+              ${doctor?.registrationNo ? `<p><strong>Reg No:</strong> ${doctor.registrationNo}</p>` : ''}
             </div>
           </div>
 
-          <h3>BILL DETAILS</h3>
+          <h3 style="color: #0066FF; border-bottom: 2px solid #0066FF; padding-bottom: 8px;">📝 BILL DETAILS</h3>
           <table>
             <thead>
               <tr>
@@ -380,7 +409,7 @@ serve(async (req) => {
           </div>
 
           ${bill.notes ? `
-          <div style="margin-top: 20px;">
+          <div class="notes-section" style="margin-top: 20px;">
             <h3>NOTES</h3>
             <p style="border: 1px solid #eee; padding: 10px; border-radius: 5px;">${bill.notes}</p>
           </div>
@@ -1293,7 +1322,14 @@ Translate now:`;
 
     // Get clinic PDF margins (default to letterhead margins for print, regular for display)
     const hasCustomDisplayMargins = Boolean(data.clinicSettings?.pdfMargins);
+    const rawInvoiceMargins = String(data.clinicSettings?.invoiceMargins || '').trim();
+    const legacyLetterheadInvoiceMargins = rawInvoiceMargins === "180px 20px 150px 20px";
+    const hasCustomInvoiceMargins = Boolean(rawInvoiceMargins) && !legacyLetterheadInvoiceMargins;
 
+    // Determine paper size (A4 default, A5 for invoices if configured)
+    const invoicePaperSize = data.clinicSettings?.invoicePaperSize || 'A4';
+    const paperSize = (type === 'bill') ? invoicePaperSize : 'A4';
+    const isA5Invoice = type === 'bill' && paperSize === 'A5';
 
     // Prepare header/footer for PDF.co (only for display version)
     // Convert to Base64 because some URLs might be private
@@ -1303,6 +1339,7 @@ Translate now:`;
     const hasHeaderImage = Boolean(data.clinicSettings?.pdfHeaderUrl);
     const hasFooterImage = Boolean(data.clinicSettings?.pdfFooterUrl);
 
+    // Apply header/footer for both visits AND bills (display version only)
     if (!printVersion && !compactVersion) {
       if (data.clinicSettings?.pdfHeaderUrl) {
         const headerBase64 = await imageUrlToBase64(data.clinicSettings.pdfHeaderUrl);
@@ -1314,10 +1351,13 @@ Translate now:`;
         const clinicPhone = escapeHtml(data.clinicSettings?.phone || '');
         const clinicEmail = escapeHtml(data.clinicSettings?.email || '');
         const regNumber = escapeHtml(data.clinicSettings?.registrationNumber || '');
+        const headerPadding = isA5Invoice ? '4px 10px 3px' : '8px 16px 6px';
+        const headerNameSize = isA5Invoice ? '12px' : '16px';
+        const headerDetailSize = isA5Invoice ? '8px' : '10px';
         pdfHeader = `
-          <div style="width: 100%; padding: 8px 16px 6px; border-bottom: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #111827;">
-            <div style="font-size: 16px; font-weight: 700; line-height: 1.2;">${clinicName}</div>
-            <div style="font-size: 10px; line-height: 1.35; margin-top: 2px;">
+          <div style="width: 100%; padding: ${headerPadding}; border-bottom: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #111827;">
+            <div style="font-size: ${headerNameSize}; font-weight: 700; line-height: 1.15;">${clinicName}</div>
+            <div style="font-size: ${headerDetailSize}; line-height: 1.25; margin-top: 1px;">
               ${clinicAddress ? `<div>${clinicAddress}</div>` : ''}
               ${(clinicPhone || clinicEmail || regNumber) ? `<div>${[clinicPhone ? `Phone: ${clinicPhone}` : '', clinicEmail ? `Email: ${clinicEmail}` : '', regNumber ? `Reg: ${regNumber}` : ''].filter(Boolean).join(' | ')}</div>` : ''}
             </div>
@@ -1333,22 +1373,38 @@ Translate now:`;
         const website = escapeHtml(data.clinicSettings?.website || '');
         const taxId = escapeHtml(data.clinicSettings?.taxId || '');
         const clinicName = escapeHtml(data.clinicSettings?.clinicName || 'Clinic');
+        const footerPadding = isA5Invoice ? '3px 10px' : '6px 16px';
+        const footerSize = isA5Invoice ? '7px' : '10px';
+        const footerNoteSize = isA5Invoice ? '7px' : '9px';
         pdfFooter = `
-          <div style="width: 100%; padding: 6px 16px; border-top: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #4b5563; font-size: 10px; line-height: 1.3; text-align: center;">
+          <div style="width: 100%; padding: ${footerPadding}; border-top: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #4b5563; font-size: ${footerSize}; line-height: 1.2; text-align: center;">
             <div>${clinicName}${website ? ` | ${website}` : ''}${taxId ? ` | Tax ID: ${taxId}` : ''}</div>
-            <div style="font-size: 9px; color: #6b7280;">This is a computer-generated medical document.</div>
+            <div style="font-size: ${footerNoteSize}; color: #6b7280;">This is a computer-generated medical document.</div>
           </div>
         `;
       }
     }
 
-    const clinicMargins = (compactVersion || printVersion)
-      ? (data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px")  // Same letterhead margins for both compact and print
-      : (hasCustomDisplayMargins
+    // Determine margins based on document type and version
+    let clinicMargins: string;
+    if (compactVersion || printVersion) {
+      // Print/letterhead version - use print margins
+      clinicMargins = data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px";
+    } else if (type === 'bill') {
+      // Invoice display version - use invoice-specific margins if set
+      clinicMargins = hasCustomInvoiceMargins
+            ? rawInvoiceMargins
+            : (isA5Invoice ? (fallbackHeaderFooterUsed ? "50px 10px 34px 10px" : "10px") : (hasCustomDisplayMargins ? data.clinicSettings?.pdfMargins : (fallbackHeaderFooterUsed ? "70px 20px 55px 20px" : "20px")));
+    } else {
+      // Visit/prescription display version
+      clinicMargins = hasCustomDisplayMargins
         ? data.clinicSettings?.pdfMargins
-        : (fallbackHeaderFooterUsed ? "70px 20px 55px 20px" : "20px"));
+        : (fallbackHeaderFooterUsed ? "70px 20px 55px 20px" : "20px");
+    }
 
     console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
+    console.log(`[PDF GEN] Paper size: ${paperSize}`);
+    console.log(`[PDF GEN] Margins: ${clinicMargins}`);
     console.log(`[PDF GEN] Header: ${pdfHeader ? 'Base64 image included' : 'None'}`);
     console.log(`[PDF GEN] Footer: ${pdfFooter ? 'Base64 image included' : 'None'}`);
     if (pdfHeader) console.log(`[PDF GEN] Header length: ${pdfHeader.length} chars`);
@@ -1367,12 +1423,12 @@ Translate now:`;
         html: htmlContent,
         async: true,
         margins: clinicMargins,
-        papersize: "A4",
+        papersize: paperSize,
         displayheaderfooter: !printVersion && !compactVersion, // No header/footer for print or compact
         header: pdfHeader,
         footer: pdfFooter,
-        headerheight: (printVersion || compactVersion) ? "0px" : (hasHeaderImage ? "120px" : "58px"),
-        footerheight: (printVersion || compactVersion) ? "0px" : (hasFooterImage ? "80px" : "42px"),
+        headerheight: (printVersion || compactVersion) ? "0px" : (isA5Invoice ? (hasHeaderImage ? "70px" : "42px") : (hasHeaderImage ? "120px" : "58px")),
+        footerheight: (printVersion || compactVersion) ? "0px" : (isA5Invoice ? (hasFooterImage ? "42px" : "26px") : (hasFooterImage ? "80px" : "42px")),
         scale: 1,
         mediatype: "print",
         printbackground: !printVersion, // Colors only for display version

@@ -57,7 +57,7 @@ Analyze BOTH the image visually AND the OCR text. Extract all medical informatio
     "vitals": { "temperature": string|null, "bloodPressure": string|null, "pulse": string|null, "weight": string|null, "height": string|null },
     "diagnoses": [{ "name": string, "icd10Code": string|null, "isPrimary": boolean, "notes": string|null }],
     "prescriptions": [{ "medicine": string, "dosage": string, "frequency": string, "duration": string, "instructions": string }],
-    "testsOrdered": [{ "testName": string, "testType": "lab"|"radiology"|"other", "urgency": "routine"|"urgent" }],
+    "testsOrdered": [{ "testName": string, "testType": "lab"|"radiology"|"procedure"|"other", "urgency": "routine"|"urgent" }],
     "advice": [string],
     "chiefComplaint": string|null,
     "doctorNotes": string|null
@@ -158,9 +158,10 @@ Return ONLY the JSON object.`;
     });
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return new Response(JSON.stringify({
       error: 'Failed to analyze image',
-      details: error.message
+      details: message
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

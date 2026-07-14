@@ -55,6 +55,9 @@ serve(async (req) => {
 
   const botSecret = Deno.env.get("HIMS_BOT_SECRET");
   if (botSecret && req.headers.get("x-hims-bot-secret") !== botSecret) {
+    console.error("[book] REJECTED 401: bad or missing x-hims-bot-secret header", {
+      secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -62,13 +65,32 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json();
-    const { clinicId, doctorId, date, timeSlot, patientName, patientPhone, reason } = body;
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch (e) {
+      console.error("[book] REJECTED 400: request body is not valid JSON:", (e as Error).message);
+      return new Response(JSON.stringify({ error: "Request body must be valid JSON" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { clinicId, doctorId, date, timeSlot, patientName, patientPhone, reason } = body as {
+      clinicId?: string; doctorId?: string; date?: string; timeSlot?: string;
+      patientName?: string; patientPhone?: string; reason?: string;
+    };
+
+    console.log("[book] request:", { clinicId, doctorId, date, timeSlot, patientName, patientPhone });
 
     if (!clinicId || !doctorId || !date || !timeSlot || !patientName || !patientPhone) {
+      const missing = Object.entries({ clinicId, doctorId, date, timeSlot, patientName, patientPhone })
+        .filter(([, v]) => !v)
+        .map(([k]) => k);
+      console.error("[book] REJECTED 400: missing fields:", missing.join(", "));
       return new Response(
         JSON.stringify({
           error: "clinicId, doctorId, date, timeSlot, patientName, and patientPhone are required",
+          missing,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -90,6 +112,12 @@ serve(async (req) => {
       .single();
 
     if (doctorError || !doctor) {
+      console.error("[book] REJECTED 404: doctor lookup failed", {
+        doctorId,
+        clinicId,
+        dbError: doctorError?.message || null,
+        hint: "doctor must exist in profiles with this clinic_id, is_active=true AND is_open_for_consultation=true",
+      });
       return new Response(
         JSON.stringify({ error: "Doctor not found or inactive for this clinic" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -106,7 +134,14 @@ serve(async (req) => {
         .single();
       const tzOffset = getTimezoneOffsetMinutes(tzData?.timezone || "Asia/Kolkata");
       appointmentTimestamp = slotToISOTimestamp(date, timeSlot, tzOffset);
+      console.log("[book] resolved slot:", { date, timeSlot, timezone: tzData?.timezone || "Asia/Kolkata (default)", appointmentTimestamp });
     } catch (e) {
+      console.error("[book] REJECTED 400: could not parse date/timeSlot", {
+        date,
+        timeSlot,
+        error: (e as Error).message,
+        expected: 'timeSlot as "HH:MM AM/PM" or 24h "HH:MM", date as "YYYY-MM-DD"',
+      });
       return new Response(
         JSON.stringify({ error: (e as Error).message }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -114,7 +149,7 @@ serve(async (req) => {
     }
 
     // 3. Check slot is not already booked
-    const { data: conflicting } = await supabase
+    const { data: conflicting, error: conflictError } = await supabase
       .from("appointments")
       .select("id")
       .eq("clinic_id", clinicId)
@@ -123,7 +158,14 @@ serve(async (req) => {
       .not("status", "eq", "Cancelled")
       .limit(1);
 
+    if (conflictError) {
+      console.error("[book] conflict check query error (continuing):", conflictError.message);
+    }
     if (conflicting && conflicting.length > 0) {
+      console.error("[book] REJECTED 409: slot already booked", {
+        appointmentTimestamp,
+        conflictingAppointmentId: conflicting[0].id,
+      });
       return new Response(
         JSON.stringify({ error: "This time slot is already booked" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -141,6 +183,7 @@ serve(async (req) => {
 
     if (existingPatient) {
       patientId = existingPatient.id;
+      console.log("[book] matched existing patient:", patientId);
     } else {
       const { data: newPatient, error: patientError } = await supabase
         .from("patients")
@@ -153,13 +196,21 @@ serve(async (req) => {
         .single();
 
       if (patientError || !newPatient) {
-        console.error("hims-book-appointment patient insert error:", patientError);
+        console.error("[book] REJECTED 500: patient insert failed", {
+          patientName,
+          patientPhone,
+          clinicId,
+          dbError: patientError?.message || null,
+          dbDetails: patientError?.details || null,
+          dbCode: patientError?.code || null,
+        });
         return new Response(
-          JSON.stringify({ error: "Failed to register patient" }),
+          JSON.stringify({ error: "Failed to register patient", detail: patientError?.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       patientId = newPatient.id;
+      console.log("[book] created new patient:", patientId);
     }
 
     // 5. Create appointment (default duration from clinic settings)
@@ -187,12 +238,26 @@ serve(async (req) => {
       .single();
 
     if (apptError || !appointment) {
-      console.error("hims-book-appointment insert error:", apptError);
+      console.error("[book] REJECTED 500: appointment insert failed", {
+        clinicId,
+        doctorId,
+        patientId,
+        appointmentTimestamp,
+        dbError: apptError?.message || null,
+        dbDetails: apptError?.details || null,
+        dbCode: apptError?.code || null,
+      });
       return new Response(
-        JSON.stringify({ error: "Failed to create appointment" }),
+        JSON.stringify({ error: "Failed to create appointment", detail: apptError?.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log("[book] SUCCESS: appointment created", {
+      appointmentId: appointment.id,
+      doctorName: doctor.name,
+      appointmentTimestamp,
+    });
 
     return new Response(
       JSON.stringify({
@@ -206,8 +271,8 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("hims-book-appointment unexpected error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
+    console.error("[book] REJECTED 500: unexpected error:", (err as Error).message, (err as Error).stack);
+    return new Response(JSON.stringify({ error: "Internal server error", detail: (err as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

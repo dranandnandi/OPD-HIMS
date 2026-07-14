@@ -30,6 +30,9 @@ serve(async (req) => {
 
   const botSecret = Deno.env.get("HIMS_BOT_SECRET");
   if (botSecret && req.headers.get("x-hims-bot-secret") !== botSecret) {
+    console.error("[get-appointments] REJECTED 401: bad or missing x-hims-bot-secret header", {
+      secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -40,7 +43,10 @@ serve(async (req) => {
     const body = await req.json();
     const { clinicId, patientPhone, date } = body; // date optional: "YYYY-MM-DD"
 
+    console.log("[get-appointments] request:", { clinicId, patientPhone, date });
+
     if (!clinicId || !patientPhone) {
+      console.error("[get-appointments] REJECTED 400: missing fields", { clinicId, patientPhone });
       return new Response(
         JSON.stringify({ error: "clinicId and patientPhone are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -61,6 +67,11 @@ serve(async (req) => {
       .single();
 
     if (patientError || !patient) {
+      console.log("[get-appointments] no patient found for phone", {
+        clinicId,
+        patientPhone,
+        dbError: patientError?.message || null,
+      });
       return new Response(
         JSON.stringify({ appointments: [], message: "No patient found with this phone number" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -101,7 +112,12 @@ serve(async (req) => {
     const { data: appts, error: apptError } = await query;
 
     if (apptError) {
-      console.error("hims-get-appointments error:", apptError);
+      console.error("[get-appointments] REJECTED 400: appointments query error", {
+        clinicId,
+        patientId: patient.id,
+        dbError: apptError.message,
+        dbCode: apptError.code,
+      });
       return new Response(JSON.stringify({ error: apptError.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -122,12 +138,14 @@ serve(async (req) => {
       };
     });
 
+    console.log("[get-appointments] SUCCESS:", { patientName: patient.name, count: appointments.length });
+
     return new Response(
       JSON.stringify({ patientName: patient.name, appointments }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("hims-get-appointments unexpected error:", err);
+    console.error("[get-appointments] REJECTED 500: unexpected error:", (err as Error).message, (err as Error).stack);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

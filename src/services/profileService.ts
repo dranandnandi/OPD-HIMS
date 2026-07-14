@@ -104,7 +104,10 @@ export const convertDatabaseProfile = (
       pdfFooterUrl: clinic.pdf_footer_url,
       pdfMargins: clinic.pdf_margins,
       pdfPrintMargins: clinic.pdf_print_margins,
+      invoicePaperSize: clinic.invoice_paper_size,
+      invoiceMargins: clinic.invoice_margins,
       clinicTier: (clinic.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'basic',
+      ipdEnabled: clinic.ipd_enabled ?? false,
     }
     : undefined,
 });

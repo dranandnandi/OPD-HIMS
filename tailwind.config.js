@@ -7,6 +7,35 @@ export default {
   theme: {
     extend: {
       colors: {
+        // IPD module palette (navy/cream brand + bed board status colors)
+        navy: {
+          50: '#f1f6f9',
+          100: '#dceaf1',
+          200: '#b9d4e2',
+          300: '#8db7cc',
+          400: '#5b93af',
+          500: '#387595',
+          600: '#255d7a',
+          700: '#1F5065',
+          800: '#194153',
+          900: '#143547',
+          DEFAULT: '#1F5065',
+        },
+        cream: {
+          50: '#FDFBF7',
+          100: '#FAF6EE',
+          200: '#F5EFE3',
+          300: '#EDE3CF',
+          DEFAULT: '#FAF6EE',
+        },
+        bed: {
+          available: '#10B981',
+          occupied: '#3B82F6',
+          cleaning: '#F59E0B',
+          maintenance: '#6B7280',
+          reserved: '#8B5CF6',
+          blocked: '#EF4444',
+        },
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

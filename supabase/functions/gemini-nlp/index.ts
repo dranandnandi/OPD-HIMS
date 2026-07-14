@@ -153,12 +153,12 @@ ${textInput}`;
     }
 
     const cleanedData = {
-      symptoms: Array.isArray(extractedData.symptoms) ? extractedData.symptoms.map((symptom) => ({
+      symptoms: Array.isArray(extractedData.symptoms) ? extractedData.symptoms.map((symptom: any) => ({
         name: typeof symptom === 'string' ? symptom : symptom.name || '',
         severity: ['mild', 'moderate', 'severe'].includes(symptom?.severity) ? symptom.severity : null,
         duration: symptom?.duration || null,
         notes: symptom?.notes || null
-      })).filter((s) => s.name) : [],
+      })).filter((s: any) => s.name) : [],
       vitals: {
         temperature: typeof extractedData.vitals?.temperature === 'number' ? extractedData.vitals.temperature : null,
         bloodPressure: typeof extractedData.vitals?.bloodPressure === 'string' ? extractedData.vitals.bloodPressure : null,
@@ -168,13 +168,13 @@ ${textInput}`;
         respiratoryRate: typeof extractedData.vitals?.respiratoryRate === 'number' ? extractedData.vitals.respiratoryRate : null,
         oxygenSaturation: typeof extractedData.vitals?.oxygenSaturation === 'number' ? extractedData.vitals.oxygenSaturation : null
       },
-      diagnoses: Array.isArray(extractedData.diagnoses) ? extractedData.diagnoses.map((diagnosis) => ({
+      diagnoses: Array.isArray(extractedData.diagnoses) ? extractedData.diagnoses.map((diagnosis: any) => ({
         name: diagnosis.name || '',
         icd10Code: diagnosis.icd10Code || null,
         isPrimary: Boolean(diagnosis.isPrimary),
         notes: diagnosis.notes || null
-      })).filter((d) => d.name) : [],
-      prescriptions: Array.isArray(extractedData.prescriptions) ? extractedData.prescriptions.map((prescription) => ({
+      })).filter((d: any) => d.name) : [],
+      prescriptions: Array.isArray(extractedData.prescriptions) ? extractedData.prescriptions.map((prescription: any) => ({
         medicine: prescription.medicine || '',
         dosage: prescription.dosage || '1 tablet',
         frequency: prescription.frequency || 'BD',
@@ -182,14 +182,14 @@ ${textInput}`;
         instructions: prescription.instructions || 'After meals',
         quantity: typeof prescription.quantity === 'number' ? prescription.quantity : null,
         refills: typeof prescription.refills === 'number' ? prescription.refills : null
-      })).filter((p) => p.medicine) : [],
-      testsOrdered: Array.isArray(extractedData.testsOrdered) ? extractedData.testsOrdered.map((test) => ({
+      })).filter((p: any) => p.medicine) : [],
+      testsOrdered: Array.isArray(extractedData.testsOrdered) ? extractedData.testsOrdered.map((test: any) => ({
         testName: test.testName || '',
-        testType: ['lab', 'radiology', 'other'].includes(test.testType) ? test.testType : 'lab',
+        testType: ['lab', 'radiology', 'procedure', 'other'].includes(test.testType) ? test.testType : 'lab',
         instructions: test.instructions || null,
         urgency: ['routine', 'urgent', 'stat'].includes(test.urgency) ? test.urgency : 'routine'
-      })).filter((t) => t.testName) : [],
-      advice: Array.isArray(extractedData.advice) ? extractedData.advice.filter((a) => typeof a === 'string' && a.trim()) : [],
+      })).filter((t: any) => t.testName) : [],
+      advice: Array.isArray(extractedData.advice) ? extractedData.advice.filter((a: any) => typeof a === 'string' && a.trim()) : [],
       chiefComplaint: typeof extractedData.chiefComplaint === 'string' ? extractedData.chiefComplaint : null,
       doctorNotes: typeof extractedData.doctorNotes === 'string' ? extractedData.doctorNotes : null
     };
@@ -215,9 +215,10 @@ ${textInput}`;
     });
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return new Response(JSON.stringify({
       error: 'Failed to process text with Gemini API',
-      details: error.message
+      details: message
     }), {
       status: 500,
       headers: {

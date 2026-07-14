@@ -15,11 +15,22 @@ import { getAppointmentStatusColor, getAppointmentStatusLabel } from '../../util
 interface AddVisitModalProps {
   patient?: Patient; // Make optional for backward compatibility
   existingVisit?: Visit;
+  appointmentId?: string;
+  appointmentDate?: Date;
+  doctorId?: string;
   onSave: () => void;
   onClose: () => void;
 }
 
-const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, onSave, onClose }) => {
+const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
+const formatDateInput = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+  const dd = date.getDate().toString().padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, appointmentId, appointmentDate, doctorId, onSave, onClose }) => {
   const { user } = useAuth();
   const [step, setStep] = useState<'patient' | 'method' | 'upload' | 'processing' | 'emr'>(
     existingVisit ? 'emr' : patient ? 'method' : 'patient'
@@ -41,10 +52,18 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
   const [visitDate, setVisitDate] = useState(
     existingVisit
       ? new Date(existingVisit.date).toISOString().split('T')[0]
+      : appointmentDate
+        ? formatDateInput(appointmentDate)
       : new Date().toISOString().split('T')[0]
   );
-  const [selectedAppointmentTime, setSelectedAppointmentTime] = useState('');
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | undefined>(undefined);
+  const [selectedAppointmentTime, setSelectedAppointmentTime] = useState(() => {
+    if (!appointmentDate) return '';
+    const hh = appointmentDate.getHours().toString().padStart(2, '0');
+    const mm = appointmentDate.getMinutes().toString().padStart(2, '0');
+    return `${hh}:${mm}`;
+  });
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | undefined>(appointmentId);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | undefined>(doctorId);
 
   const loadDoctors = async () => {
     try {
@@ -87,7 +106,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
         .from('appointments')
         .select(`
           *,
-          patient:patient_id(id, name, phone, age, gender),
+          patient:patient_id(id, patient_number, name, phone, age, gender),
           doctor:doctor_id(id, name, specialization)
         `)
         .eq('clinic_id', user.clinicId)
@@ -132,7 +151,8 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
   // Filter patients based on search term
   const filteredPatients = patients.filter(p =>
     p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-    p.phone.includes(patientSearchTerm)
+    p.phone.includes(patientSearchTerm) ||
+    getPatientNumber(p).includes(patientSearchTerm)
   ).slice(0, 10); // Limit to 10 results for performance
 
   const handlePatientSearch = (searchTerm: string) => {
@@ -158,6 +178,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
       const mm = aptDate.getMinutes().toString().padStart(2, '0');
       setSelectedAppointmentTime(`${hh}:${mm}`);
       setSelectedAppointmentId(appointment.id);
+      setSelectedDoctorId(appointment.doctor_id);
       setStep('method');
     }
   };
@@ -275,7 +296,9 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
               {existingVisit ? 'Edit Visit' : 'Add New Visit'}
             </h2>
             {selectedPatient && (
-              <p className="text-sm text-gray-600">Patient: {toTitleCase(selectedPatient.name)} • {selectedPatient.phone}</p>
+              <p className="text-sm text-gray-600">
+                Patient: {toTitleCase(selectedPatient.name)} • {getPatientNumber(selectedPatient) && `${getPatientNumber(selectedPatient)} • `}{selectedPatient.phone}
+              </p>
             )}
           </div>
           <button
@@ -347,6 +370,9 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                               <span className="font-medium text-gray-800 truncate">
                                 {toTitleCase(apt.patient?.name || 'Unknown')}
                               </span>
+                              {apt.patient?.patient_number && (
+                                <span className="text-gray-600">{apt.patient.patient_number}</span>
+                              )}
                               {apt.patient?.phone && (
                                 <>
                                   <Phone className="w-3 h-3 text-gray-400 flex-shrink-0" />
@@ -389,7 +415,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                       type="text"
-                      placeholder="Search patients by name or phone..."
+                      placeholder="Search patients by no, name, or phone..."
                       value={patientSearchTerm}
                       onChange={(e) => handlePatientSearch(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -422,7 +448,10 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                             </div>
                             <div>
                               <div className="font-medium text-gray-800">{toTitleCase(patient.name)}</div>
-                              <div className="text-sm text-gray-600">{patient.phone} • {patient.age} years • {patient.gender}</div>
+                              <div className="text-sm text-gray-600">
+                                {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+                                {patient.phone} • {patient.age} years • {patient.gender}
+                              </div>
                               {patient.lastVisit && (
                                 <div className="text-xs text-green-600">
                                   Last visit: {new Date(patient.lastVisit).toLocaleDateString()}
@@ -463,7 +492,10 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                             </div>
                             <div>
                               <div className="font-medium text-gray-800 text-sm">{toTitleCase(patient.name)}</div>
-                              <div className="text-xs text-gray-600">{patient.phone}</div>
+                              <div className="text-xs text-gray-600">
+                                {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
+                                {patient.phone}
+                              </div>
                             </div>
                           </div>
                         </button>
@@ -484,7 +516,10 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                     <User className="w-5 h-5 text-blue-600" />
                     <div>
                       <p className="font-medium text-blue-800">{toTitleCase(selectedPatient.name)}</p>
-                      <p className="text-sm text-blue-600">{selectedPatient.phone} • {selectedPatient.age} years</p>
+                      <p className="text-sm text-blue-600">
+                        {getPatientNumber(selectedPatient) && `${getPatientNumber(selectedPatient)} • `}
+                        {selectedPatient.phone} • {selectedPatient.age} years
+                      </p>
                     </div>
                   </div>
                   <button
@@ -646,6 +681,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, o
                 ocrData={ocrResult?.extractedData || getEmptyOCRData()}
                 initialVisitDate={visitDate}
                 initialVisitTime={selectedAppointmentTime}
+                initialDoctorId={selectedDoctorId}
                 appointmentId={selectedAppointmentId}
                 onSave={handleVisitSaved}
               />
