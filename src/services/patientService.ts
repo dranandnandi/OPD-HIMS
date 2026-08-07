@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { getCurrentProfile } from './profileService';
 import { Patient } from '../types';
+import { WhatsAppAutoSendService } from './whatsappAutoSendService';
 
 // Check if Supabase is available
 const isSupabaseAvailable = (): boolean => {
@@ -153,6 +154,15 @@ export const patientService = {
 
       if (error) {
         throw new Error(`Failed to add patient: ${error.message}`);
+      }
+
+      // Fire-and-forget: registration welcome + document-upload link.
+      // Opt-in per clinic (auto-send rule); never blocks registration.
+      if (data?.id) {
+        WhatsAppAutoSendService.sendRegistrationWelcome({
+          clinicId: profile.clinicId,
+          patient: { id: data.id, name: data.name, phone: data.phone },
+        }).catch(() => { /* non-blocking */ });
       }
 
       return data;

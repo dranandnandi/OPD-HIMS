@@ -53,6 +53,11 @@ serve(async (req) => {
     if (!refinedData.prescriptions) refinedData.prescriptions = []
     if (!refinedData.advice) refinedData.advice = []
     if (!refinedData.vitals) refinedData.vitals = {}
+    if (!refinedData.testsOrdered) refinedData.testsOrdered = []
+    if (!refinedData.unmappedFindings) refinedData.unmappedFindings = []
+    if (!refinedData.examination) refinedData.examination = {}
+
+    const symptomName = (s: any) => (typeof s === 'string' ? s : s?.name || '')
 
     // 1. VALIDATE STRUCTURE AND FIELD PRESENCE
     const requiredFields = ['symptoms', 'vitals', 'diagnoses', 'prescriptions', 'advice']
@@ -75,15 +80,17 @@ serve(async (req) => {
           
           // REFINEMENT: Add missing symptoms
           foundSymptoms.forEach(symptom => {
-            const existingSymptom = refinedData.symptoms.find(s => 
-              (typeof s === 'string' ? s : s.name).toLowerCase() === symptom.toLowerCase()
+            const existingSymptom = refinedData.symptoms.find((s: any) =>
+              symptomName(s).toLowerCase() === symptom.toLowerCase()
             )
             if (!existingSymptom) {
+              // Keyword-matched, not model-extracted — flag it so the doctor
+              // verifies rather than trusting a substring hit like "no pain".
               refinedData.symptoms.push({
                 name: symptom,
                 severity: null,
                 duration: null,
-                notes: null
+                notes: 'Auto-detected from case paper text — please verify'
               })
             }
           })
@@ -265,21 +272,28 @@ serve(async (req) => {
       
       const mentionedTests = commonTests.filter(test => textToCheck.includes(test))
       if (mentionedTests.length > 0) {
-        const adviceText = (refinedData.advice || []).join(' ').toLowerCase()
-        const missingTests = mentionedTests.filter(test => !adviceText.includes(test))
-        
+        // Investigations are first-class now — check testsOrdered, not advice.
+        const orderedText = [
+          ...(refinedData.testsOrdered || []).map((t: any) => (typeof t === 'string' ? t : t?.testName || '')),
+          ...(refinedData.advice || [])
+        ].join(' ').toLowerCase()
+        const missingTests = mentionedTests.filter(test => !orderedText.includes(test))
+
         if (missingTests.length > 0) {
-          validationReport.recommendations.push(`Add test orders to advice: ${missingTests.join(', ')}`)
+          validationReport.recommendations.push(`Add test orders: ${missingTests.join(', ')}`)
           validationReport.details.adviceValidation.issues.push(`Missing test orders: ${missingTests.join(', ')}`)
-          
-          // REFINEMENT: Add missing test orders to advice
+
+          // REFINEMENT: Add missing test orders as real orders
+          const isImaging = (t: string) => ['x-ray', 'ultrasound', 'ct scan', 'mri'].includes(t)
           missingTests.forEach(test => {
-            const testAdvice = `Get ${test.toUpperCase()} test done`
-            if (!refinedData.advice.some((advice: string) => advice.toLowerCase().includes(test))) {
-              refinedData.advice.push(testAdvice)
-            }
+            refinedData.testsOrdered.push({
+              testName: test.toUpperCase(),
+              testType: isImaging(test) ? 'radiology' : 'lab',
+              urgency: 'routine',
+              instructions: 'Auto-detected from case paper text — please verify'
+            })
           })
-          console.log(`✅ Added missing test orders to advice: ${missingTests.join(', ')}`)
+          console.log(`✅ Added missing test orders: ${missingTests.join(', ')}`)
         }
       }
     }
@@ -289,12 +303,13 @@ serve(async (req) => {
       validationReport.missingFields.push('chiefComplaint')
       
       // REFINEMENT: Try to extract chief complaint from symptoms or first few words of raw text
-      if (refinedData.symptoms && refinedData.symptoms.length > 0) {
-        refinedData.chiefComplaint = `Patient complains of ${refinedData.symptoms.slice(0, 2).join(' and ')}`
+      const namedSymptoms = (refinedData.symptoms || []).map(symptomName).filter(Boolean)
+      if (namedSymptoms.length > 0) {
+        refinedData.chiefComplaint = namedSymptoms.slice(0, 2).join(' and ')
         console.log(`✅ Generated chief complaint from symptoms`)
       } else if (rawText) {
         // Extract first meaningful sentence as chief complaint
-        const sentences = rawText.split(/[.!?]/).filter(s => s.trim().length > 10)
+        const sentences = rawText.split(/[.!?]/).filter((s: string) => s.trim().length > 10)
         if (sentences.length > 0) {
           refinedData.chiefComplaint = sentences[0].trim()
           console.log(`✅ Extracted chief complaint from raw text`)
@@ -387,7 +402,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: 'Failed to validate and refine extracted data',
-        details: error.message 
+        details: error instanceof Error ? error.message : String(error)
       }),
       { 
         status: 500, 

@@ -18,7 +18,79 @@ export interface BillingOverviewRow {
   billBalance: number;       // outstanding across issued bills
 }
 
+export interface BillAudit {
+  ordersNotCharged: Array<{ id: string; serviceName: string; orderedAt: string }>;
+  consumablesNotCharged: Array<{ id: string; name: string; quantity: number; at: string }>;
+  doctorWorkMissingDoctor: Array<{ id: string; serviceName: string; amount: number }>;
+  pendingCount: number;
+  pendingAmount: number;
+  roomRentPostings: number;
+}
+
 export const billingService = {
+  /**
+   * Pre-final-bill audit for one admission — reconciles the chart against the
+   * running bill to catch revenue leakage before discharge:
+   *  - order items placed but never charged (rate failure / postCharge skipped)
+   *  - ward consumption not charged (no selling price configured)
+   *  - doctor-work charges with no performing doctor tagged
+   *  - count/amount of still-pending (unbilled) charges
+   *  - room-rent postings vs length of stay (caller compares to LOS)
+   */
+  async getBillAudit(admissionId: string): Promise<BillAudit> {
+    type SvcJoin = { name?: string; service_type?: string; requires_doctor?: boolean } | null;
+
+    const [ordersRes, consumRes, postingsRes, roomRes] = await Promise.all([
+      supabase
+        .from('ipd_order_items')
+        .select('id, created_at, service:services_master(name)')
+        .eq('admission_id', admissionId)
+        .neq('status', 'cancelled')
+        .is('charge_posting_id', null),
+      supabase
+        .from('store_consumptions')
+        .select('id, quantity, created_at, medicine:medicines_master(name)')
+        .eq('admission_id', admissionId)
+        .is('charge_posting_id', null),
+      supabase
+        .from('charge_postings')
+        .select('id, net_amount, performing_doctor_id, service:services_master(name, service_type, requires_doctor)')
+        .eq('admission_id', admissionId)
+        .eq('status', 'pending'),
+      supabase
+        .from('charge_postings')
+        .select('id', { count: 'exact', head: true })
+        .eq('admission_id', admissionId)
+        .eq('source', 'room_rent_job')
+        .neq('status', 'cancelled'),
+    ]);
+    if (ordersRes.error) throw ordersRes.error;
+    if (consumRes.error) throw consumRes.error;
+    if (postingsRes.error) throw postingsRes.error;
+
+    const orderRows = (ordersRes.data ?? []) as unknown as Array<{ id: string; created_at: string; service: SvcJoin }>;
+    const consumRows = (consumRes.data ?? []) as unknown as Array<{ id: string; quantity: number; created_at: string; medicine: { name?: string } | null }>;
+    const postings = (postingsRes.data ?? []) as unknown as Array<{ id: string; net_amount: number; performing_doctor_id: string | null; service: SvcJoin }>;
+
+    const isDoctorWork = (svc: SvcJoin) =>
+      !!svc && (Boolean(svc.requires_doctor) || ['consultation', 'surgery', 'procedure'].includes(svc.service_type ?? ''));
+
+    return {
+      ordersNotCharged: orderRows.map((o) => ({
+        id: o.id, serviceName: o.service?.name ?? 'Service', orderedAt: o.created_at,
+      })),
+      consumablesNotCharged: consumRows.map((c) => ({
+        id: c.id, name: c.medicine?.name ?? 'Item', quantity: c.quantity, at: c.created_at,
+      })),
+      doctorWorkMissingDoctor: postings
+        .filter((p) => isDoctorWork(p.service) && !p.performing_doctor_id)
+        .map((p) => ({ id: p.id, serviceName: p.service?.name ?? 'Service', amount: Number(p.net_amount) })),
+      pendingCount: postings.length,
+      pendingAmount: postings.reduce((s, p) => s + Number(p.net_amount), 0),
+      roomRentPostings: roomRes.count ?? 0,
+    };
+  },
+
   /** Cashier overview: every admitted patient with live billing position */
   async getBillingOverview(clinicId: string): Promise<BillingOverviewRow[]> {
     const { data: admissions, error } = await supabase

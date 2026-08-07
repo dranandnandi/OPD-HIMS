@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, WifiOff, RefreshCw } from 'lucide-react';
 import { authService } from '../../services/authService';
 import { AuthContext } from './AuthContext';
+import { brand } from '../../config/branding';
 
 // 12-second timeout for login fetch calls
 function withTimeout<T>(promise: Promise<T>, ms = 12000): Promise<T> {
@@ -76,19 +77,19 @@ const LoginForm: React.FC = () => {
       <div className="max-w-[480px] w-full bg-white rounded-lg p-8 shadow-lg">
         <div>
           <div className="flex justify-center mb-6">
-            <div className="w-24 h-24 bg-black rounded-full flex items-center justify-center shadow-md">
-              <img 
-                src="https://i.ibb.co/8Lm1rMhv/DC-logo.png" 
-                alt="Doctorpreneur Academy Logo" 
-                className="w-12 h-12 object-contain"
+            <div className={brand.loginLogoWrapperClass}>
+              <img
+                src={brand.logoLoginUrl}
+                alt={`${brand.company} Logo`}
+                className={brand.loginLogoClass}
               />
             </div>
           </div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900 mb-2">
-            Welcome to The Doctorpreneur Academy
+            {brand.loginHeading}
           </h2>
           <h3 className="text-center text-xl font-medium text-blue-600 mb-2">
-            OPD Management Module
+            {brand.productName}
           </h3>
           <p className="text-center text-sm text-gray-600 mb-8">
             Sign in to manage your clinic's OPD
@@ -210,7 +211,7 @@ const LoginForm: React.FC = () => {
               Need help? Contact your system administrator
             </p>
             <p className="text-xs text-gray-500">
-              Powered by The Doctorpreneur Technologies © 2025
+              Powered by {brand.legalName} © {new Date().getFullYear()}
             </p>
           </div>
         </form>

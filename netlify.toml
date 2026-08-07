@@ -37,12 +37,28 @@
   status = 200
   force = true
 
-# SPA fallback - only for HTML navigation
+# SPA fallback - only for HTML navigation.
+# Public booking URLs (/book/:slug, /opd/:slug/appointment, /:slug/appointment)
+# need no redirect rules of their own: this rule serves index.html and React
+# Router resolves the shape. Keeping it that way means the vanity URLs behave
+# identically in `netlify dev` and on both production domains.
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
   force = false
+
+# The public booking page ships as an embeddable widget, so clinic websites must
+# be able to iframe it. Everything else keeps the browser default (same-origin).
+[[headers]]
+  for = "/book/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors *"
+
+[[headers]]
+  for = "/opd/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors *"
 
 [dev]
   command = "npm run dev"

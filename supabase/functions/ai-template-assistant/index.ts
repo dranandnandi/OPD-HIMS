@@ -7,7 +7,7 @@
 // guarantee valid JSON). Secret: ANTHROPIC_API_KEY (shared).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
 const corsHeaders = {

@@ -30,6 +30,12 @@ const EVENT_TYPES: { type: WhatsAppEventType; label: string; icon: React.Element
     description: 'Confirm payment receipt'
   },
   {
+    type: 'patient_registration',
+    label: 'Patient Registration',
+    icon: MessageSquare,
+    description: 'Welcome new patients + send document upload link (ID/insurance/reports)'
+  },
+  {
     type: 'gmb_review_request',
     label: 'Google Review Request',
     icon: Star,

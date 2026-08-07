@@ -11,7 +11,8 @@ export type WhatsAppEventType =
   | 'test_result_ready'
   | 'follow_up_reminder'
   | 'visit_prescription'
-  | 'invoice_generated';
+  | 'invoice_generated'
+  | 'patient_registration';
 
 export interface WhatsAppAutoSendRule {
   id: string;

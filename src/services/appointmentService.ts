@@ -14,6 +14,7 @@ const convertDatabaseAppointment = (dbAppointment: DatabaseAppointment, patient?
   appointmentType: dbAppointment.appointment_type,
   notes: dbAppointment.notes,
   waitingConditionType: (dbAppointment as any).waiting_condition_type ?? undefined,
+  bookingSource: dbAppointment.booking_source ?? 'staff',
   createdAt: new Date(dbAppointment.created_at),
   updatedAt: new Date(dbAppointment.updated_at),
   patient,

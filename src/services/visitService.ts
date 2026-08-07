@@ -12,6 +12,7 @@ const deduplicatePrescriptions = <T extends {
   instructions?: string | null;
   quantity?: number | null;
   refills?: number | null;
+  route?: string | null;
 }>(prescriptions: T[]): T[] => {
   const seen = new Set<string>();
 
@@ -23,7 +24,8 @@ const deduplicatePrescriptions = <T extends {
       prescription.duration?.trim().toLowerCase() || '',
       prescription.instructions?.trim().toLowerCase() || '',
       prescription.quantity ?? null,
-      prescription.refills ?? 0
+      prescription.refills ?? 0,
+      prescription.route?.trim().toLowerCase() || ''
     ]);
 
     if (seen.has(key)) return false;
@@ -102,6 +104,7 @@ const convertDatabasePrescription = (dbPrescription: DatabasePrescription): Pres
   instructions: dbPrescription.instructions,
   quantity: dbPrescription.quantity,
   refills: dbPrescription.refills,
+  route: dbPrescription.route ?? undefined,
   createdAt: new Date(dbPrescription.created_at)
 });
 
@@ -444,7 +447,8 @@ export const visitService = {
           duration: prescription.duration || null,
           instructions: prescription.instructions || null,
           quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
-          refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0
+          refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0,
+          route: prescription.route?.trim() || null
         }));
         insertPromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
       }
@@ -712,7 +716,8 @@ export const visitService = {
             duration: prescription.duration || null,
             instructions: prescription.instructions || null,
             quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
-            refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0
+            refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0,
+            route: prescription.route?.trim() || null
           }));
           updatePromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
         }

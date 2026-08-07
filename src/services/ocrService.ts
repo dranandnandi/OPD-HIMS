@@ -1,6 +1,7 @@
-import { OcrResult } from '../types';
+import { OcrResult, PhysicalExamination } from '../types';
 import { supabase } from '../lib/supabase';
 import { getCurrentProfile } from './profileService';
+import { buildExaminationSchemaForAI, ExaminationSchemaForAI } from '../utils/emrMapping';
 
 
 // Convert File to base64 string
@@ -13,9 +14,20 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-export const processCasePaperWithAI = async (imageFile: File, patientId?: string, visitId?: string): Promise<OcrResult> => {
+export const processCasePaperWithAI = async (
+  imageFile: File,
+  patientId?: string,
+  visitId?: string,
+  options?: {
+    /** Examination template the findings should be mapped onto. Falls back to the standard OPD schema. */
+    examinationTemplate?: PhysicalExamination;
+    patientAge?: number;
+    patientGender?: string;
+  }
+): Promise<OcrResult> => {
   let ocrUploadId: string = '';
   const startTime = Date.now();
+  const examinationSchema: ExaminationSchemaForAI = buildExaminationSchemaForAI(options?.examinationTemplate);
 
   try {
     if (!supabase) throw new Error('Supabase client not initialized');
@@ -132,7 +144,11 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ cleanedMedicalText })
+      body: JSON.stringify({
+        cleanedMedicalText,
+        examinationSchema,
+        visitContext: { patientAge: options?.patientAge, patientGender: options?.patientGender }
+      })
     });
 
     if (!geminiResponse.ok) throw new Error(`Gemini API call failed: ${geminiResponse.statusText}`);
@@ -171,18 +187,25 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
       rawText,
       cleanedMedicalText,
       extractedData: {
+        chiefComplaint: finalExtractedData.chiefComplaint || '',
         symptoms: finalExtractedData.symptoms || [],
         vitals: {
-          temperature: finalExtractedData.vitals?.temperature || '',
-          bloodPressure: finalExtractedData.vitals?.bloodPressure || '',
-          pulse: finalExtractedData.vitals?.pulse || '',
-          weight: finalExtractedData.vitals?.weight || '',
-          height: finalExtractedData.vitals?.height || ''
+          temperature: finalExtractedData.vitals?.temperature ?? '',
+          bloodPressure: finalExtractedData.vitals?.bloodPressure ?? '',
+          pulse: finalExtractedData.vitals?.pulse ?? '',
+          weight: finalExtractedData.vitals?.weight ?? '',
+          height: finalExtractedData.vitals?.height ?? '',
+          respiratoryRate: finalExtractedData.vitals?.respiratoryRate ?? '',
+          oxygenSaturation: finalExtractedData.vitals?.oxygenSaturation ?? ''
         },
+        examination: finalExtractedData.examination || {},
         diagnoses: finalExtractedData.diagnoses || [],
         prescriptions: finalExtractedData.prescriptions || [],
         testsOrdered: finalExtractedData.testsOrdered || [],
-        advice: finalExtractedData.advice || []
+        advice: finalExtractedData.advice || [],
+        followUp: finalExtractedData.followUp || null,
+        doctorNotes: finalExtractedData.doctorNotes || '',
+        unmappedFindings: finalExtractedData.unmappedFindings || []
       },
       confidence: 0.85,
       processingTime: Date.now() - startTime,
@@ -231,10 +254,12 @@ export const processCasePaperWithAI = async (imageFile: File, patientId?: string
       extractedData: {
         symptoms: [],
         vitals: {},
+        examination: {},
         diagnoses: [],
         prescriptions: [],
         testsOrdered: [],
-        advice: ['Please try uploading the image again or contact support.']
+        advice: ['Please try uploading the image again or contact support.'],
+        unmappedFindings: []
       },
       confidence: 0,
       processingTime: 0,
@@ -275,14 +300,25 @@ export interface VisitImageAnalysisResult {
   imageCategory: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'other';
   description: string;
   structuredData: {
-    symptoms?: Array<{ name: string; severity?: string | null; duration?: string | null; notes?: string | null }>;
-    vitals?: { temperature?: string | null; bloodPressure?: string | null; pulse?: string | null; weight?: string | null; height?: string | null };
+    symptoms?: Array<{ name: string; severity?: string | null; duration?: string | null; location?: string | null; notes?: string | null }>;
+    vitals?: {
+      temperature?: string | null;
+      bloodPressure?: string | null;
+      pulse?: string | null;
+      weight?: string | null;
+      height?: string | null;
+      respiratoryRate?: string | null;
+      oxygenSaturation?: string | null;
+    };
+    examination?: Record<string, unknown> | null;
     diagnoses?: Array<{ name: string; icd10Code?: string | null; isPrimary?: boolean; notes?: string | null }>;
     prescriptions?: Array<{ medicine: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }>;
-    testsOrdered?: Array<{ testName: string; testType?: string; urgency?: string }>;
+    testsOrdered?: Array<{ testName: string; testType?: string; urgency?: string; instructions?: string | null }>;
     advice?: string[];
+    followUp?: { duration?: string | null; instructions?: string | null; warningSignsToWatch?: string[] | null } | null;
     chiefComplaint?: string | null;
     doctorNotes?: string | null;
+    unmappedFindings?: Array<{ label: string; value: string }>;
   };
 }
 
@@ -294,6 +330,8 @@ export const analyzeVisitImageWithAI = async (
     symptoms?: string[];
     diagnoses?: string[];
     doctorContext?: string;   // Specific focus e.g. "check for cartilage destruction"
+    /** Examination template so findings land in the doctor's own fields. */
+    examinationTemplate?: PhysicalExamination;
   }
 ): Promise<VisitImageAnalysisResult> => {
   if (!supabase) throw new Error('Supabase client not initialized');
@@ -324,7 +362,16 @@ export const analyzeVisitImageWithAI = async (
   const analyzeResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-analyze-image`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ imageBase64, rawText, imageType, visitContext })
+    body: JSON.stringify({
+      imageBase64,
+      rawText,
+      imageType,
+      visitContext: {
+        ...visitContext,
+        examinationTemplate: undefined,
+        examinationSchema: buildExaminationSchemaForAI(visitContext?.examinationTemplate)
+      }
+    })
   });
 
   if (!analyzeResponse.ok) {

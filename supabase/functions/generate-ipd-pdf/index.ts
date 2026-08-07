@@ -1,12 +1,14 @@
 // IPD server-side PDF generation — same pipeline as the OPD app's
-// generate-pdf-from-html: HTML → PDF.co (async job) → verified temp URL
-// returned immediately → background persist to the 'pdfs' storage bucket →
-// permanent URL written to ipd_bills.pdf_url / ipd_documents.pdf_url.
+// generate-pdf-from-html: HTML → PDF.co (async job) → verified temp URL →
+// download + upload a permanent copy to the 'pdfs' storage bucket → write the
+// permanent URL to ipd_bills.pdf_url / ipd_documents.pdf_url → return that
+// permanent URL. Persistence is awaited (not fire-and-forget) because the Deno
+// isolate is destroyed as soon as the Response is returned.
 // Header/footer images + margins come from clinic_settings (same as OPD).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,8 +49,10 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const pdfCoApiKey = Deno.env.get('PDFCO_API_KEY');
-    if (!pdfCoApiKey) throw new Error('PDFCO_API_KEY secret not configured');
+    // Accept either secret name — the OPD function uses PDF_CO_API, so fall
+    // back to it here to avoid needing the key configured under two names.
+    const pdfCoApiKey = Deno.env.get('PDFCO_API_KEY') ?? Deno.env.get('PDF_CO_API');
+    if (!pdfCoApiKey) throw new Error('PDF.co API key not configured (set PDFCO_API_KEY or PDF_CO_API)');
 
     // docType: 'ipd_bill' | 'ipd_document'; recordId targets the pdf_url update
     const { html, docType, recordId, clinicId, filename, forceRegenerate } = await req.json();
@@ -158,43 +162,50 @@ serve(async (req) => {
       await new Promise((r) => setTimeout(r, 1500));
     }
 
-    // --- background: persist to storage + save permanent URL -------------------
-    const persist = async () => {
-      try {
-        await new Promise((r) => setTimeout(r, 6000));
-        let blob: Blob | null = null;
-        for (let attempt = 1; attempt <= 5; attempt++) {
-          try {
-            const res = await fetch(pdfUrl!);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            blob = await res.blob();
-            if (blob.size === 0) throw new Error('empty');
-            break;
-          } catch {
-            await new Promise((r) => setTimeout(r, 2000 * attempt));
-          }
+    // --- persist to storage + save permanent URL ------------------------------
+    // MUST be awaited: the Deno isolate is torn down the moment we return a
+    // Response, so a fire-and-forget promise here would never run and the
+    // permanent copy (ipd_bills/ipd_documents.pdf_url) would stay NULL while the
+    // returned pdf.co temp URL expires (~1h). Mirrors generate-pdf-from-html.
+    const persistToStorage = async (): Promise<string | null> => {
+      let blob: Blob | null = null;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          const res = await fetch(pdfUrl!);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          blob = await res.blob();
+          if (blob.size === 0) throw new Error('empty');
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
         }
-        if (!blob) return;
-
-        const storagePath = `ipd/${docType}/${recordId}/${safeName}`;
-        const { error: upErr } = await supabaseAdmin.storage
-          .from('pdfs')
-          .upload(storagePath, blob, { contentType: 'application/pdf', upsert: true });
-        if (upErr) { console.error('persist upload failed:', upErr.message); return; }
-
-        const { data: { publicUrl } } = supabaseAdmin.storage.from('pdfs').getPublicUrl(storagePath);
-        await supabaseAdmin.from(table)
-          .update({ pdf_url: publicUrl, ...(docType === 'ipd_document' ? { generated_at: new Date().toISOString() } : {}) })
-          .eq('id', recordId);
-        console.log('persisted:', publicUrl);
-      } catch (e) {
-        console.error('persist error:', e);
       }
+      if (!blob) return null;
+
+      const storagePath = `ipd/${docType}/${recordId}/${safeName}`;
+      const { error: upErr } = await supabaseAdmin.storage
+        .from('pdfs')
+        .upload(storagePath, blob, { contentType: 'application/pdf', upsert: true });
+      if (upErr) { console.error('persist upload failed:', upErr.message); return null; }
+
+      const { data: { publicUrl } } = supabaseAdmin.storage.from('pdfs').getPublicUrl(storagePath);
+      await supabaseAdmin.from(table)
+        .update({ pdf_url: publicUrl, ...(docType === 'ipd_document' ? { generated_at: new Date().toISOString() } : {}) })
+        .eq('id', recordId);
+      console.log('persisted:', publicUrl);
+      return publicUrl;
     };
-    persist().catch((e) => console.error('bg error:', e));
+
+    // Return the permanent bucket URL when persistence succeeds; fall back to the
+    // pdf.co temp URL only if the upload fails so the user still gets a document.
+    const permanentUrl = await persistToStorage();
 
     return new Response(
-      JSON.stringify({ success: true, url: pdfUrl, temporary: true }),
+      JSON.stringify(
+        permanentUrl
+          ? { success: true, url: permanentUrl, temporary: false }
+          : { success: true, url: pdfUrl, temporary: true }
+      ),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

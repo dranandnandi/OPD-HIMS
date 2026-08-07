@@ -1,8 +1,13 @@
 import { supabase } from '../utils/supabase';
 import { generateBarcodeDataUrl } from '../utils/labelGenerator';
 import { nursingService } from './nursingService';
+import { treatmentPlanService } from './treatmentPlanService';
 import { FREQUENCY_OPTIONS } from './medicationService';
-import type { Admission, IpdBill, Deposit, IpdPayment, MedicationOrder } from '../types/ipd';
+import { DIET_TYPES, MEAL_SLOTS } from './dietService';
+import type {
+  Admission, IpdBill, Deposit, IpdPayment, MedicationOrder,
+  DietOrder, DietChartEntry, IpdOrderItem, TreatmentPlan,
+} from '../types/ipd';
 
 export interface DocumentTemplate {
   id: string;
@@ -57,13 +62,19 @@ export const PLACEHOLDER_CATALOG: { key: string; label: string }[] = [
   { key: 'medications.discharge', label: 'Discharge medications (table)' },
   { key: 'medications.course', label: 'Medications during stay (list)' },
   { key: 'investigations.list', label: 'Investigations (lab/imaging)' },
-  { key: 'notes.course', label: 'Hospital course (round/progress notes)' },
+  { key: 'reports.list', label: 'Filed reports (pathology/radiology impressions)' },
+  { key: 'consultations.list', label: 'Cross consultations & opinions' },
+  { key: 'diet.current', label: 'Diet advice (current diet order)' },
+  { key: 'notes.course', label: 'Hospital course (treatment plan + round notes)' },
+  { key: 'narrative.course', label: 'Hospital course — AI narrative (falls back to round notes)' },
+  { key: 'narrative.advice', label: 'Advice & follow-up — AI narrative' },
+  { key: 'narrative.condition', label: 'Condition at discharge — AI narrative' },
 ];
 
 // Bumped whenever DEFAULT_DISCHARGE_TEMPLATE changes; auto-created default
 // templates below this version are upgraded in place (Studio edits bump the
 // row version past this, so customized templates are never touched).
-const DEFAULT_TEMPLATE_VERSION = 2;
+const DEFAULT_TEMPLATE_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // Default discharge summary template (created per clinic on first use;
@@ -93,10 +104,16 @@ const DEFAULT_DISCHARGE_TEMPLATE = `
 <p>{{admission.reason}}</p>
 
 <h3>Hospital Course</h3>
-{{notes.course}}
+{{narrative.course}}
 
 <h3>Investigations</h3>
 {{investigations.list}}
+
+<h3>Reports</h3>
+{{reports.list}}
+
+<h3>Cross Consultations</h3>
+{{consultations.list}}
 
 <h3>Vitals at Discharge</h3>
 <p>{{vitals.latest}}</p>
@@ -107,11 +124,14 @@ const DEFAULT_DISCHARGE_TEMPLATE = `
 <h3>Medications on Discharge</h3>
 {{medications.discharge}}
 
+<h3>Diet Advice</h3>
+<p>{{diet.current}}</p>
+
 <h3>Advice & Follow-up</h3>
-<p>[Diet, activity, wound care, warning signs, follow-up date]</p>
+{{narrative.advice}}
 
 <h3>Condition at Discharge</h3>
-<p>Stable</p>
+<p>{{narrative.condition}}</p>
 
 <br/><br/>
 <table style="width:100%;font-size:13px">
@@ -177,11 +197,15 @@ function buildCourseMedsHtml(orders: MedicationOrder[]): string {
   return `<ul style="margin:4px 0;padding-left:18px">${items}</ul>`;
 }
 
-/** Lab/imaging order items → investigations list with status/result note */
+/** Lab/imaging order items → investigations list with the filed report's
+    impression when one exists, else the LIMS result summary, else "awaited" */
 async function buildInvestigationsHtml(admissionId: string): Promise<string> {
   const { data, error } = await supabase
     .from('ipd_order_items')
-    .select('status, result_ref, created_at, service:services_master(name, service_type), parent_order:ipd_orders(order_datetime)')
+    .select(`status, result_ref, created_at,
+             service:services_master(name, service_type),
+             parent_order:ipd_orders(order_datetime),
+             reports:ipd_reports(impression, findings, is_abnormal)`)
     .eq('admission_id', admissionId)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: true });
@@ -195,8 +219,10 @@ async function buildInvestigationsHtml(admissionId: string): Promise<string> {
   const rows = items
     .map((i) => {
       const when = fmtShort(i.parent_order?.order_datetime ?? i.created_at);
-      const result =
-        typeof i.result_ref?.summary === 'string'
+      const report = (i.reports ?? []).find((r: any) => r.impression || r.findings);
+      const result = report
+        ? ` — ${esc(report.impression || report.findings)}${report.is_abnormal ? ' <b>(abnormal)</b>' : ''}`
+        : typeof i.result_ref?.summary === 'string'
           ? ` — ${esc(i.result_ref.summary)}`
           : i.status === 'resulted' || i.status === 'done'
             ? ''
@@ -207,34 +233,126 @@ async function buildInvestigationsHtml(admissionId: string): Promise<string> {
   return `<ul style="margin:4px 0;padding-left:18px">${rows}</ul>`;
 }
 
-/** Doctor round + progress notes → chronological hospital-course block */
+/** Filed pathology / radiology reports → impression list for the summary */
+async function buildReportsHtml(admissionId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('ipd_reports')
+    .select('title, report_type, report_date, impression, findings, is_abnormal')
+    .eq('admission_id', admissionId)
+    .order('report_date', { ascending: true });
+  if (error || !data || data.length === 0) return '<p>No reports filed.</p>';
+
+  const rows = (data as any[])
+    .map((r) => {
+      const body = r.impression || r.findings || 'report on file';
+      return `<li><b>${fmtShort(r.report_date)}</b> ${esc(r.title)} <i>(${r.report_type})</i> — ${esc(body)}${
+        r.is_abnormal ? ' <b>(abnormal)</b>' : ''
+      }</li>`;
+    })
+    .join('');
+  return `<ul style="margin:4px 0;padding-left:18px">${rows}</ul>`;
+}
+
+/** Cross consultations with the opinion recorded against each */
+async function buildConsultationsHtml(admissionId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('ipd_consultations')
+    .select('specialty, external_doctor_name, reason, opinion, status, requested_at, seen_at, doctor:profiles!ipd_consultations_doctor_id_fkey(name)')
+    .eq('admission_id', admissionId)
+    .neq('status', 'cancelled')
+    .order('requested_at', { ascending: true });
+  if (error || !data || data.length === 0) return '<p>None.</p>';
+
+  const rows = (data as any[])
+    .map((c) => {
+      const who = c.doctor?.name
+        ? `Dr. ${String(c.doctor.name).replace(/^dr\.?\s*/i, '')}`
+        : c.external_doctor_name ?? '';
+      const head = [c.specialty, who].filter(Boolean).join(' — ');
+      const body = c.opinion ? esc(c.opinion) : 'opinion awaited';
+      return `<li><b>${fmtShort(c.seen_at ?? c.requested_at)}</b> ${esc(head || 'Consultation')}: ${esc(
+        c.reason ?? ''
+      )} → ${body}</li>`;
+    })
+    .join('');
+  return `<ul style="margin:4px 0;padding-left:18px">${rows}</ul>`;
+}
+
+/** Running diet order → one-line diet advice for the summary */
+async function buildDietHtml(admissionId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('ipd_diet_orders')
+    .select('diet_type, route, calories_kcal, protein_g, fluid_restriction_ml, special_instructions, restrictions')
+    .eq('admission_id', admissionId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return '[Diet advice on discharge]';
+
+  const d = data as any;
+  const bits = [
+    `${String(d.diet_type).replace(/_/g, ' ')} diet`,
+    d.route && d.route !== 'oral' ? String(d.route).replace(/_/g, ' ') : null,
+    d.calories_kcal ? `${d.calories_kcal} kcal/day` : null,
+    d.protein_g ? `${d.protein_g} g protein/day` : null,
+    d.fluid_restriction_ml ? `fluids ${d.fluid_restriction_ml} ml/day` : null,
+    d.special_instructions || null,
+    d.restrictions ? `avoid ${d.restrictions}` : null,
+  ].filter(Boolean);
+  return esc(bits.join(' · '));
+}
+
+/** Date-wise treatment plan entries + doctor round/progress notes → the
+    chronological hospital-course block */
 async function buildCourseNotesHtml(admissionId: string): Promise<string> {
-  const notes = await nursingService.listNotes(admissionId, 100).catch(() => []);
-  const course = notes
-    .filter((n) => n.note_type === 'doctor_round' || n.note_type === 'progress')
-    .reverse(); // listNotes is newest-first
+  const [notes, plans] = await Promise.all([
+    nursingService.listNotes(admissionId, 100).catch(() => []),
+    treatmentPlanService.list(admissionId).catch(() => []),
+  ]);
+
+  const course: Array<{ at: string; html: string }> = [
+    ...notes
+      .filter((n) => n.note_type === 'doctor_round' || n.note_type === 'progress')
+      .map((n) => ({ at: n.created_at, html: esc(n.note) })),
+    ...plans.map((p) => ({
+      at: p.recorded_at,
+      html: ([
+        ['S', p.subjective], ['O', p.objective], ['A', p.assessment],
+        ['Plan', p.plan], ['Advice', p.advice],
+      ] as Array<[string, string | null]>)
+        .filter(([, v]) => v && v.trim())
+        .map(([label, v]) => `<i>${label}:</i> ${esc(v!)}`)
+        .join(' · '),
+    })).filter((p) => p.html),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
   if (course.length === 0) return '<p>[Describe the clinical course during the stay]</p>';
   return course
     .map(
-      (n) =>
-        `<p style="margin:3px 0"><b>${new Date(n.created_at).toLocaleString('en-IN', {
+      (c) =>
+        `<p style="margin:3px 0"><b>${new Date(c.at).toLocaleString('en-IN', {
           day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-        })}</b> — ${esc(n.note)}</p>`
+        })}</b> — ${c.html}</p>`
     )
     .join('');
 }
 
 async function buildPlaceholderMap(admission: Admission): Promise<Record<string, string>> {
-  const [vitals, medOrders, investigations, courseNotes] = await Promise.all([
-    nursingService.listVitals(admission.id, 1).catch(() => []),
-    supabase
-      .from('ipd_medication_orders')
-      .select('*')
-      .eq('admission_id', admission.id)
-      .then(({ data }) => (data ?? []) as MedicationOrder[]),
-    buildInvestigationsHtml(admission.id),
-    buildCourseNotesHtml(admission.id),
-  ]);
+  const [vitals, medOrders, investigations, courseNotes, reports, consultations, diet] =
+    await Promise.all([
+      nursingService.listVitals(admission.id, 1).catch(() => []),
+      supabase
+        .from('ipd_medication_orders')
+        .select('*')
+        .eq('admission_id', admission.id)
+        .then(({ data }) => (data ?? []) as MedicationOrder[]),
+      buildInvestigationsHtml(admission.id),
+      buildCourseNotesHtml(admission.id),
+      buildReportsHtml(admission.id),
+      buildConsultationsHtml(admission.id),
+      buildDietHtml(admission.id),
+    ]);
   const latest = vitals[0];
   const latestVitals = latest
     ? [
@@ -289,12 +407,65 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
     'medications.discharge': buildDischargeMedsHtml(medOrders),
     'medications.course': buildCourseMedsHtml(medOrders),
     'investigations.list': investigations,
+    'reports.list': reports,
+    'consultations.list': consultations,
+    'diet.current': diet,
     'notes.course': courseNotes,
+    // Narrative placeholders default to the mechanical output; the AI path
+    // (generateDischargeNarrative) overrides these three before resolving.
+    'narrative.course': courseNotes,
+    'narrative.advice': '<p>[Activity, wound care, warning signs, follow-up date]</p>',
+    'narrative.condition': 'Stable',
   };
 }
 
 function resolvePlaceholders(template: string, map: Record<string, string>): string {
   return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => map[key] ?? `{{${key}}}`);
+}
+
+/**
+ * Ask the AI edge function to write the narrative sections from the assembled
+ * chart data, then override the narrative.* placeholders in the map. On any
+ * failure the map is returned unchanged, so the mechanical fallback is used.
+ */
+async function applyAiNarrative(
+  map: Record<string, string>
+): Promise<Record<string, string>> {
+  const context = {
+    patient: `${map['patient.name']} (${map['patient.age']}y / ${map['patient.gender']})`,
+    allergies: map['patient.allergies'],
+    diagnosis: map['admission.diagnosis'],
+    icd_codes: map['admission.icd_codes'],
+    reason_for_admission: map['admission.reason'],
+    admitted_on: map['admission.date'],
+    discharged_on: map['discharge.date'],
+    discharge_type: map['discharge.type'],
+    length_of_stay_days: map['admission.los'],
+    vitals_at_discharge: map['vitals.latest'],
+    // HTML fragments — the model reads these fine and turns them into prose.
+    round_and_plan_notes_html: map['notes.course'],
+    investigations_html: map['investigations.list'],
+    reports_html: map['reports.list'],
+    consultations_html: map['consultations.list'],
+    medications_during_stay_html: map['medications.course'],
+    medications_on_discharge_html: map['medications.discharge'],
+    diet_advice: map['diet.current'],
+  };
+
+  const { data, error } = await supabase.functions.invoke('ai-discharge-summary', {
+    body: { context },
+  });
+  if (error) throw new Error(error.message ?? 'AI discharge summary failed');
+  if (data?.error) throw new Error(data.error);
+
+  const n = data?.narrative;
+  if (!n) return map;
+  return {
+    ...map,
+    'narrative.course': n.hospital_course?.trim() || map['narrative.course'],
+    'narrative.advice': n.advice_followup?.trim() || map['narrative.advice'],
+    'narrative.condition': n.condition_at_discharge?.trim() || map['narrative.condition'],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +596,8 @@ export const documentService = {
     templateId?: string;
     /** links the document to the service posting it was generated for */
     chargePostingId?: string;
+    /** when true, AI writes the narrative sections (hospital course, advice, condition) */
+    useAi?: boolean;
     userId?: string;
   }): Promise<IpdDocument> {
     let template: DocumentTemplate | null = null;
@@ -443,7 +616,10 @@ export const documentService = {
       );
     }
     const docType = template.doc_type;
-    const map = await buildPlaceholderMap(params.admission);
+    let map = await buildPlaceholderMap(params.admission);
+    if (params.useAi) {
+      map = await applyAiNarrative(map);
+    }
     const content = resolvePlaceholders(template.html_template, map);
 
     const { data: docNumber } = await supabase.rpc('next_document_number', {
@@ -622,6 +798,130 @@ export const documentService = {
 </body>
 </html>`;
     printHtml(html);
+  },
+
+  // --- ward file sheets ------------------------------------------------------
+
+  /** Kitchen / ward copy of the diet order + the day's meal chart */
+  printDietChart(params: {
+    admission: Admission;
+    clinicName: string;
+    order: DietOrder | null;
+    entries: DietChartEntry[];
+    date: string;
+  }): void {
+    const { order, entries, date } = params;
+    const dietLabel = order
+      ? DIET_TYPES.find((d) => d.key === order.diet_type)?.label ?? order.diet_type
+      : 'No diet ordered';
+
+    const orderBox = order
+      ? `<table class="kv">
+          <tr><td>Diet</td><td><b>${esc(dietLabel)}</b> · ${esc(String(order.route).replace(/_/g, ' '))}</td></tr>
+          <tr><td>Targets</td><td>${[
+            order.calories_kcal ? `${order.calories_kcal} kcal/day` : null,
+            order.protein_g ? `${order.protein_g} g protein/day` : null,
+            order.fluid_restriction_ml ? `fluids ${order.fluid_restriction_ml} ml/day` : null,
+          ].filter(Boolean).join(' · ') || '—'}</td></tr>
+          <tr><td>Instructions</td><td>${esc(order.special_instructions ?? '—')}</td></tr>
+          <tr><td>Avoid</td><td>${esc(order.restrictions ?? '—')}</td></tr>
+        </table>`
+      : '<p style="color:#b45309"><b>No diet order in force — confirm with the treating doctor.</b></p>';
+
+    const meals = MEAL_SLOTS.map((slot) => {
+      const e = entries.find((x) => x.meal === slot.key && x.entry_date === date);
+      return `<tr>
+        <td>${slot.label}<span style="color:#777"> · ${slot.time}</span></td>
+        <td>${esc(e?.items ?? '')}</td>
+        <td style="text-transform:capitalize">${e?.status ?? ''}</td>
+        <td>${e?.intake_percent != null ? `${e.intake_percent}%` : ''}</td>
+        <td></td>
+      </tr>`;
+    }).join('');
+
+    printHtml(chartSheetHtml({
+      title: 'DIET CHART',
+      subtitle: new Date(date).toLocaleDateString('en-IN', {
+        weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+      }),
+      admission: params.admission,
+      clinicName: params.clinicName,
+      body: `${orderBox}
+        <table class="grid">
+          <thead><tr><th>Meal</th><th>Items served</th><th>Status</th><th>Intake</th><th>Nurse sign</th></tr></thead>
+          <tbody>${meals}</tbody>
+        </table>`,
+    }));
+  },
+
+  /** Ward file copy of investigations ordered, for the nurses' station */
+  printOrderSheet(params: {
+    admission: Admission;
+    clinicName: string;
+    items: IpdOrderItem[];
+  }): void {
+    const rows = params.items
+      .filter((i) => i.status !== 'cancelled')
+      .map(
+        (i) => `<tr>
+          <td>${i.parent_order?.order_datetime ? fmtShort(i.parent_order.order_datetime) : ''}</td>
+          <td>${esc(i.service?.name ?? '')}${i.quantity > 1 ? ` × ${i.quantity}` : ''}</td>
+          <td style="text-transform:uppercase">${i.parent_order?.priority ?? 'routine'}</td>
+          <td style="text-transform:capitalize">${i.status.replace('_', ' ')}</td>
+          <td>${esc(i.parent_order?.clinical_notes ?? '')}</td>
+          <td></td>
+        </tr>`
+      )
+      .join('');
+
+    printHtml(chartSheetHtml({
+      title: 'INVESTIGATION ORDER SHEET',
+      subtitle: `Printed ${new Date().toLocaleString('en-IN')}`,
+      admission: params.admission,
+      clinicName: params.clinicName,
+      body: rows
+        ? `<table class="grid">
+            <thead><tr><th>Date</th><th>Test / procedure</th><th>Priority</th><th>Status</th><th>Instructions</th><th>Collected by</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`
+        : '<p>No investigations ordered.</p>',
+    }));
+  },
+
+  /** Date-wise treatment plan sheet for the paper file */
+  printPlanSheet(params: {
+    admission: Admission;
+    clinicName: string;
+    plans: TreatmentPlan[];
+  }): void {
+    const ordered = [...params.plans].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+    const blocks = ordered
+      .map((p) => {
+        const lines = ([
+          ['Subjective', p.subjective], ['Objective', p.objective], ['Assessment', p.assessment],
+          ['Plan', p.plan], ['Advice', p.advice],
+        ] as Array<[string, string | null]>)
+          .filter(([, v]) => v && v.trim())
+          .map(([label, v]) => `<p style="margin:2px 0"><b>${label}:</b> ${esc(v!)}</p>`)
+          .join('');
+        return `<div class="entry">
+          <div class="entry-head">${new Date(p.plan_date).toLocaleDateString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric',
+          })} · ${new Date(p.recorded_at).toLocaleTimeString('en-IN', {
+            hour: '2-digit', minute: '2-digit',
+          })}${p.doctor?.name ? ` · Dr. ${esc(p.doctor.name.replace(/^dr\.?\s*/i, ''))}` : ''}</div>
+          ${lines}
+        </div>`;
+      })
+      .join('');
+
+    printHtml(chartSheetHtml({
+      title: 'TREATMENT PLAN / PROGRESS SHEET',
+      subtitle: `${ordered.length} entr${ordered.length === 1 ? 'y' : 'ies'}`,
+      admission: params.admission,
+      clinicName: params.clinicName,
+      body: blocks || '<p>No plan documented.</p>',
+    }));
   },
 
   /**
@@ -910,6 +1210,80 @@ function buildBillHtml(
     <span>${bill.bill_number} · ${admission.admission_number} · ${bill.status.toUpperCase()}</span>
     <span>Generated ${new Date().toLocaleString('en-IN')}</span>
   </div>` : ''}
+</body>
+</html>`;
+}
+
+/** Shared A4 shell for ward-file sheets (diet chart, order sheet, plan sheet) */
+function chartSheetHtml(params: {
+  title: string;
+  subtitle?: string;
+  admission: Admission;
+  clinicName: string;
+  body: string;
+}): string {
+  const { admission } = params;
+  const barcode = generateBarcodeDataUrl(admission.admission_number, { height: 26, fontSize: 8, margin: 2 });
+  const bed = admission.current_bed
+    ? `${admission.current_bed.ward?.name ?? ''} / ${admission.current_bed.bed_number}`
+    : '—';
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(params.title)} — ${esc(admission.admission_number)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 12px; }
+    .head { display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 2px solid #1F5065; padding-bottom: 6px; margin-bottom: 8px; }
+    .head h1 { margin: 0; font-size: 16px; color: #1F5065; }
+    .sub { font-size: 10px; color: #555; }
+    .title { text-align: center; font-size: 13px; font-weight: bold; letter-spacing: 2px;
+      color: #1F5065; margin: 4px 0 2px; }
+    .subtitle { text-align: center; font-size: 10px; color: #666; margin-bottom: 10px; }
+    .patient { display: flex; flex-wrap: wrap; gap: 4px 18px; background: #f4f6f8;
+      border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; font-size: 11px; }
+    .kv { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .kv td { padding: 3px 6px; vertical-align: top; }
+    .kv td:first-child { color: #555; width: 22%; }
+    table.grid { width: 100%; border-collapse: collapse; font-size: 11px; }
+    table.grid th, table.grid td { border: 1px solid #bbb; padding: 5px 6px; text-align: left;
+      vertical-align: top; }
+    table.grid th { background: #eef2f5; }
+    .entry { border-left: 3px solid #1F5065; padding: 4px 0 4px 8px; margin-bottom: 8px;
+      page-break-inside: avoid; }
+    .entry-head { font-weight: bold; color: #1F5065; font-size: 11px; margin-bottom: 2px; }
+    .sign { margin-top: 26px; display: flex; justify-content: space-between; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <h1>${esc(params.clinicName)}</h1>
+      <div class="sub">Inpatient Department</div>
+    </div>
+    <img src="${barcode}" style="height:26px" alt="${esc(admission.admission_number)}" />
+  </div>
+  <div class="title">${esc(params.title)}</div>
+  ${params.subtitle ? `<div class="subtitle">${esc(params.subtitle)}</div>` : ''}
+  <div class="patient">
+    <span><b>${esc(admission.patient?.name ?? '')}</b>${
+      admission.patient?.age ? ` · ${admission.patient.age}y` : ''
+    }${admission.patient?.gender ? ` / ${esc(admission.patient.gender)}` : ''}</span>
+    <span>Adm: ${esc(admission.admission_number)}</span>
+    <span>Bed: ${esc(bed)}</span>
+    <span>Consultant: Dr. ${esc(admission.admitting_doctor?.name?.replace(/^dr\.?\s*/i, '') ?? '')}</span>
+    ${admission.patient?.allergies?.length
+      ? `<span style="color:#b91c1c"><b>Allergies:</b> ${esc(admission.patient.allergies.join(', '))}</span>`
+      : ''}
+  </div>
+  ${params.body}
+  <div class="sign">
+    <span>Nurse in charge</span>
+    <span>Doctor's signature</span>
+  </div>
 </body>
 </html>`;
 }

@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { HeartPulse, ClipboardList, StickyNote, Plus, Check, SkipForward, Droplets } from 'lucide-react';
+import {
+  HeartPulse, ClipboardList, StickyNote, Plus, Check, SkipForward, Droplets, UtensilsCrossed,
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { nursingService, VitalsInput } from '../../services/nursingService';
 import BloodSection from './BloodSection';
-import type { Vitals, NursingNote, NursingTask } from '../../types/ipd';
+import DietSection from './DietSection';
+import VoiceDictation from '../Voice/VoiceDictation';
+import type { Admission, Vitals, NursingNote, NursingTask } from '../../types/ipd';
 
 interface Props {
-  admissionId: string;
+  admission: Admission;
   readOnly: boolean; // discharged admissions are view-only
 }
 
-type Section = 'vitals' | 'notes' | 'tasks' | 'blood';
+type Section = 'vitals' | 'notes' | 'tasks' | 'diet' | 'blood';
 
-export default function NursingTab({ admissionId, readOnly }: Props) {
+export default function NursingTab({ admission, readOnly }: Props) {
+  const admissionId = admission.id;
   const { clinicId, profile } = useAuth();
   const [section, setSection] = useState<Section>('vitals');
   const [vitals, setVitals] = useState<Vitals[]>([]);
@@ -47,6 +52,7 @@ export default function NursingTab({ admissionId, readOnly }: Props) {
             ['vitals', HeartPulse, `Vitals (${vitals.length})`],
             ['notes', StickyNote, `Notes (${notes.length})`],
             ['tasks', ClipboardList, `Tasks (${pendingTasks} pending)`],
+            ['diet', UtensilsCrossed, 'Diet chart'],
             ['blood', Droplets, 'Blood'],
           ] as Array<[Section, typeof HeartPulse, string]>
         ).map(([key, Icon, label]) => (
@@ -64,6 +70,12 @@ export default function NursingTab({ admissionId, readOnly }: Props) {
           </button>
         ))}
       </div>
+
+      {!readOnly && ['notes', 'vitals', 'tasks'].includes(section) && (
+        <div className="mb-3">
+          <VoiceDictation admission={admission} onApplied={reload} />
+        </div>
+      )}
 
       {section === 'vitals' && (
         <VitalsSection
@@ -94,6 +106,9 @@ export default function NursingTab({ admissionId, readOnly }: Props) {
           readOnly={readOnly}
           onChange={reload}
         />
+      )}
+      {section === 'diet' && (
+        <DietSection admission={admission} readOnly={readOnly} />
       )}
       {section === 'blood' && (
         <BloodSection admissionId={admissionId} readOnly={readOnly} />

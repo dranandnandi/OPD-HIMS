@@ -1,4 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  resolveExaminationSchema,
+  describeExaminationSchema,
+  EXAMINATION_MAPPING_RULES
+} from "../_shared/examinationSchema.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +41,8 @@ serve(async (req) => {
     const isOcrType = imageType === 'case_paper' || imageType === 'lab_report';
     const hasText = rawText && rawText.trim().length > 30;
     const doctorContext = visitContext?.doctorContext;
+    const examSchema = resolveExaminationSchema(visitContext?.examinationSchema);
+    const examSchemaText = describeExaminationSchema(examSchema);
 
     let prompt: string;
 
@@ -48,25 +55,42 @@ ${doctorContext ? `\n⚠️ DOCTOR'S SPECIFIC FOCUS (prioritize this in your ana
 ${rawText ? `\nOCR Extracted Text:\n${rawText}` : ''}
 ${visitContext ? `\nCurrent Visit Context (already in EMR, do not duplicate):\nChief Complaint: ${visitContext.chiefComplaint || 'not set'}\nExisting Diagnoses: ${(visitContext.diagnoses || []).join(', ') || 'none'}\nExisting Symptoms: ${(visitContext.symptoms || []).join(', ') || 'none'}` : ''}
 
+🚨 THE GOLDEN RULE — NOTHING MAY BE LOST:
+Every clinically relevant item visible in the image or text must appear somewhere in your JSON.
+If something fits no structured field, put it in "unmappedFindings" or "doctorNotes".
+Dropping content is a serious error. Inventing content is equally serious.
+
+EXAMINATION TARGET FIELDS ${examSchema.isTemplate
+          ? `(the doctor's own template${examSchema.templateName ? `: "${examSchema.templateName}"` : ''} — use these exact keys)`
+          : '(standard OPD schema — use these exact keys)'}:
+${examSchemaText}
+
+${EXAMINATION_MAPPING_RULES}
+
 Analyze BOTH the image visually AND the OCR text. Extract all medical information and return as JSON:
 
 {
   "imageCategory": "case_paper" | "lab_report" | "clinical_photo" | "xray",
   "structuredData": {
-    "symptoms": [{ "name": string, "severity": "mild"|"moderate"|"severe"|null, "duration": string|null, "notes": string|null }],
-    "vitals": { "temperature": string|null, "bloodPressure": string|null, "pulse": string|null, "weight": string|null, "height": string|null },
+    "symptoms": [{ "name": string, "severity": "mild"|"moderate"|"severe"|null, "duration": string|null, "location": string|null, "notes": string|null }],
+    "vitals": { "temperature": string|null, "bloodPressure": string|null, "pulse": string|null, "weight": string|null, "height": string|null, "respiratoryRate": string|null, "oxygenSaturation": string|null },
+    "examination": { "<sectionId>": { "<fieldKey>": "value" } },
     "diagnoses": [{ "name": string, "icd10Code": string|null, "isPrimary": boolean, "notes": string|null }],
     "prescriptions": [{ "medicine": string, "dosage": string, "frequency": string, "duration": string, "instructions": string }],
-    "testsOrdered": [{ "testName": string, "testType": "lab"|"radiology"|"procedure"|"other", "urgency": "routine"|"urgent" }],
+    "testsOrdered": [{ "testName": string, "testType": "lab"|"radiology"|"procedure"|"other", "urgency": "routine"|"urgent", "instructions": string|null }],
     "advice": [string],
+    "followUp": { "duration": string|null, "instructions": string|null, "warningSignsToWatch": [string]|null },
     "chiefComplaint": string|null,
-    "doctorNotes": string|null
+    "doctorNotes": string|null,
+    "unmappedFindings": [{ "label": string, "value": string }]
   },
   "description": string
 }
 
-For lab reports: put test results (e.g. "Hb: 11.2 g/dL - Low") in structuredData.testsOrdered and abnormal findings in doctorNotes.
-For case papers: extract all fields normally.
+Vitals must be plain strings with units exactly as written (e.g. "98.6 F", "120/80", "98%").
+For lab reports: put the investigations in structuredData.testsOrdered and the actual result values
+(e.g. "Hb: 11.2 g/dL - Low") in doctorNotes, flagging every abnormal value.
+For case papers: extract all fields normally, including examination findings.
 Return ONLY the JSON object.`;
     } else {
       // For clinical photos (swelling, wound, skin conditions, X-rays without text)
@@ -76,6 +100,13 @@ Image Type: ${imageType || 'clinical_photo'}
 ${doctorContext ? `\n⚠️ DOCTOR'S SPECIFIC FOCUS (this is what the doctor wants you to look for — prioritize and report on this specifically): "${doctorContext}"` : ''}
 ${visitContext ? `\nCurrent Visit Context:\nChief Complaint: ${visitContext.chiefComplaint || 'not set'}\nDiagnoses: ${(visitContext.diagnoses || []).join(', ') || 'none'}` : ''}
 
+EXAMINATION TARGET FIELDS ${examSchema.isTemplate
+          ? `(the doctor's own template${examSchema.templateName ? `: "${examSchema.templateName}"` : ''} — use these exact keys)`
+          : '(standard OPD schema — use these exact keys)'}:
+${examSchemaText}
+
+${EXAMINATION_MAPPING_RULES}
+
 Analyze the image and return JSON:
 
 {
@@ -83,21 +114,25 @@ Analyze the image and return JSON:
   "structuredData": {
     "symptoms": [],
     "vitals": {},
+    "examination": { "<sectionId>": { "<fieldKey>": "value" } },
     "diagnoses": [],
     "prescriptions": [],
     "testsOrdered": [],
     "advice": [],
     "chiefComplaint": null,
-    "doctorNotes": string
+    "doctorNotes": string,
+    "unmappedFindings": [{ "label": string, "value": string }]
   },
   "description": string
 }
 
 For clinical photos:
 - "description": Detailed clinical description (location, size, color, swelling degree, skin changes, etc.)
+- "structuredData.examination": Put the objective findings into the local-examination fields above
+  (inspection / palpation / local notes), or the relevant system's fields for a systemic finding.
 - "structuredData.doctorNotes": Concise clinical finding suitable for EMR (e.g. "Local examination: Swelling over left cheek ~3cm, tender, erythematous, no fluctuation")
 - If visible abnormalities suggest a diagnosis, add to structuredData.diagnoses
-- For X-rays: describe findings (fracture, opacity, alignment) in doctorNotes
+- For X-rays: describe findings (fracture, opacity, alignment) in the relevant examination field and doctorNotes
 
 Return ONLY the JSON object.`;
     }
@@ -121,7 +156,8 @@ Return ONLY the JSON object.`;
           }],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 4096
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json'
           }
         })
       }
@@ -139,8 +175,11 @@ Return ONLY the JSON object.`;
       const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         result = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON object in response');
       }
     } catch {
+      // Keep the model's prose rather than returning an empty analysis
       result = {
         imageCategory: imageType || 'other',
         description: generatedText,
@@ -152,7 +191,12 @@ Return ONLY the JSON object.`;
       success: true,
       imageCategory: result.imageCategory || imageType || 'other',
       structuredData: result.structuredData || {},
-      description: result.description || ''
+      description: result.description || '',
+      examinationSchemaUsed: {
+        isTemplate: examSchema.isTemplate,
+        templateName: examSchema.templateName,
+        sectionCount: examSchema.sections.length
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

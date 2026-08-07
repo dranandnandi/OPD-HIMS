@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { FileText, Printer, PenLine, CheckCircle2, Plus, FileDown } from 'lucide-react';
+import { FileText, Printer, PenLine, CheckCircle2, Plus, FileDown, Sparkles } from 'lucide-react';
 import { CKEditor } from '@ckeditor/ckeditor5-react';
 import {
   ClassicEditor, Essentials, Paragraph, Bold, Italic, Underline, Heading,
@@ -23,6 +23,7 @@ export default function DocumentsTab({ admission }: Props) {
   const [templateId, setTemplateId] = useState<string>('default');
   const [editing, setEditing] = useState<IpdDocument | null>(null);
   const [creating, setCreating] = useState(false);
+  const [aiCreating, setAiCreating] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -42,24 +43,26 @@ export default function DocumentsTab({ admission }: Props) {
       .catch(() => setTemplates([]));
   }, [clinicId]);
 
-  const createSummary = async () => {
+  const createSummary = async (useAi = false) => {
     if (!clinicId) return;
-    setCreating(true);
+    const setBusy = useAi ? setAiCreating : setCreating;
+    setBusy(true);
     try {
       const doc = await documentService.createFromTemplate({
         clinicId,
         admission,
         docType: 'discharge_summary',
         templateId: templateId === 'default' ? undefined : templateId,
+        useAi,
         userId: profile?.id,
       });
-      toast.success('Draft document created');
+      toast.success(useAi ? 'AI draft created — please review before signing' : 'Draft document created');
       setDocuments((prev) => [doc, ...prev]);
       setEditing(doc);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
-      setCreating(false);
+      setBusy(false);
     }
   };
 
@@ -114,16 +117,26 @@ export default function DocumentsTab({ admission }: Props) {
             ))}
         </select>
         <button
-          onClick={createSummary}
-          disabled={creating}
+          onClick={() => createSummary(false)}
+          disabled={creating || aiCreating}
           className="flex items-center gap-1.5 bg-navy-700 hover:bg-navy-800 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg"
         >
           <Plus className="w-4 h-4" />
           {creating ? 'Creating…' : 'New document'}
         </button>
+        <button
+          onClick={() => createSummary(true)}
+          disabled={creating || aiCreating}
+          className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg"
+          title="AI writes the hospital course, advice & follow-up, and condition from the chart"
+        >
+          <Sparkles className="w-4 h-4" />
+          {aiCreating ? 'Generating…' : 'AI draft'}
+        </button>
         <span className="text-xs text-slate-400">
           Auto-fills patient, diagnosis, vitals, medications, investigations and round notes
-          from the chart. Manage templates in Masters → Document Templates.
+          from the chart. <b>AI draft</b> also writes the hospital-course narrative, advice and
+          condition — always review before signing. Manage templates in Masters → Document Templates.
         </span>
       </div>
 

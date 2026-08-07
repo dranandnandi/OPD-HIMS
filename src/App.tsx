@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './components/Auth/AuthProvider';
 import { useAuth } from './components/Auth/useAuth';
 import ErrorBoundary from './components/ErrorBoundary';
+import { brand } from './config/branding';
 import LoginForm from './components/Auth/LoginForm';
 import Navigation from './components/Layout/Navigation';
 import MobileNav from './components/Layout/MobileNav';
@@ -14,7 +15,6 @@ import './lib/supabaseClient'; // ✅ This ensures it initializes
 import PatientListWithTimeline from './components/Patients/PatientListWithTimeline';
 
 // Case Upload & OCR
-// import CaseUpload from './components/CaseUpload/CaseUpload';
 import EnhancedCaseUpload from './components/CaseUpload/EnhancedCaseUpload';
 
 // Visits
@@ -63,12 +63,21 @@ import GMBReviewRequests from './components/GMBReviewRequests/GMBReviewRequests'
 // Verify Prescription (public page — no auth required)
 import VerifyPrescription from './pages/VerifyPrescription';
 
+// Patient document upload (public page — no auth required)
+import PatientUpload from './pages/PatientUpload';
+
+// Patient self-booking (public page — no auth required)
+import PublicBooking from './pages/PublicBooking';
+
 // IPD module — lazy-loaded so OPD-only users never download it (CKEditor/xlsx are heavy)
 const IpdCensusPage = React.lazy(() => import('./modules/ipd/pages/CensusPage'));
 const IpdBedBoardPage = React.lazy(() => import('./modules/ipd/pages/BedBoardPage'));
 const IpdNewAdmissionPage = React.lazy(() => import('./modules/ipd/pages/NewAdmissionPage'));
 const IpdAdmissionDetailsPage = React.lazy(() => import('./modules/ipd/pages/AdmissionDetailsPage'));
 const IpdBillingPage = React.lazy(() => import('./modules/ipd/pages/BillingPage'));
+const IpdDischargesPage = React.lazy(() => import('./modules/ipd/pages/DischargesPage'));
+const IpdTpaPage = React.lazy(() => import('./modules/ipd/pages/TpaClaimsPage'));
+const IpdDoctorSharePage = React.lazy(() => import('./modules/ipd/pages/DoctorSharePage'));
 const IpdStoresPage = React.lazy(() => import('./modules/ipd/pages/StoresPage'));
 const IpdMastersPage = React.lazy(() => import('./modules/ipd/pages/MastersPage'));
 
@@ -207,7 +216,7 @@ const TierRoute: React.FC<{ minTier?: 'silver' | 'gold'; children: React.ReactNo
           </p>
           <p className="text-sm text-gray-400">
             Your clinic is currently on the <span className="font-semibold capitalize">{clinicTier}</span> plan.
-            Contact The Doctorpreneur Academy to upgrade.
+            {brand.supportContact} to upgrade.
           </p>
         </div>
       </div>
@@ -246,7 +255,7 @@ const IpdRoute: React.FC<{ perm: string; children: React.ReactNode }> = ({ perm,
             The inpatient (IPD) module is not enabled for your clinic.
           </p>
           <p className="text-sm text-gray-400">
-            Contact The Doctorpreneur Academy to enable IPD for your clinic.
+            {brand.supportContact} to enable IPD for your clinic.
           </p>
         </div>
       </div>
@@ -336,6 +345,25 @@ const AppContent: React.FC = () => {
       {/* Public Routes */}
       <Route path="/login" element={<LoginForm />} />
       <Route path="/verify" element={<VerifyPrescription />} />
+      <Route path="/patient-upload" element={<PatientUpload />} />
+
+      {/*
+        Public self-booking. Three URL shapes, one component — handled in the
+        router rather than by host rewrites so they behave identically in dev,
+        on opdapp.anprohealthtech.com and on docpreneur.academy.
+
+          /book/meditrust                 canonical, safe to share anywhere
+          /opd/meditrust/appointment      anprohealthtech vanity form
+          /meditrust/appointment          docpreneur vanity form
+
+        The last one is a bare top-level segment, so it is deliberately pinned
+        to a literal "appointment" second segment. React Router ranks static
+        segments above dynamic ones, so real app routes still win; only
+        two-segment paths ending in /appointment fall through to here.
+      */}
+      <Route path="/book/:clinicSlug" element={<PublicBooking />} />
+      <Route path="/opd/:clinicSlug/appointment" element={<PublicBooking />} />
+      <Route path="/:clinicSlug/appointment" element={<PublicBooking />} />
 
       {/* Protected Routes */}
       <Route path="/" element={
@@ -625,6 +653,9 @@ const AppContent: React.FC = () => {
         ['admissions/new', 'ipd_admissions', <IpdNewAdmissionPage />],
         ['admissions/:id', 'ipd_admissions', <IpdAdmissionDetailsPage />],
         ['billing', 'ipd_billing', <IpdBillingPage />],
+        ['discharges', 'ipd_billing', <IpdDischargesPage />],
+        ['tpa', 'ipd_billing', <IpdTpaPage />],
+        ['doctor-share', 'ipd_billing', <IpdDoctorSharePage />],
         ['stores', 'ipd_stores', <IpdStoresPage />],
         ['masters', 'ipd_masters', <IpdMastersPage />],
       ] as Array<[string, string, React.ReactElement]>).map(([path, perm, element]) => (

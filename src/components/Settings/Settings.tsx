@@ -10,7 +10,6 @@ import {
   Users,
   Bell,
   Shield,
-  Globe,
   Save,
   Database,
   Edit,
@@ -21,9 +20,11 @@ import {
   Timer,
   Clock,
   UserCog,
-  BedDouble
+  BedDouble,
+  Globe
 } from 'lucide-react';
 import { PDFSettings } from './PDFSettings';
+import PublicBookingSettings from './PublicBookingSettings';
 
 const Settings: React.FC = () => {
   const { user } = useAuth();
@@ -31,36 +32,13 @@ const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('profile');
   const [clinicSettings, setClinicSettings] = useState<ClinicSetting | null>(null);
 
-  const [profileData, setProfileData] = useState({
-    name: 'Dr. Rajesh Kumar',
-    email: 'dr.rajesh@clinic.com',
-    phone: '9876543210',
-    specialization: 'General Medicine',
-    qualification: 'MBBS, MD',
-    registrationNo: 'MCI-12345',
-    clinicName: 'Kumar Medical Clinic',
-    clinicAddress: '123 Main Street, Mumbai, Maharashtra 400001'
-  });
-
   const [consultationFees, setConsultationFees] = useState({
-    generalConsultation: '300',
-    followUpConsultation: '200',
-    homeVisit: '500',
-    emergencyConsultation: '800'
+    generalConsultation: '',
+    followUpConsultation: '',
+    emergencyConsultation: ''
   });
-
-  const [staffRoles, setStaffRoles] = useState([
-    { id: '1', name: 'Receptionist', permissions: ['patient_registration', 'appointment_scheduling'] },
-    { id: '2', name: 'Nurse', permissions: ['patient_registration', 'vitals_recording', 'follow_up_calls'] },
-    { id: '3', name: 'Doctor', permissions: ['all'] }
-  ]);
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    smsReminders: true,
-    emailReports: true,
-    followUpAlerts: true,
-    appointmentNotifications: true
-  });
+  const [savingFees, setSavingFees] = useState(false);
+  const [feesMessage, setFeesMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Base tabs available to all users
   const baseTabs = [
@@ -74,6 +52,7 @@ const Settings: React.FC = () => {
     { id: 'fees', label: 'Consultation Fees', icon: IndianRupee },
     { id: 'templates', label: 'Examination Templates', icon: Stethoscope },
     { id: 'presets', label: 'Prescription Presets', icon: Zap },
+    { id: 'public-booking', label: 'Public Booking', icon: Globe },
     { id: 'staff', label: 'Staff Roles', icon: Users },
     { id: 'master-data', label: 'Master Data', icon: Database },
     { id: 'whatsapp-ai', label: 'WhatsApp & AI', icon: MessageCircle },
@@ -119,6 +98,13 @@ const Settings: React.FC = () => {
         try {
           const settings = await clinicSettingsService.getClinicSettings(user.clinicId);
           setClinicSettings(settings);
+          if (settings) {
+            setConsultationFees({
+              generalConsultation: settings.consultationFee != null ? String(settings.consultationFee) : '',
+              followUpConsultation: settings.followUpFee != null ? String(settings.followUpFee) : '',
+              emergencyConsultation: settings.emergencyFee != null ? String(settings.emergencyFee) : ''
+            });
+          }
         } catch (error) {
           console.error('Failed to load clinic settings:', error);
         }
@@ -128,16 +114,26 @@ const Settings: React.FC = () => {
     loadClinicSettings();
   }, [user?.clinicId]);
 
-  const handleSaveProfile = () => {
-    alert('Profile updated successfully!');
-  };
-
-  const handleSaveFees = () => {
-    alert('Consultation fees updated successfully!');
-  };
-
-  const handleSaveNotifications = () => {
-    alert('Notification settings updated successfully!');
+  const handleSaveFees = async () => {
+    setSavingFees(true);
+    setFeesMessage(null);
+    try {
+      const toNumber = (v: string) => (v.trim() === '' ? undefined : Number(v));
+      const updated = await clinicSettingsService.updateConsultationFees({
+        consultation: toNumber(consultationFees.generalConsultation),
+        followUp: toNumber(consultationFees.followUpConsultation),
+        emergency: toNumber(consultationFees.emergencyConsultation)
+      });
+      setClinicSettings(updated);
+      setFeesMessage({ type: 'success', text: 'Consultation fees saved.' });
+    } catch (error) {
+      setFeesMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to save consultation fees.'
+      });
+    } finally {
+      setSavingFees(false);
+    }
   };
 
   return (
@@ -345,19 +341,6 @@ const Settings: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Home Visit</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
-                    <input
-                      type="number"
-                      value={consultationFees.homeVisit}
-                      onChange={(e) => setConsultationFees({ ...consultationFees, homeVisit: e.target.value })}
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Consultation</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
@@ -371,13 +354,20 @@ const Settings: React.FC = () => {
                 </div>
               </div>
 
+              {feesMessage && (
+                <p className={`mt-4 text-sm ${feesMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                  {feesMessage.text}
+                </p>
+              )}
+
               <div className="mt-6">
                 <button
                   onClick={handleSaveFees}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  disabled={savingFees}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Save className="w-4 h-4" />
-                  Save Fees
+                  {savingFees ? 'Saving...' : 'Save Fees'}
                 </button>
               </div>
             </div>
@@ -507,6 +497,12 @@ const Settings: React.FC = () => {
             <PDFSettings clinicId={user.clinicId} />
           )}
 
+          {activeTab === 'public-booking' && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <PublicBookingSettings />
+            </div>
+          )}
+
           {activeTab === 'templates' && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-6">
@@ -596,23 +592,43 @@ const Settings: React.FC = () => {
 
           {activeTab === 'staff' && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Staff Roles & Permissions</h3>
-              <div className="space-y-4">
-                {staffRoles.map(role => (
-                  <div key={role.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-gray-800">{role.name}</h4>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm">Edit</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {role.permissions.map(permission => (
-                        <span key={permission} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                          {permission.replace('_', ' ')}
-                        </span>
-                      ))}
-                    </div>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">Staff Roles & Permissions</h3>
+                <Link
+                  to="/settings/users"
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <UserCog className="w-4 h-4" />
+                  Manage Users & Roles
+                </Link>
+              </div>
+
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex gap-3">
+                  <Users className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-blue-800 mb-1">Manage staff, roles and permissions</h4>
+                    <p className="text-sm text-blue-700">
+                      Add staff members, assign roles (Doctor, Receptionist, Nurse, Admin) and control
+                      per-user permissions in User Management. Changes there apply across the app.
+                    </p>
                   </div>
-                ))}
+                </div>
+              </div>
+
+              <div className="flex justify-center py-8">
+                <Link
+                  to="/settings/users"
+                  className="flex flex-col items-center gap-4 text-center p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                >
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <UserCog className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">Open User Management</h4>
+                    <p className="text-gray-500 mt-1">Add users, assign roles and permissions</p>
+                  </div>
+                </Link>
               </div>
             </div>
           )}
@@ -753,65 +769,44 @@ const Settings: React.FC = () => {
 
           {activeTab === 'notifications' && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Notification Settings</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-gray-800">SMS Reminders</h4>
-                    <p className="text-sm text-gray-600">Send SMS reminders to patients for follow-ups</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={notificationSettings.smsReminders}
-                      onChange={(e) => setNotificationSettings({ ...notificationSettings, smsReminders: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">Patient Notifications</h3>
+                <Link
+                  to="/settings/whatsapp-auto-send"
+                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Configure Auto-Send Rules
+                </Link>
+              </div>
 
-                <div className="flex items-center justify-between">
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex gap-3">
+                  <Bell className="w-6 h-6 text-green-600 flex-shrink-0" />
                   <div>
-                    <h4 className="font-medium text-gray-800">Email Reports</h4>
-                    <p className="text-sm text-gray-600">Receive daily/weekly analytics reports via email</p>
+                    <h4 className="font-medium text-green-800 mb-1">Automated patient notifications</h4>
+                    <p className="text-sm text-green-700">
+                      Appointment reminders, invoice, prescription and follow-up messages are sent via
+                      WhatsApp Auto-Send Rules. Open the rules screen to enable each event type, pick a
+                      template and set delays.
+                    </p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={notificationSettings.emailReports}
-                      onChange={(e) => setNotificationSettings({ ...notificationSettings, emailReports: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-gray-800">Follow-up Alerts</h4>
-                    <p className="text-sm text-gray-600">Get notified when follow-up appointments are due</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={notificationSettings.followUpAlerts}
-                      onChange={(e) => setNotificationSettings({ ...notificationSettings, followUpAlerts: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
                 </div>
               </div>
 
-              <div className="mt-6">
-                <button
-                  onClick={handleSaveNotifications}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              <div className="flex justify-center py-8">
+                <Link
+                  to="/settings/whatsapp-auto-send"
+                  className="flex flex-col items-center gap-4 text-center p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group"
                 >
-                  <Save className="w-4 h-4" />
-                  Save Settings
-                </button>
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Bell className="w-8 h-8 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">Open Notification Rules</h4>
+                    <p className="text-gray-500 mt-1">Enable and customize automated patient messages</p>
+                  </div>
+                </Link>
               </div>
             </div>
           )}

@@ -1,3 +1,25 @@
+/**
+ * Public self-booking policy, stored in clinic_settings.appointment_config.
+ * Absent keys fall back to defaults inside the `public-booking` edge function,
+ * so a null or empty config is valid and means "use sensible defaults".
+ */
+export interface PublicBookingPolicy {
+  /** Earliest bookable slot, in hours from now. */
+  leadTimeHours?: number;
+  /** How many days ahead the public date strip runs. */
+  horizonDays?: number;
+  /** Bookings allowed per phone number per rolling day. */
+  maxPerPhonePerDay?: number;
+  /** true = land as 'Confirmed'; false = 'Scheduled' for reception to vet. */
+  autoConfirm?: boolean;
+  /** Appointment type labels the public may book. null/absent = all of them. */
+  allowedTypeLabels?: string[] | null;
+  /** Clinic-local "YYYY-MM-DD" dates that take no bookings. */
+  blackoutDates?: string[];
+  /** Free text shown at the top of the public page. */
+  noticeText?: string;
+}
+
 export interface Patient {
   id: string;
   patientNumber?: string;
@@ -85,6 +107,8 @@ export interface Appointment {
   appointmentType: 'Consultation' | 'Follow_Up' | 'Emergency' | 'Routine_Checkup';
   notes?: string;
   waitingConditionType?: string;
+  /** Defaults to 'staff'; 'public' means the patient booked it themselves. */
+  bookingSource?: 'staff' | 'public' | 'hims';
   createdAt: Date;
   updatedAt: Date;
   patient?: Patient;
@@ -159,15 +183,12 @@ export interface VoiceTranscript {
       oxygenSaturation?: string | null;
       respiratoryRate?: string | null;
     };
-    examination?: {
-      general?: string | null;
-      abdomen?: string | null;
-      cardiovascular?: string | null;
-      respiratory?: string | null;
-      neurological?: string | null;
-      localExamination?: string | null;
-      other?: Record<string, string>;
-    };
+    /**
+     * Findings keyed by examination section id → field key, matching the
+     * template the doctor loaded (or the standard OPD schema when none is).
+     * Legacy flat shapes ({ general: "…" }) are still accepted by the mapper.
+     */
+    examination?: Record<string, unknown>;
     diagnoses?: Array<{
       name: string;
       icd10Code?: string | null;
@@ -194,6 +215,16 @@ export interface VoiceTranscript {
       instructions?: string | null;
       warningSignsToWatch?: string[] | null;
     };
+    chiefComplaint?: string | null;
+    /** History, allergies, counselling — clinically relevant but not a structured field. */
+    doctorNotes?: string | null;
+    /** Anything the AI could not place; the mapper parks these in Doctor Notes. */
+    unmappedFindings?: Array<{ label: string; value: string }>;
+    suggestedDiagnoses?: Array<{
+      name: string;
+      likelihood?: 'high' | 'medium' | 'low' | string | null;
+      reasoning?: string | null;
+    }>;
   };
   suggestedDiagnoses?: Array<{
     name: string;
@@ -292,6 +323,7 @@ export interface Prescription {
   instructions: string;
   quantity?: number;
   refills?: number;
+  route?: string;
   createdAt: Date;
 }
 
@@ -507,17 +539,42 @@ export interface OcrResult {
       respiratoryRate?: string;
       oxygenSaturation?: string;
     };
+    /** Findings keyed by examination section id → field key. */
+    examination?: Record<string, unknown>;
     diagnoses: Array<Omit<Diagnosis, 'id' | 'visitId' | 'createdAt'>>;
     prescriptions: Array<Omit<Prescription, 'id' | 'visitId' | 'createdAt'>>;
     testsOrdered: Array<Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'>>;
     advice: string[];
+    followUp?: {
+      duration?: string | null;
+      instructions?: string | null;
+      warningSignsToWatch?: string[] | null;
+    } | null;
     chiefComplaint?: string;
     doctorNotes?: string;
+    /** Clinically relevant content that matched no structured field — goes to Doctor Notes. */
+    unmappedFindings?: Array<{ label: string; value: string }>;
   };
   confidence: number;
   processingTime: number;
   createdAt: Date;
   validationReport?: OCRValidationReport;
+}
+
+// How generated PDFs are branded.
+//   'bands' — separate header + footer images placed in PDF.co's header/footer
+//             bands, with API margins reserving room for them (the default).
+//   'full'  — one A4 letterhead image painted full-bleed behind every page.
+// The two are mutually exclusive; see supabase/functions/generate-pdf-from-html.
+export type PdfLetterheadMode = 'bands' | 'full';
+
+// Content inset in px for full letterhead mode. top/bottom become repeating
+// page spacers, left/right become CSS padding.
+export interface PdfLetterheadSpacing {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
 }
 
 export interface ClinicSetting {
@@ -555,6 +612,10 @@ export interface ClinicSetting {
   pdfPrintMargins?: string;
   invoicePaperSize?: 'A4' | 'A5';
   invoiceMargins?: string;
+  // Full-page letterhead (alternative to the header/footer band images above)
+  pdfLetterheadMode?: PdfLetterheadMode;
+  pdfLetterheadUrl?: string;
+  pdfLetterheadSpacing?: PdfLetterheadSpacing;
   // WhatsApp and AI Review Settings
   enableManualWhatsappSend?: boolean;
   enableBlueticksApiSend?: boolean;
@@ -571,6 +632,11 @@ export interface ClinicSetting {
   ipdEnabled?: boolean;
   // Waiting Sequence
   waitingSequenceEnabled?: boolean;
+  // Public self-booking: /book/<publicSlug> serves an unauthenticated
+  // appointment page when publicBookingEnabled is true.
+  publicSlug?: string | null;
+  publicBookingEnabled?: boolean;
+  publicBookingPolicy?: PublicBookingPolicy | null;
   // Lab Test Integration
   labTestIntegrationEnabled?: boolean;
   // LIMS Outbound Integration (sending orders to external LIMS)

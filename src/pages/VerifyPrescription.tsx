@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, ShieldCheck, FileText, Calendar, User, Stethoscope, Building2 } from 'lucide-react';
+import { brand } from '../config/branding';
 
 interface VerifyData {
   visitId: string;
@@ -76,7 +77,7 @@ const VerifyPrescription: React.FC = () => {
             <ShieldCheck className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800">Prescription Verification</h1>
-          <p className="text-sm text-gray-500 mt-1">Powered by Doctorpreneur Academy</p>
+          <p className="text-sm text-gray-500 mt-1">Powered by {brand.companyShort}</p>
         </div>
 
         {/* Loading */}
@@ -190,7 +191,7 @@ const VerifyPrescription: React.FC = () => {
         )}
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          &copy; {new Date().getFullYear()} Doctorpreneur Academy · Secure Prescription Registry
+          &copy; {new Date().getFullYear()} {brand.companyShort} · Secure Prescription Registry
         </p>
       </div>
     </div>

@@ -1,23 +1,50 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Loader2, Play, Square, Upload, CheckCircle, AlertCircle, Pause, RotateCcw } from 'lucide-react';
+import { Mic, Loader2, Play, Square, Upload, CheckCircle, AlertCircle, Pause, RotateCcw, FileText, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { VoiceTranscript } from '../../types';
+import { PhysicalExamination, VoiceTranscript } from '../../types';
 import { offlineSyncService, PendingRecording } from '../../services/offlineSyncService';
+import { buildExaminationSchemaForAI, humanizeKey } from '../../utils/emrMapping';
 
 interface VoiceRecorderProps {
     visitId?: string;
     chiefComplaint?: string;
     currentSymptoms?: string[];
-    examinationTemplate?: any; // AI-generated examination template structure
+    currentDiagnoses?: string[];
+    examinationTemplate?: PhysicalExamination; // loaded template, or undefined for the standard schema
+    patientAge?: number;
+    patientGender?: string;
+    doctorSpecialization?: string;
     onTranscriptReady?: (data: VoiceTranscript['extractedData']) => void;
     onApplyToForm?: (data: VoiceTranscript['extractedData']) => void;
 }
+
+/** Flatten the nested examination object into readable "Section › Field: value" rows. */
+const flattenExaminationForPreview = (
+    examination: unknown,
+    trail: string[] = []
+): Array<{ path: string; label: string; value: string }> => {
+    if (examination === null || examination === undefined || trail.length > 3) return [];
+
+    if (typeof examination !== 'object' || Array.isArray(examination)) {
+        const value = Array.isArray(examination) ? examination.filter(Boolean).join(', ') : String(examination);
+        if (!value.trim() || value === 'null') return [];
+        return [{ path: trail.join('.'), label: humanizeKey(trail[trail.length - 1] || ''), value }];
+    }
+
+    return Object.entries(examination as Record<string, unknown>).flatMap(([key, child]) =>
+        flattenExaminationForPreview(child, [...trail, key])
+    );
+};
 
 const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     visitId,
     chiefComplaint,
     currentSymptoms,
+    currentDiagnoses,
     examinationTemplate,
+    patientAge,
+    patientGender,
+    doctorSpecialization,
     onTranscriptReady,
     onApplyToForm
 }) => {
@@ -33,7 +60,21 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     const [pendingSync, setPendingSync] = useState<PendingRecording[]>([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [recordingSeconds, setRecordingSeconds] = useState(0);
+    const [isRemapping, setIsRemapping] = useState(false);
+    const [mappedTemplateName, setMappedTemplateName] = useState<string | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // What the AI is told to map findings onto: the doctor's loaded template if
+    // there is one, otherwise the standard OPD schema. Never nothing.
+    const examinationSchema = buildExaminationSchemaForAI(examinationTemplate);
+    const activeTemplateName = examinationTemplate?.templateName
+        || (examinationSchema.isTemplate ? 'Loaded examination template' : null);
+    // The transcript was mapped against a different template than the one now loaded.
+    const templateChangedSinceMapping =
+        Boolean(transcript) && (mappedTemplateName || null) !== (activeTemplateName || null);
+
+    // Examination arrives nested (section → field), so flatten it for display.
+    const examinationPreview = flattenExaminationForPreview(extractedData?.examination);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -206,6 +247,60 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         draw();
     };
 
+    const buildVisitContext = () => ({
+        chiefComplaint,
+        currentSymptoms,
+        currentDiagnoses,
+        patientAge,
+        patientGender,
+        doctorSpecialization,
+        examinationSchema,
+        // Legacy key, kept so a not-yet-redeployed edge function still gets the template
+        examinationTemplate
+    });
+
+    /**
+     * Fold the response's top-level fields into the extracted payload.
+     * chiefComplaint and suggestedDiagnoses live outside `extractedFields`, so
+     * forwarding that object alone silently dropped both.
+     */
+    const collectExtraction = (data: any): VoiceTranscript['extractedData'] => ({
+        ...(data.extractedFields || {}),
+        chiefComplaint: data.extractedFields?.chiefComplaint ?? data.chiefComplaint ?? null,
+        suggestedDiagnoses: data.extractedFields?.suggestedDiagnoses ?? data.suggestedDiagnoses ?? []
+    });
+
+    const persistTranscript = async (transcriptText: string, extraction: unknown) => {
+        if (!visitId || !supabase || !transcriptText) return;
+        try {
+            await supabase.from('voice_transcripts').insert({
+                visit_id: visitId,
+                transcript: transcriptText,
+                extracted_data: extraction,
+                sync_status: 'synced',
+                synced_at: new Date().toISOString()
+            });
+        } catch (err) {
+            // The transcript is still on screen and applied to the form; an
+            // archival failure must not block the consultation.
+            console.error('Failed to archive voice transcript:', err);
+        }
+    };
+
+    const handleResult = async (data: any) => {
+        const extraction = collectExtraction(data);
+        setTranscript(data.transcript);
+        setExtractedData(extraction);
+        setPrivacyRedactions(data.privacyRedactions || 0);
+        setMappedTemplateName(
+            data.examinationSchemaUsed?.isTemplate
+                ? (data.examinationSchemaUsed.templateName || 'Loaded examination template')
+                : null
+        );
+        onTranscriptReady?.(extraction);
+        await persistTranscript(data.transcript, extraction);
+    };
+
     const processRecording = async () => {
         if (!audioBlob) return;
 
@@ -229,7 +324,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                 await offlineSyncService.saveRecording({
                     audioBase64,
                     mimeType: 'audio/webm',
-                    visitContext: { chiefComplaint, currentSymptoms, examinationTemplate },
+                    visitContext: buildVisitContext(),
                     visitId
                 });
                 await loadPendingRecordings();
@@ -243,17 +338,14 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                 body: {
                     audioBase64,
                     mimeType: 'audio/webm',
-                    visitContext: { chiefComplaint, currentSymptoms, examinationTemplate }
+                    visitContext: buildVisitContext()
                 }
             });
 
             if (fnError) throw new Error(fnError.message);
 
             if (data?.success) {
-                setTranscript(data.transcript);
-                setExtractedData(data.extractedFields);
-                setPrivacyRedactions(data.privacyRedactions || 0);
-                onTranscriptReady?.(data.extractedFields);
+                await handleResult(data);
             } else {
                 throw new Error(data?.error || 'Failed to process recording');
             }
@@ -262,6 +354,42 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
             setError(err instanceof Error ? err.message : 'Failed to process recording');
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    /**
+     * Re-run the mapping on the existing transcript. Needed when the doctor
+     * loads (or changes) an examination template after dictating — the audio
+     * does not need to be sent again.
+     */
+    const remapTranscript = async () => {
+        if (!transcript) return;
+
+        setIsRemapping(true);
+        setError(null);
+
+        try {
+            if (!supabase) throw new Error('Database not connected');
+
+            const { data, error: fnError } = await supabase.functions.invoke('transcribe-medical-audio', {
+                body: { transcriptText: transcript, visitContext: buildVisitContext() }
+            });
+
+            if (fnError) throw new Error(fnError.message);
+            if (!data?.success) throw new Error(data?.error || 'Failed to re-map transcript');
+
+            const extraction = collectExtraction(data);
+            setExtractedData(extraction);
+            setMappedTemplateName(
+                data.examinationSchemaUsed?.isTemplate
+                    ? (data.examinationSchemaUsed.templateName || 'Loaded examination template')
+                    : null
+            );
+            onTranscriptReady?.(extraction);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to re-map transcript');
+        } finally {
+            setIsRemapping(false);
         }
     };
 
@@ -295,6 +423,16 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${isOnline ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
                             }`}>
                             {isOnline ? 'Online' : 'Offline'}
+                        </span>
+                        {/* Which examination fields the AI will map findings onto */}
+                        <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${activeTemplateName ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}
+                            title={activeTemplateName
+                                ? 'Findings will be mapped into your loaded examination template'
+                                : 'No template loaded — findings map to the standard OPD examination fields'}
+                        >
+                            <FileText className="w-3 h-3" />
+                            {activeTemplateName || 'Standard OPD fields'}
                         </span>
                     </div>
 
@@ -455,12 +593,58 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                             </div>
                         </div>
 
+                        {/* Template changed after transcription — mapping is stale */}
+                        {templateChangedSinceMapping && (
+                            <div className="flex items-start justify-between gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                                <div className="flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <span className="font-medium">Examination fields changed since transcription.</span>{' '}
+                                        This transcript was mapped to{' '}
+                                        <span className="font-medium">{mappedTemplateName || 'the standard OPD fields'}</span>,
+                                        but{' '}
+                                        <span className="font-medium">{activeTemplateName || 'the standard OPD fields'}</span>{' '}
+                                        {activeTemplateName ? 'is' : 'are'} now active. Re-map so findings land in the right fields.
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={remapTranscript}
+                                    disabled={isRemapping}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 flex-shrink-0"
+                                >
+                                    {isRemapping ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                    Re-map
+                                </button>
+                            </div>
+                        )}
+
                         {/* Extracted Data Preview */}
                         {extractedData && (
                             <div className="space-y-3">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Extracted Data
-                                </label>
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Extracted Data
+                                    </label>
+                                    {!templateChangedSinceMapping && (
+                                        <button
+                                            onClick={remapTranscript}
+                                            disabled={isRemapping}
+                                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                                            title="Re-run the mapping on this transcript without re-recording"
+                                        >
+                                            {isRemapping ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                            Re-map
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Chief Complaint */}
+                                {(extractedData as any).chiefComplaint && (
+                                    <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                                        <span className="font-medium text-slate-700 text-sm">Chief Complaint</span>
+                                        <p className="text-slate-600 text-sm mt-1">{(extractedData as any).chiefComplaint}</p>
+                                    </div>
+                                )}
 
                                 {/* Symptoms - Enhanced Display */}
                                 {extractedData.symptoms && extractedData.symptoms.length > 0 && (
@@ -592,18 +776,55 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                                     )}
                                 </div>
 
-                                {/* Examination Findings */}
-                                {extractedData.examination && Object.values(extractedData.examination).some(v => v && v !== null) && (
+                                {/* Examination Findings (nested by section → field) */}
+                                {examinationPreview.length > 0 && (
                                     <div className="p-2 bg-teal-50 rounded border border-teal-200">
-                                        <span className="font-medium text-teal-700 text-sm">Examination Findings</span>
-                                        <div className="mt-1 grid grid-cols-2 gap-1">
-                                            {Object.entries(extractedData.examination)
-                                                .filter(([k, v]) => v && v !== null && k !== 'other')
-                                                .map(([k, v]) => (
-                                                    <p key={k} className="text-teal-600 text-xs">
-                                                        <span className="font-medium capitalize">{k}:</span> {String(v)}
-                                                    </p>
-                                                ))}
+                                        <span className="font-medium text-teal-700 text-sm">
+                                            Examination Findings ({examinationPreview.length})
+                                        </span>
+                                        <div className="mt-1 grid grid-cols-1 md:grid-cols-2 gap-1">
+                                            {examinationPreview.map(item => (
+                                                <p key={item.path} className="text-teal-600 text-xs">
+                                                    <span className="font-medium">{item.label}:</span> {item.value}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Follow-up */}
+                                {extractedData.followUp && (extractedData.followUp.duration || extractedData.followUp.instructions || extractedData.followUp.warningSignsToWatch?.length) && (
+                                    <div className="p-2 bg-cyan-50 rounded border border-cyan-200">
+                                        <span className="font-medium text-cyan-700 text-sm">Follow-up</span>
+                                        <div className="mt-1 space-y-0.5">
+                                            {extractedData.followUp.duration && (
+                                                <p className="text-cyan-600 text-xs">After: {extractedData.followUp.duration}</p>
+                                            )}
+                                            {extractedData.followUp.instructions && (
+                                                <p className="text-cyan-600 text-xs">{extractedData.followUp.instructions}</p>
+                                            )}
+                                            {extractedData.followUp.warningSignsToWatch?.map((sign, idx) => (
+                                                <p key={idx} className="text-cyan-600 text-xs">⚠️ Return if: {sign}</p>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Other clinical content — nothing gets dropped, it goes to Doctor Notes */}
+                                {((extractedData as any).doctorNotes || (extractedData as any).unmappedFindings?.length > 0) && (
+                                    <div className="p-2 bg-gray-50 rounded border border-gray-200">
+                                        <span className="font-medium text-gray-700 text-sm">
+                                            Other Findings → Doctor Notes
+                                        </span>
+                                        <div className="mt-1 space-y-0.5">
+                                            {(extractedData as any).doctorNotes && (
+                                                <p className="text-gray-600 text-xs">{(extractedData as any).doctorNotes}</p>
+                                            )}
+                                            {((extractedData as any).unmappedFindings || []).map((item: any, idx: number) => (
+                                                <p key={idx} className="text-gray-600 text-xs">
+                                                    <span className="font-medium">{item.label}:</span> {item.value}
+                                                </p>
+                                            ))}
                                         </div>
                                     </div>
                                 )}

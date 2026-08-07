@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit, MessageCircle, Phone, Calendar, User, Stethoscope, UserCheck, AlertTriangle, Heart, Clock, CheckCircle, XCircle, Activity, DoorOpen } from 'lucide-react';
+import { Edit, MessageCircle, Phone, Calendar, User, Stethoscope, UserCheck, AlertTriangle, Heart, Clock, CheckCircle, XCircle, Activity, DoorOpen, Globe } from 'lucide-react';
 import { Appointment } from '../../types';
 import { format } from 'date-fns';
 import { toTitleCase } from '../../utils/stringUtils';
@@ -155,11 +155,23 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
       </div>
 
       {/* Appointment Type */}
-      <div className="flex items-center gap-1 mb-3">
+      <div className="flex items-center gap-1 mb-3 flex-wrap">
         {getAppointmentTypeIcon(appointment.appointmentType)}
         <span className="appointment-card-type">
           {appointment.appointmentType.replace('_', ' ').toLowerCase()}
         </span>
+
+        {/* Self-booked appointments arrive from the public page with an
+            unverified phone number, so reception needs to see them at a glance. */}
+        {appointment.bookingSource === 'public' && (
+          <span
+            title="Booked by the patient online — phone number not verified"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200"
+          >
+            <Globe className="w-2.5 h-2.5" />
+            Self-booked
+          </span>
+        )}
       </div>
 
       {/* Doctor Information (if available) */}

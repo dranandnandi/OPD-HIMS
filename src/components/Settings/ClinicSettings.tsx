@@ -4,6 +4,7 @@ import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSqua
 import { ClinicSetting, AppointmentType } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
+import { brand } from '../../config/branding';
 
 const ClinicSettings: React.FC = () => {
   const { user } = useAuth();
@@ -927,7 +928,7 @@ const ClinicSettings: React.FC = () => {
             </p>
             {user?.roleName?.toLowerCase() !== 'super_admin' && (
               <p className="text-xs text-gray-400 mt-1">
-                This is managed by The Doctorpreneur Academy — contact support to change it.
+                This is managed by {brand.company} — contact support to change it.
               </p>
             )}
           </div>

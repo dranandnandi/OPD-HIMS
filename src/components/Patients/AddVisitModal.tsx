@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, Upload, Camera, FileText, Loader2, CheckCircle, Save, Search, User, Plus, Calendar, Clock, Phone, Stethoscope } from 'lucide-react';
-import { Patient, Visit, OCRResult, Profile } from '../../types';
+import { Patient, Visit, OcrResult, Profile, ExaminationTemplate } from '../../types';
 import { processCasePaperWithAI } from '../../services/ocrService';
+import { examinationTemplateService } from '../../services/examinationTemplateService';
 import { patientService } from '../../services/patientService';
 import { authService } from '../../services/authService';
 import { useAuth } from '../Auth/useAuth';
@@ -37,8 +38,11 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
   );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
+  const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [useOCR, setUseOCR] = useState(false);
+  const [examTemplates, setExamTemplates] = useState<ExaminationTemplate[]>([]);
+  const [selectedExamTemplateId, setSelectedExamTemplateId] = useState<string>('');
+  const [selectedExamTemplate, setSelectedExamTemplate] = useState<ExaminationTemplate | null>(null);
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(patient || null);
@@ -131,12 +135,27 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
     }
   };
 
+  // Examination templates, so case-paper findings can be mapped onto the
+  // doctor's own fields rather than only the standard schema.
+  const loadExamTemplates = async () => {
+    try {
+      const data = await examinationTemplateService.getTemplates();
+      setExamTemplates(data);
+      // Default to the clinic's most-used template.
+      const mostUsed = [...data].sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))[0];
+      if (mostUsed) setSelectedExamTemplateId(mostUsed.id);
+    } catch {
+      // Templates are optional — the standard OPD schema is used instead.
+    }
+  };
+
   // Load doctors on component mount
   React.useEffect(() => {
     loadDoctors();
     if (!patient) {
       loadPatients();
     }
+    loadExamTemplates();
     // Load today's appointments
     loadTodaysAppointments(showAllDoctorsAppointments);
   }, []);
@@ -261,8 +280,21 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
         }
       }
 
-      const result = await processCasePaperWithAI(fileToProcess, selectedPatient?.id);
+      const template = examTemplates.find(t => t.id === selectedExamTemplateId);
+      const result = await processCasePaperWithAI(fileToProcess, selectedPatient?.id, undefined, {
+        examinationTemplate: template
+          ? {
+            sections: template.templateData.sections,
+            templateId: template.id,
+            templateName: template.name,
+            specialization: template.specialization
+          }
+          : undefined,
+        patientAge: selectedPatient?.age ?? undefined,
+        patientGender: selectedPatient?.gender
+      });
       setOcrResult(result);
+      setSelectedExamTemplate(template || null);
       setStep('emr');
     } catch (error) {
       console.error('OCR processing failed:', error);
@@ -279,13 +311,25 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
     onClose();
   };
 
-  const getEmptyOCRData = () => ({
-    symptoms: [],
-    vitals: {},
-    diagnoses: [],
-    prescriptions: [],
-    advice: []
-  });
+  const getEmptyOCRData = () => ({});
+
+  /** Blank copy of the chosen template, ready for the EMR form to fill. */
+  const buildInitialExamination = () => {
+    if (!selectedExamTemplate) return undefined;
+    return {
+      sections: selectedExamTemplate.templateData.sections.map(section => ({
+        ...section,
+        fields: section.fields.map(field => ({
+          ...field,
+          value: field.type === 'toggle' ? false : ''
+        }))
+      })),
+      aiGenerated: false,
+      specialization: selectedExamTemplate.specialization,
+      templateId: selectedExamTemplate.id,
+      templateName: selectedExamTemplate.name
+    };
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -591,6 +635,29 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
                 </button>
               </div>
 
+              {/* Which examination fields the AI should map findings into */}
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Examination template for AI mapping
+                </label>
+                <select
+                  value={selectedExamTemplateId}
+                  onChange={(e) => setSelectedExamTemplateId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Standard OPD examination fields</option>
+                  {examTemplates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.specialization ? ` — ${t.specialization}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-600 mt-2">
+                  Examination findings on the case paper are mapped into these fields. Anything that
+                  doesn't fit is added to Doctor Notes rather than discarded.
+                </p>
+              </div>
+
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                 <div className="space-y-4">
                   {selectedFile ? (
@@ -679,6 +746,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
                 patient={selectedPatient}
                 existingVisit={existingVisit}
                 ocrData={ocrResult?.extractedData || getEmptyOCRData()}
+                initialExamination={buildInitialExamination()}
                 initialVisitDate={visitDate}
                 initialVisitTime={selectedAppointmentTime}
                 initialDoctorId={selectedDoctorId}

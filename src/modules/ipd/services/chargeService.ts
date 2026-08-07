@@ -52,6 +52,45 @@ export const chargeService = {
     serviceCache = null;
   },
 
+  /**
+   * AI charge capture (billing utility): free text / dictation → matched
+   * services from THIS clinic's master. The AI only picks existing
+   * service_codes; anything it can't match is returned in `unmatched`.
+   * The caller resolves rates and posts — nothing is billed here.
+   */
+  async aiCaptureCharges(
+    clinicId: string,
+    text: string
+  ): Promise<{
+    matches: Array<{ service: ServiceRow; quantity: number; phrase?: string }>;
+    unmatched: string[];
+  }> {
+    const rows = await allServices(clinicId);
+    const catalog = rows.map((s) => ({
+      code: s.service_code,
+      name: s.name,
+      group: s.charge_group?.name ?? '',
+    }));
+
+    const { data, error } = await supabase.functions.invoke('ai-charge-capture', {
+      body: { text, services: catalog },
+    });
+    if (error) throw new Error(error.message ?? 'AI charge capture failed');
+    if (data?.error) throw new Error(data.error);
+
+    const byCode = new Map(rows.map((s) => [s.service_code.toLowerCase(), s]));
+    const matches = ((data?.items ?? []) as Array<{ service_code: string; quantity?: number; source_phrase?: string }>)
+      .map((it) => {
+        const service = byCode.get(String(it.service_code).toLowerCase());
+        return service
+          ? { service, quantity: Math.max(1, Number(it.quantity) || 1), phrase: it.source_phrase }
+          : null;
+      })
+      .filter((m): m is { service: ServiceRow; quantity: number; phrase?: string } => m !== null);
+
+    return { matches, unmatched: (data?.unmatched ?? []) as string[] };
+  },
+
   async listChargeGroups(clinicId: string): Promise<ChargeGroup[]> {
     const { data, error } = await supabase
       .from('charge_groups')

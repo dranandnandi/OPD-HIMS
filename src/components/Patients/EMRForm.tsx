@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Plus, Trash2, Calendar, Zap, Image, Upload, Camera, Link, X, Loader2, Sparkles, Eye } from 'lucide-react';
-import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered, Profile, PhysicalExamination, VoiceTranscript, VisitImage, MedicineMaster, TestMaster } from '../../types';
+import { Save, Plus, Trash2, Calendar, Zap, Image, Upload, Camera, Link, X, Loader2, Sparkles, Eye, AlertTriangle } from 'lucide-react';
+import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered, Profile, PhysicalExamination, VoiceTranscript, VisitImage, MedicineMaster, TestMaster, OcrResult } from '../../types';
 import PhysicalExaminationSection from './PhysicalExaminationSection';
 import VoiceRecorder from './VoiceRecorder';
 import { getCurrentProfile } from '../../services/profileService';
@@ -12,6 +12,12 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase } from '../../utils/stringUtils';
 import { analyzeVisitImageWithAI } from '../../services/ocrService';
+import {
+  normalizeExtraction,
+  mergeExtractionIntoForm,
+  summarizeMerge,
+  MergeSummary
+} from '../../utils/emrMapping';
 
 interface EMRFormProps {
   patient: Patient;
@@ -20,20 +26,35 @@ interface EMRFormProps {
   initialVisitTime?: string; // HH:mm from appointment, if created from appointment
   initialDoctorId?: string;  // Doctor from appointment, if created from appointment
   appointmentId?: string;    // Link visit to the appointment
-  ocrData: {
-    symptoms: string[];
-    vitals: {
-      temperature?: string;
-      bloodPressure?: string;
-      pulse?: string;
-      weight?: string;
-      height?: string;
-    };
-    diagnoses: string[];
-    prescriptions: string[];
-    advice: string[];
-  };
+  /** Raw extraction from the case-paper pipeline; merged in via the shared AI mapper. */
+  ocrData: OcrResult['extractedData'] | Record<string, never>;
+  /** Blank examination template chosen before case-paper processing, if any. */
+  initialExamination?: PhysicalExamination;
   onSave: () => void;
+}
+
+/** Visit form state. Structurally satisfies EmrFormDataLike so the AI mapper can merge into it. */
+interface EmrFormState {
+  chiefComplaint: string;
+  visitDate: string;
+  symptoms: Array<Omit<Symptom, 'id' | 'visitId' | 'createdAt'>>;
+  vitals: {
+    temperature: string;
+    bloodPressure: string;
+    pulse: string;
+    weight: string;
+    height: string;
+    respiratoryRate: string;
+    oxygenSaturation: string;
+  };
+  diagnoses: Array<Omit<Diagnosis, 'id' | 'visitId' | 'createdAt'>>;
+  prescriptions: Prescription[];
+  testsOrdered: Array<Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'>>;
+  advice: string[];
+  adviceLanguage: string;
+  adviceRegional: string;
+  followUpDate: string;
+  doctorNotes: string;
 }
 
 const getCurrentLocalTime = () => {
@@ -41,7 +62,7 @@ const getCurrentLocalTime = () => {
   return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 };
 
-const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, initialVisitDate, initialVisitTime, initialDoctorId, appointmentId: appointmentIdProp, onSave }) => {
+const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, initialExamination, initialVisitDate, initialVisitTime, initialDoctorId, appointmentId: appointmentIdProp, onSave }) => {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -60,8 +81,14 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     return initialVisitTime || getCurrentLocalTime();
   });
   const [physicalExamination, setPhysicalExamination] = useState<PhysicalExamination | undefined>(
-    existingVisit?.physicalExamination
+    existingVisit?.physicalExamination || initialExamination
   );
+  // Read inside the setFormData updater, where the latest examination state is
+  // needed but not available through the closure.
+  const physicalExaminationRef = useRef(physicalExamination);
+  useEffect(() => {
+    physicalExaminationRef.current = physicalExamination;
+  }, [physicalExamination]);
   const [presets, setPresets] = useState<PrescriptionPreset[]>([]);
   const [loadingPresets, setLoadingPresets] = useState(false);
   const [visitImages, setVisitImages] = useState<VisitImage[]>(existingVisit?.visitImages || []);
@@ -75,7 +102,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const [showTestSuggestions, setShowTestSuggestions] = useState<{ [key: number]: boolean }>({});
 
   // Helper function to convert existing visit data to form format
-  const convertExistingVisitToFormData = (visit: Visit) => {
+  const convertExistingVisitToFormData = (visit: Visit): EmrFormState => {
     return {
       chiefComplaint: visit.chiefComplaint || '',
       visitDate: new Date(visit.date).toISOString().split('T')[0],
@@ -90,7 +117,9 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         bloodPressure: visit.vitals.bloodPressure || '',
         pulse: visit.vitals.pulse?.toString() || '',
         weight: visit.vitals.weight?.toString() || '',
-        height: visit.vitals.height?.toString() || ''
+        height: visit.vitals.height?.toString() || '',
+        respiratoryRate: visit.vitals.respiratoryRate?.toString() || '',
+        oxygenSaturation: visit.vitals.oxygenSaturation?.toString() || ''
       },
       diagnoses: visit.diagnoses?.map(diagnosis => ({
         name: diagnosis.name,
@@ -116,42 +145,58 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     };
   };
 
-  const [formData, setFormData] = useState({
-    ...(existingVisit
+  const [formData, setFormData] = useState<EmrFormState>(
+    existingVisit
       ? convertExistingVisitToFormData(existingVisit)
       : {
+        // Case-paper data is merged in by the effect below via the shared AI
+        // mapper, so examination findings, follow-up and unmapped content are
+        // handled the same way as voice dictation instead of being dropped.
         chiefComplaint: '',
         visitDate: new Date().toISOString().split('T')[0],
-        symptoms: ocrData.symptoms || [] as Omit<Symptom, 'id' | 'visitId' | 'createdAt'>[],
+        symptoms: [],
         vitals: {
-          temperature: ocrData.vitals.temperature || '',
-          bloodPressure: ocrData.vitals.bloodPressure || '',
-          pulse: ocrData.vitals.pulse || '',
-          weight: ocrData.vitals.weight || '',
-          height: ocrData.vitals.height || ''
+          temperature: '',
+          bloodPressure: '',
+          pulse: '',
+          weight: '',
+          height: '',
+          respiratoryRate: '',
+          oxygenSaturation: ''
         },
-        diagnoses: ocrData.diagnoses || [] as Omit<Diagnosis, 'id' | 'visitId' | 'createdAt'>[],
-        prescriptions: ocrData.prescriptions?.map((prescription, index) => ({
-          id: `prescription_${Date.now()}_${index}`,
-          visitId: '',
-          medicine: prescription.medicine,
-          dosage: prescription.dosage,
-          frequency: prescription.frequency,
-          duration: prescription.duration,
-          instructions: prescription.instructions,
-          quantity: prescription.quantity,
-          refills: prescription.refills,
-          createdAt: new Date()
-        })) || [] as Prescription[],
-        testsOrdered: ocrData.testsOrdered || [] as Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'>[],
-        advice: ocrData.advice || [],
+        diagnoses: [],
+        prescriptions: [],
+        testsOrdered: [],
+        advice: [],
         adviceLanguage: 'english',
         adviceRegional: '',
         followUpDate: '',
         doctorNotes: ''
       }
-    )
-  });
+  );
+
+  // Mirrors formData so AI merges always build on the latest value, including
+  // when two extractions are applied in quick succession.
+  const formDataRef = useRef(formData);
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
+  // Apply case-paper OCR output once, through the same mapper the voice and
+  // image flows use. Runs only for a new visit — an existing visit is loaded
+  // from the database instead.
+  const ocrAppliedRef = useRef(false);
+  useEffect(() => {
+    if (existingVisit || ocrAppliedRef.current) return;
+    const hasOcrContent = ocrData && Object.values(ocrData).some(
+      value => (Array.isArray(value) ? value.length > 0 : value && Object.keys(value as object).length !== 0)
+    );
+    if (!hasOcrContent) return;
+
+    ocrAppliedRef.current = true;
+    applyAiExtraction(ocrData, 'Case paper');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocrData, existingVisit]);
 
   // Load medicines and tests on component mount
   useEffect(() => {
@@ -441,6 +486,39 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     }));
   };
 
+  // --- Clinical safety: patient allergies ---
+  const patientAllergies = (patient.allergies || [])
+    .map(a => (a || '').trim())
+    .filter(Boolean);
+
+  // Returns the allergy term that appears to conflict with the given medicine name, if any.
+  const allergyConflictFor = (medicineName: string): string | null => {
+    const med = (medicineName || '').trim().toLowerCase();
+    if (!med) return null;
+    for (const allergy of patientAllergies) {
+      const term = allergy.toLowerCase();
+      if (term.length < 3) continue;
+      if (med.includes(term) || term.includes(med)) return allergy;
+    }
+    return null;
+  };
+
+  // --- BMI from weight (kg) and height (cm) ---
+  const computeBmi = (): { value: string; category: string; color: string } | null => {
+    const w = parseFloat(formData.vitals.weight);
+    const h = parseFloat(formData.vitals.height);
+    if (!w || !h || h <= 0) return null;
+    const bmi = w / Math.pow(h / 100, 2);
+    if (!isFinite(bmi) || bmi <= 0 || bmi > 200) return null;
+    let category = 'Normal';
+    let color = 'text-green-600';
+    if (bmi < 18.5) { category = 'Underweight'; color = 'text-amber-600'; }
+    else if (bmi < 25) { category = 'Normal'; color = 'text-green-600'; }
+    else if (bmi < 30) { category = 'Overweight'; color = 'text-amber-600'; }
+    else { category = 'Obese'; color = 'text-red-600'; }
+    return { value: bmi.toFixed(1), category, color };
+  };
+
   const addTestOrdered = () => {
     setFormData(prev => ({
       ...prev,
@@ -553,6 +631,36 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     setVisitImages(prev => prev.map(img => img.id === id ? { ...img, context } : img));
   };
 
+  /**
+   * Single entry point for every AI source (voice dictation, case paper, image
+   * analysis). Normalises the payload, merges it into the form and the
+   * examination — falling back to the standard OPD schema when no template is
+   * loaded — and reports exactly what was applied.
+   */
+  const applyAiExtraction = (raw: unknown, sourceLabel: string): MergeSummary | null => {
+    if (!raw) return null;
+
+    const extraction = normalizeExtraction(raw);
+    const merged = mergeExtractionIntoForm(
+      formDataRef.current,
+      extraction,
+      physicalExaminationRef.current,
+      { sourceLabel }
+    );
+
+    // Update the refs immediately so back-to-back applies (e.g. analysing two
+    // images in a row) merge onto each other rather than the stale render value.
+    formDataRef.current = merged.formData;
+    setFormData(merged.formData);
+
+    if (merged.examination !== physicalExaminationRef.current) {
+      physicalExaminationRef.current = merged.examination;
+      setPhysicalExamination(merged.examination);
+    }
+
+    return merged.summary;
+  };
+
   const handleAnalyzeImage = async (img: VisitImage) => {
     setAnalyzingImageId(img.id);
     try {
@@ -565,7 +673,8 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         chiefComplaint: formData.chiefComplaint,
         symptoms: formData.symptoms.map(s => s.name).filter(Boolean),
         diagnoses: formData.diagnoses.map(d => d.name).filter(Boolean),
-        doctorContext: img.context || undefined
+        doctorContext: img.context || undefined,
+        examinationTemplate: physicalExamination
       });
 
       // Save AI description back to image
@@ -574,101 +683,17 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         : i
       ));
 
-      const sd = result.structuredData;
+      // The visual description is clinical content in its own right — keep it
+      // even when the model returned no separate doctorNotes.
+      const structured = {
+        ...result.structuredData,
+        doctorNotes: [result.structuredData.doctorNotes, result.structuredData.doctorNotes ? null : result.description]
+          .filter(Boolean)
+          .join('\n') || null
+      };
 
-      // Apply symptoms
-      if (sd.symptoms?.length) {
-        const newSymptoms = sd.symptoms
-          .filter(s => s.name?.trim())
-          .map(s => ({
-            name: s.name,
-            severity: (s.severity as 'mild' | 'moderate' | 'severe') || undefined,
-            duration: s.duration || undefined,
-            notes: s.notes || undefined
-          }));
-        setFormData(prev => ({ ...prev, symptoms: [...prev.symptoms, ...newSymptoms] }));
-      }
-
-      // Apply diagnoses
-      if (sd.diagnoses?.length) {
-        const newDiagnoses = sd.diagnoses
-          .filter(d => d.name?.trim())
-          .map(d => ({
-            name: d.name,
-            icd10Code: d.icd10Code || undefined,
-            isPrimary: d.isPrimary || false,
-            notes: d.notes || undefined
-          }));
-        setFormData(prev => ({ ...prev, diagnoses: [...prev.diagnoses, ...newDiagnoses] }));
-      }
-
-      // Apply vitals
-      if (sd.vitals && Object.values(sd.vitals).some(v => v)) {
-        setFormData(prev => ({
-          ...prev,
-          vitals: {
-            temperature: sd.vitals?.temperature || prev.vitals.temperature,
-            bloodPressure: sd.vitals?.bloodPressure || prev.vitals.bloodPressure,
-            pulse: sd.vitals?.pulse || prev.vitals.pulse,
-            weight: sd.vitals?.weight || prev.vitals.weight,
-            height: sd.vitals?.height || prev.vitals.height
-          }
-        }));
-      }
-
-      // Apply prescriptions
-      if (sd.prescriptions?.length) {
-        const newRx = sd.prescriptions
-          .filter(p => p.medicine?.trim())
-          .map(p => ({
-            id: `ai_rx_${Date.now()}_${Math.random()}`,
-            visitId: '',
-            medicine: p.medicine,
-            dosage: p.dosage || '1 tablet',
-            frequency: p.frequency || 'BD',
-            duration: p.duration || '5 days',
-            instructions: p.instructions || 'After meals',
-            createdAt: new Date()
-          }));
-        setFormData(prev => ({ ...prev, prescriptions: [...prev.prescriptions, ...newRx] }));
-      }
-
-      // Apply tests ordered
-      if (sd.testsOrdered?.length) {
-        const newTests = sd.testsOrdered
-          .filter(t => t.testName?.trim())
-          .map(t => ({
-            testName: t.testName,
-            testType: (t.testType || 'lab') as 'lab' | 'radiology' | 'procedure' | 'other',
-            urgency: (t.urgency || 'routine') as 'routine' | 'urgent' | 'stat',
-            status: 'ordered' as const,
-            orderedDate: new Date()
-          }));
-        setFormData(prev => ({ ...prev, testsOrdered: [...prev.testsOrdered, ...newTests] }));
-      }
-
-      // Apply advice
-      if (sd.advice?.length) {
-        setFormData(prev => ({ ...prev, advice: [...prev.advice, ...sd.advice!.filter(Boolean)] }));
-      }
-
-      // Apply chief complaint if not set
-      if (sd.chiefComplaint && !formData.chiefComplaint) {
-        setFormData(prev => ({ ...prev, chiefComplaint: sd.chiefComplaint! }));
-      }
-
-      // Apply doctor notes (append, don't overwrite)
-      const noteToAdd = sd.doctorNotes || result.description;
-      if (noteToAdd) {
-        setFormData(prev => ({
-          ...prev,
-          doctorNotes: prev.doctorNotes
-            ? `${prev.doctorNotes}\n\n[Image AI - ${img.imageType}]: ${noteToAdd}`
-            : `[Image AI - ${img.imageType}]: ${noteToAdd}`
-        }));
-      }
-
-      alert(`Image analyzed successfully! ${result.imageCategory === 'clinical_photo' || result.imageCategory === 'xray' ? 'Clinical findings added to Doctor Notes.' : 'Medical data extracted and applied to EMR.'}`);
+      const summary = applyAiExtraction(structured, `Image AI — ${img.imageType}`);
+      alert(summary ? summarizeMerge(summary) : 'Image analyzed, but no data could be extracted.');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to analyze image');
     } finally {
@@ -702,7 +727,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
 
         symptoms: formData.symptoms.filter(
           (s) => typeof s.name === 'string' && s.name.trim() !== ''
-        ),
+        ) as Visit['symptoms'],
 
         vitals: {
           temperature: formData.vitals.temperature ? parseFloat(formData.vitals.temperature) : undefined,
@@ -710,13 +735,13 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           pulse: formData.vitals.pulse ? parseInt(formData.vitals.pulse) : undefined,
           weight: formData.vitals.weight ? parseFloat(formData.vitals.weight) : undefined,
           height: formData.vitals.height ? parseFloat(formData.vitals.height) : undefined,
-          respiratoryRate: undefined,
-          oxygenSaturation: undefined
+          respiratoryRate: formData.vitals.respiratoryRate ? parseInt(formData.vitals.respiratoryRate) : undefined,
+          oxygenSaturation: formData.vitals.oxygenSaturation ? parseFloat(formData.vitals.oxygenSaturation) : undefined
         },
 
         diagnoses: formData.diagnoses.filter(
           (d) => typeof d.name === 'string' && d.name.trim() !== ''
-        ),
+        ) as Visit['diagnoses'],
 
         prescriptions: formData.prescriptions.filter(
           (p) => typeof p.medicine === 'string' && p.medicine.trim() !== ''
@@ -724,7 +749,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
 
         testsOrdered: formData.testsOrdered.filter(
           (t) => typeof t.testName === 'string' && t.testName.trim() !== ''
-        ),
+        ) as Visit['testsOrdered'],
 
         testResults: existingVisit?.testResults || [],
 
@@ -817,19 +842,38 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         )}
       </div>
 
-      {/* Visit Date */}
+      {/* Visit Date & Time */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Visit Date</label>
-        <div className="relative">
-          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <label className="block text-sm font-medium text-gray-700 mb-1">Visit Date &amp; Time</label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
           <input
-            type="date"
-            value={visitDate}
-            onChange={(e) => setVisitDate(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            type="time"
+            value={visitTime}
+            onChange={(e) => setVisitTime(e.target.value)}
+            className="w-36 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
       </div>
+
+      {/* Allergy alert — always visible so the prescriber is aware */}
+      {patientAllergies.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-600 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-700">Known allergies</p>
+            <p className="text-sm text-red-700">{patientAllergies.join(', ')}</p>
+          </div>
+        </div>
+      )}
 
       {/* Chief Complaint */}
       <div>
@@ -843,24 +887,6 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         />
       </div>
 
-      {/* Visit Date & Time */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Visit Date &amp; Time</label>
-        <div className="flex gap-2">
-          <input
-            type="date"
-            value={formData.visitDate}
-            onChange={(e) => setFormData({ ...formData, visitDate: e.target.value })}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <input
-            type="time"
-            value={visitTime}
-            onChange={(e) => setVisitTime(e.target.value)}
-            className="w-36 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      </div>
 
       {/* Symptoms */}
       <div>
@@ -917,7 +943,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
       {/* Vitals */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Vitals</label>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Temperature</label>
             <input
@@ -983,7 +1009,45 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
               placeholder="170 cm"
             />
           </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">SpO₂</label>
+            <input
+              type="text"
+              value={formData.vitals.oxygenSaturation}
+              onChange={(e) => setFormData({
+                ...formData,
+                vitals: { ...formData.vitals, oxygenSaturation: e.target.value }
+              })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="98%"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Respiratory Rate</label>
+            <input
+              type="text"
+              value={formData.vitals.respiratoryRate}
+              onChange={(e) => setFormData({
+                ...formData,
+                vitals: { ...formData.vitals, respiratoryRate: e.target.value }
+              })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="18 /min"
+            />
+          </div>
         </div>
+        {(() => {
+          const bmi = computeBmi();
+          if (!bmi) return null;
+          return (
+            <div className="mt-2 flex items-center gap-2 text-sm">
+              <span className="text-gray-600">BMI:</span>
+              <span className={`font-semibold ${bmi.color}`}>{bmi.value}</span>
+              <span className={`${bmi.color}`}>({bmi.category})</span>
+              <span className="text-xs text-gray-400">auto-calculated from weight &amp; height</span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Physical Examination - AI Powered */}
@@ -993,7 +1057,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         doctorSpecialization={doctors.find(d => d.id === selectedDoctorId)?.specialization}
         chiefComplaint={formData.chiefComplaint}
         symptoms={formData.symptoms.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)}
-        patientAge={patient.age}
+        patientAge={patient.age ?? undefined}
         patientGender={patient.gender}
       />
 
@@ -1002,152 +1066,14 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         visitId={existingVisit?.id}
         chiefComplaint={formData.chiefComplaint}
         currentSymptoms={formData.symptoms.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)}
+        currentDiagnoses={formData.diagnoses.map(d => typeof d === 'string' ? d : d.name).filter(Boolean)}
         examinationTemplate={physicalExamination}
+        patientAge={patient.age ?? undefined}
+        patientGender={patient.gender}
+        doctorSpecialization={doctors.find(d => d.id === selectedDoctorId)?.specialization}
         onApplyToForm={(data: VoiceTranscript['extractedData']) => {
-          if (!data) return;
-
-          // Apply extracted symptoms with enhanced details
-          if (data.symptoms?.length) {
-            const newSymptoms = data.symptoms.map(s => {
-              // Build notes from additional details
-              const notesParts: string[] = [];
-              if (s.location) notesParts.push(`Location: ${s.location}`);
-              if (s.pattern) notesParts.push(`Pattern: ${s.pattern}`);
-              if (s.character) notesParts.push(`Character: ${s.character}`);
-              if (s.aggravatingFactors) notesParts.push(`Worse with: ${s.aggravatingFactors}`);
-              if (s.relievingFactors) notesParts.push(`Better with: ${s.relievingFactors}`);
-
-              return {
-                name: s.name,
-                severity: (s.severity as 'mild' | 'moderate' | 'severe') || undefined,
-                duration: s.duration || undefined,
-                notes: notesParts.length > 0 ? notesParts.join('; ') : undefined
-              };
-            });
-            setFormData(prev => ({
-              ...prev,
-              symptoms: [...prev.symptoms, ...newSymptoms]
-            }));
-          }
-
-          // Apply extracted diagnoses (handle both string and object format)
-          if (data.diagnoses?.length) {
-            const newDiagnoses = data.diagnoses.map(d => {
-              if (typeof d === 'string') {
-                return {
-                  name: d,
-                  icd10Code: undefined,
-                  isPrimary: false,
-                  notes: undefined
-                };
-              }
-              return {
-                name: d.name,
-                icd10Code: d.icd10Code || undefined,
-                isPrimary: d.isPrimary || false,
-                notes: d.notes || undefined
-              };
-            });
-            setFormData(prev => ({
-              ...prev,
-              diagnoses: [...prev.diagnoses, ...newDiagnoses]
-            }));
-          }
-
-          // Apply extracted vitals
-          if (data.vitals) {
-            setFormData(prev => ({
-              ...prev,
-              vitals: {
-                ...prev.vitals,
-                temperature: data.vitals?.temperature || prev.vitals.temperature,
-                bloodPressure: data.vitals?.bloodPressure || prev.vitals.bloodPressure,
-                pulse: data.vitals?.pulse || prev.vitals.pulse,
-                weight: data.vitals?.weight || prev.vitals.weight
-              }
-            }));
-          }
-
-          // Apply extracted prescriptions
-          if (data.prescriptions?.length) {
-            const newPrescriptions = data.prescriptions.map(p => ({
-              medicine: p.medicine,
-              dosage: p.dosage || '',
-              frequency: p.frequency || '',
-              duration: p.duration || '',
-              instructions: p.instructions || '',
-              quantity: '',
-              refills: 0
-            }));
-            setFormData(prev => ({
-              ...prev,
-              prescriptions: [...prev.prescriptions, ...newPrescriptions]
-            }));
-          }
-
-          // Apply extracted advice
-          if (data.advice?.length) {
-            setFormData(prev => ({
-              ...prev,
-              advice: [...prev.advice, ...data.advice!]
-            }));
-          }
-
-          // Apply examination findings to loaded template fields
-          if (data.examination && physicalExamination?.sections?.length) {
-            const examData = data.examination as Record<string, any>;
-            setPhysicalExamination(prev => {
-              if (!prev?.sections) return prev;
-              return {
-                ...prev,
-                sections: prev.sections.map(section => {
-                  // Check if AI returned data for this section (by section id or title match)
-                  const sectionData = examData[section.id] || examData[section.title?.toLowerCase()?.replace(/\s+/g, '')] || null;
-                  if (!sectionData || typeof sectionData !== 'object') {
-                    // Also check if fields are at root level (flat structure from AI)
-                    return {
-                      ...section,
-                      fields: section.fields.map(field => {
-                        const val = examData[field.key];
-                        if (val !== undefined && val !== null) {
-                          return { ...field, value: typeof val === 'boolean' ? val : String(val) };
-                        }
-                        return field;
-                      })
-                    };
-                  }
-                  return {
-                    ...section,
-                    fields: section.fields.map(field => {
-                      const val = sectionData[field.key];
-                      if (val !== undefined && val !== null) {
-                        return { ...field, value: typeof val === 'boolean' ? val : String(val) };
-                      }
-                      return field;
-                    })
-                  };
-                })
-              };
-            });
-          }
-
-          // Apply follow-up if mentioned
-          if (data.followUp?.duration) {
-            // Try to parse follow-up duration into date
-            const durationMatch = data.followUp.duration.match(/(\d+)\s*(day|week|month)/i);
-            if (durationMatch) {
-              const [, num, unit] = durationMatch;
-              const futureDate = new Date();
-              if (unit.toLowerCase() === 'day') futureDate.setDate(futureDate.getDate() + parseInt(num));
-              else if (unit.toLowerCase() === 'week') futureDate.setDate(futureDate.getDate() + parseInt(num) * 7);
-              else if (unit.toLowerCase() === 'month') futureDate.setMonth(futureDate.getMonth() + parseInt(num));
-
-              setFormData(prev => ({
-                ...prev,
-                followUpDate: futureDate.toISOString().split('T')[0]
-              }));
-            }
-          }
+          const summary = applyAiExtraction(data, 'Voice dictation');
+          if (summary) alert(summarizeMerge(summary));
         }}
       />
 
@@ -1238,10 +1164,22 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
             Add
           </button>
         </div>
+        <datalist id="rx-routes">
+          <option value="PO (Oral)" />
+          <option value="IV (Intravenous)" />
+          <option value="IM (Intramuscular)" />
+          <option value="SC (Subcutaneous)" />
+          <option value="SL (Sublingual)" />
+          <option value="PR (Rectal)" />
+          <option value="Topical" />
+          <option value="Inhaled" />
+          <option value="Ophthalmic" />
+          <option value="Nasal" />
+        </datalist>
         <div className="space-y-4">
           {formData.prescriptions.map((prescription, index) => (
             <div key={prescription.id} className="border border-gray-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
                 <div className="relative">
                   <label className="block text-xs text-gray-600 mb-1">Medicine</label>
                   <input
@@ -1283,6 +1221,16 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
                       ))}
                     </div>
                   )}
+                  {(() => {
+                    const conflict = allergyConflictFor(prescription.medicine);
+                    if (!conflict) return null;
+                    return (
+                      <div className="mt-1 flex items-start gap-1 text-red-600">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <span className="text-xs">Allergy alert: patient is allergic to "{conflict}"</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Dosage</label>
@@ -1326,25 +1274,58 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
                     placeholder="5 days"
                   />
                 </div>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-600 mb-1">Instructions</label>
-                    <input
-                      type="text"
-                      value={prescription.instructions}
-                      onChange={(e) => updatePrescription(index, 'instructions', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="After meals"
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => removePrescription(index)}
-                      className="p-2 text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={prescription.quantity ?? ''}
+                    onChange={(e) => updatePrescription(index, 'quantity', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g. 10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Refills</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={prescription.refills ?? ''}
+                    onChange={(e) => updatePrescription(index, 'refills', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <div className="w-40">
+                  <label className="block text-xs text-gray-600 mb-1">Route</label>
+                  <input
+                    type="text"
+                    list="rx-routes"
+                    value={prescription.route ?? ''}
+                    onChange={(e) => updatePrescription(index, 'route', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="PO / IV / IM"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-600 mb-1">Instructions</label>
+                  <input
+                    type="text"
+                    value={prescription.instructions}
+                    onChange={(e) => updatePrescription(index, 'instructions', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="After meals"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={() => removePrescription(index)}
+                    className="p-2 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

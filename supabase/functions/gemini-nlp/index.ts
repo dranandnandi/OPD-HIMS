@@ -1,9 +1,35 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  resolveExaminationSchema,
+  describeExaminationSchema,
+  EXAMINATION_MAPPING_RULES
+} from "../_shared/examinationSchema.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+
+// Vitals arrive as strings ("98.6 F", "120/80") or numbers depending on the
+// model's mood. Keep them as trimmed strings — the form fields are text inputs
+// and visitService parses them at save time.
+const asVital = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return String(value);
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (['n/a', 'na', 'null', 'not mentioned', 'not recorded', '-', 'nil'].includes(lower)) return null;
+  return text;
+};
+
+const asText = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = Array.isArray(value) ? value.filter(Boolean).join('; ') : String(value);
+  const trimmed = text.trim();
+  return trimmed && trimmed.toLowerCase() !== 'null' ? trimmed : null;
 };
 
 serve(async (req) => {
@@ -12,7 +38,7 @@ serve(async (req) => {
   }
 
   try {
-    const { rawText, cleanedMedicalText, ocrUploadId } = await req.json();
+    const { rawText, cleanedMedicalText, ocrUploadId, examinationSchema, visitContext } = await req.json();
     const textInput = rawText || cleanedMedicalText;
 
     if (!textInput || textInput.trim() === '') {
@@ -40,54 +66,84 @@ serve(async (req) => {
       });
     }
 
+    const examSchema = resolveExaminationSchema(examinationSchema);
+    const examSchemaText = describeExaminationSchema(examSchema);
+
     const prompt = `You are a highly accurate medical data extraction AI specialized in Indian clinical case papers. Your task is to extract clinically relevant data from raw OCR-scanned text written by Indian doctors and return it as a structured JSON object using the exact schema provided below.
 
 🌟 OBJECTIVE:
 Parse the input text carefully, identify clinical information, and represent it in the structured schema. Pay close attention to format, terminology, and correctness. Normalize where applicable, but never fabricate missing data.
 
+🚨 THE GOLDEN RULE — NOTHING MAY BE LOST:
+Every clinically relevant item written on the case paper must appear somewhere in your JSON.
+If something fits no structured field, put it in "unmappedFindings" or "doctorNotes".
+Dropping content is a serious error. Inventing content is equally serious.
+
 ❌ COMMON MISTAKES TO AVOID:
 - Do NOT skip symptoms like "Hair fall" or "Diffuse thinning" if mentioned.
-- Do NOT mislabel external-use items (e.g. shampoo, serum) as “tablet.”
+- Do NOT mislabel external-use items (e.g. shampoo, serum) as "tablet."
 - Do NOT assign arbitrary durations if they are not present in the source.
 - Do NOT leave ICD-10 codes empty if a known diagnosis clearly maps (e.g., MPB → "L64.0").
 - Do NOT include clinic branding, addresses, doctor names, or administrative content.
+- Do NOT put investigations into "advice" — they belong in "testsOrdered".
 
 ✅ WHAT TO INCLUDE:
-- Symptoms and complaints exactly as mentioned.
-- Diagnoses with clinical notes (e.g., “Grade-III”), and ICD-10 codes if clearly inferable.
-- Medications and topicals with correct form (tablet, serum, shampoo, etc.), frequency, duration, and instructions.
+- Symptoms and complaints exactly as mentioned, with severity/duration/location when written.
+- Diagnoses with clinical notes (e.g., "Grade-III"), and ICD-10 codes if clearly inferable.
+- Examination findings — map them onto the examination fields listed below.
+- Medications and topicals with correct form (tablet, serum, shampoo, etc.), frequency, duration, instructions.
+- Investigations / lab tests ordered (e.g. "CBC", "Ferritin", "TSH") in "testsOrdered".
 - Medical advice and follow-up instructions.
-✅ Include any test orders or lab investigations (e.g., "CBC", "Ferritin", "TSH") under the 'advice' field.
-- Vitals (only if explicitly mentioned in the text).
+- Vitals (only if explicitly written) — return them as strings exactly as written, with units.
+- Past history, allergies, surgical history, family history → "doctorNotes".
 
-📦 OUTPUT FORMAT (JSON):
+EXAMINATION TARGET FIELDS ${examSchema.isTemplate
+        ? `(the doctor's own template${examSchema.templateName ? `: "${examSchema.templateName}"` : ''} — use these exact keys)`
+        : '(standard OPD schema — use these exact keys)'}:
+${examSchemaText}
+
+${EXAMINATION_MAPPING_RULES}
+${visitContext?.patientAge || visitContext?.patientGender ? `\nPATIENT: ${visitContext?.patientAge || '?'} years, ${visitContext?.patientGender || 'unknown'}` : ''}
+
+📦 OUTPUT FORMAT (return ONLY this JSON):
 {
-  "symptoms": [string],
-  "diagnoses": [
+  "chiefComplaint": string | null,
+  "symptoms": [
     {
       "name": string,
-      "icd10Code": string | null,
-      "notes": string | null,
-      "isPrimary": boolean
+      "severity": "mild" | "moderate" | "severe" | null,
+      "duration": string | null,
+      "location": string | null,
+      "notes": string | null
     }
   ],
   "vitals": {
-    "pulse": string,
-    "temperature": string,
-    "bloodPressure": string,
-    "weight": string,
-    "height": string
+    "pulse": string | null,
+    "temperature": string | null,
+    "bloodPressure": string | null,
+    "weight": string | null,
+    "height": string | null,
+    "respiratoryRate": string | null,
+    "oxygenSaturation": string | null
   },
-  "prescriptions": [
-    {
-      "medicine": string,
-      "dosage": string,
-      "frequency": string,
-      "duration": string,
-      "instructions": string
-    }
+  "examination": { "<sectionId>": { "<fieldKey>": "value" } },
+  "diagnoses": [
+    { "name": string, "icd10Code": string | null, "notes": string | null, "isPrimary": boolean }
   ],
-  "advice": [string]  // Includes follow-up, procedures, and test orders
+  "prescriptions": [
+    { "medicine": string, "dosage": string, "frequency": string, "duration": string, "instructions": string }
+  ],
+  "testsOrdered": [
+    { "testName": string, "testType": "lab" | "radiology" | "procedure" | "other", "urgency": "routine" | "urgent" | "stat", "instructions": string | null }
+  ],
+  "advice": [string],
+  "followUp": {
+    "duration": string | null,
+    "instructions": string | null,
+    "warningSignsToWatch": [string] | null
+  },
+  "doctorNotes": string | null,
+  "unmappedFindings": [ { "label": string, "value": string } ]
 }
 
 RAW OCR TEXT:
@@ -102,7 +158,8 @@ ${textInput}`;
           temperature: 0.1,
           topK: 1,
           topP: 1,
-          maxOutputTokens: 4096
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json'
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
@@ -131,67 +188,81 @@ ${textInput}`;
       } else {
         throw new Error('No valid JSON found in response');
       }
-    } catch (parseError) {
+    } catch (_parseError) {
+      // Keep the model output rather than returning an empty record
       extractedData = {
         symptoms: [],
-        vitals: {
-          temperature: null,
-          bloodPressure: null,
-          pulse: null,
-          weight: null,
-          height: null,
-          respiratoryRate: null,
-          oxygenSaturation: null
-        },
+        vitals: {},
+        examination: {},
         diagnoses: [],
         prescriptions: [],
         testsOrdered: [],
         advice: [],
+        followUp: null,
         chiefComplaint: null,
-        doctorNotes: null
+        doctorNotes: generatedText,
+        unmappedFindings: []
       };
     }
 
     const cleanedData = {
+      chiefComplaint: asText(extractedData.chiefComplaint),
       symptoms: Array.isArray(extractedData.symptoms) ? extractedData.symptoms.map((symptom: any) => ({
-        name: typeof symptom === 'string' ? symptom : symptom.name || '',
+        name: typeof symptom === 'string' ? symptom : asText(symptom?.name) || '',
         severity: ['mild', 'moderate', 'severe'].includes(symptom?.severity) ? symptom.severity : null,
-        duration: symptom?.duration || null,
-        notes: symptom?.notes || null
+        duration: asText(symptom?.duration),
+        location: asText(symptom?.location),
+        notes: asText(symptom?.notes)
       })).filter((s: any) => s.name) : [],
       vitals: {
-        temperature: typeof extractedData.vitals?.temperature === 'number' ? extractedData.vitals.temperature : null,
-        bloodPressure: typeof extractedData.vitals?.bloodPressure === 'string' ? extractedData.vitals.bloodPressure : null,
-        pulse: typeof extractedData.vitals?.pulse === 'number' ? extractedData.vitals.pulse : null,
-        weight: typeof extractedData.vitals?.weight === 'number' ? extractedData.vitals.weight : null,
-        height: typeof extractedData.vitals?.height === 'number' ? extractedData.vitals.height : null,
-        respiratoryRate: typeof extractedData.vitals?.respiratoryRate === 'number' ? extractedData.vitals.respiratoryRate : null,
-        oxygenSaturation: typeof extractedData.vitals?.oxygenSaturation === 'number' ? extractedData.vitals.oxygenSaturation : null
+        temperature: asVital(extractedData.vitals?.temperature),
+        bloodPressure: asVital(extractedData.vitals?.bloodPressure),
+        pulse: asVital(extractedData.vitals?.pulse),
+        weight: asVital(extractedData.vitals?.weight),
+        height: asVital(extractedData.vitals?.height),
+        respiratoryRate: asVital(extractedData.vitals?.respiratoryRate),
+        oxygenSaturation: asVital(extractedData.vitals?.oxygenSaturation)
       },
+      examination: (extractedData.examination && typeof extractedData.examination === 'object')
+        ? extractedData.examination
+        : {},
       diagnoses: Array.isArray(extractedData.diagnoses) ? extractedData.diagnoses.map((diagnosis: any) => ({
-        name: diagnosis.name || '',
-        icd10Code: diagnosis.icd10Code || null,
-        isPrimary: Boolean(diagnosis.isPrimary),
-        notes: diagnosis.notes || null
+        name: typeof diagnosis === 'string' ? diagnosis : asText(diagnosis?.name) || '',
+        icd10Code: asText(diagnosis?.icd10Code),
+        isPrimary: Boolean(diagnosis?.isPrimary),
+        notes: asText(diagnosis?.notes)
       })).filter((d: any) => d.name) : [],
       prescriptions: Array.isArray(extractedData.prescriptions) ? extractedData.prescriptions.map((prescription: any) => ({
-        medicine: prescription.medicine || '',
-        dosage: prescription.dosage || '1 tablet',
-        frequency: prescription.frequency || 'BD',
-        duration: prescription.duration || '5 days',
-        instructions: prescription.instructions || 'After meals',
-        quantity: typeof prescription.quantity === 'number' ? prescription.quantity : null,
-        refills: typeof prescription.refills === 'number' ? prescription.refills : null
+        medicine: asText(prescription?.medicine) || '',
+        dosage: asText(prescription?.dosage) || '',
+        frequency: asText(prescription?.frequency) || '',
+        duration: asText(prescription?.duration) || '',
+        instructions: asText(prescription?.instructions) || '',
+        quantity: typeof prescription?.quantity === 'number' ? prescription.quantity : null,
+        refills: typeof prescription?.refills === 'number' ? prescription.refills : null
       })).filter((p: any) => p.medicine) : [],
       testsOrdered: Array.isArray(extractedData.testsOrdered) ? extractedData.testsOrdered.map((test: any) => ({
-        testName: test.testName || '',
-        testType: ['lab', 'radiology', 'procedure', 'other'].includes(test.testType) ? test.testType : 'lab',
-        instructions: test.instructions || null,
-        urgency: ['routine', 'urgent', 'stat'].includes(test.urgency) ? test.urgency : 'routine'
+        testName: typeof test === 'string' ? test : asText(test?.testName) || '',
+        testType: ['lab', 'radiology', 'procedure', 'other'].includes(test?.testType) ? test.testType : 'lab',
+        instructions: asText(test?.instructions),
+        urgency: ['routine', 'urgent', 'stat'].includes(test?.urgency) ? test.urgency : 'routine'
       })).filter((t: any) => t.testName) : [],
       advice: Array.isArray(extractedData.advice) ? extractedData.advice.filter((a: any) => typeof a === 'string' && a.trim()) : [],
-      chiefComplaint: typeof extractedData.chiefComplaint === 'string' ? extractedData.chiefComplaint : null,
-      doctorNotes: typeof extractedData.doctorNotes === 'string' ? extractedData.doctorNotes : null
+      followUp: extractedData.followUp && typeof extractedData.followUp === 'object' ? {
+        duration: asText(extractedData.followUp.duration),
+        instructions: asText(extractedData.followUp.instructions),
+        warningSignsToWatch: Array.isArray(extractedData.followUp.warningSignsToWatch)
+          ? extractedData.followUp.warningSignsToWatch.filter((w: any) => typeof w === 'string' && w.trim())
+          : null
+      } : null,
+      doctorNotes: asText(extractedData.doctorNotes),
+      unmappedFindings: Array.isArray(extractedData.unmappedFindings)
+        ? extractedData.unmappedFindings
+          .map((item: any) => (typeof item === 'string'
+            ? { label: 'Additional finding', value: item }
+            : { label: asText(item?.label) || 'Additional finding', value: asText(item?.value) || '' }))
+          .filter((item: any) => item.value)
+        : []
     };
 
     let confidence = 0.5;
@@ -205,6 +276,11 @@ ${textInput}`;
       success: true,
       extractedData: cleanedData,
       confidence: Math.min(confidence, 1.0),
+      examinationSchemaUsed: {
+        isTemplate: examSchema.isTemplate,
+        templateName: examSchema.templateName,
+        sectionCount: examSchema.sections.length
+      },
       rawResponse: generatedText,
       ocrUploadId: ocrUploadId || null
     }), {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { PublicBookingPolicy } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -276,6 +277,10 @@ export interface DatabaseAppointment {
   created_at: string;
   updated_at: string;
   clinic_id?: string;
+  /** Who created it: front desk, a patient self-booking, or an external HIMS sync. */
+  booking_source?: 'staff' | 'public' | 'hims';
+  /** Opaque reference given to a self-booking patient. */
+  public_ref?: string | null;
 }
 
 export interface DatabaseVisit {
@@ -351,6 +356,7 @@ export interface DatabasePrescription {
   instructions: string;
   quantity?: number;
   refills?: number;
+  route?: string | null;
   created_at: string;
 }
 
@@ -557,6 +563,13 @@ export interface DatabaseClinicSetting {
   pdf_print_margins?: string;
   invoice_paper_size?: 'A4' | 'A5';
   invoice_margins?: string;
+  pdf_letterhead_mode?: 'bands' | 'full';
+  pdf_letterhead_url?: string;
+  pdf_letterhead_spacing?: { top: number; bottom: number; left: number; right: number };
+  // Public self-booking
+  public_slug?: string | null;
+  public_booking_enabled?: boolean;
+  appointment_config?: PublicBookingPolicy | null;
 }
 
 export interface DatabaseMedicineMaster {

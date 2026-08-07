@@ -240,6 +240,7 @@ export interface IpdOrder {
   priority: 'routine' | 'urgent' | 'stat';
   clinical_notes: string | null;
   status: 'placed' | 'in_progress' | 'completed' | 'cancelled';
+  treatment_plan_id?: string | null;
   items?: IpdOrderItem[];
 }
 
@@ -256,8 +257,130 @@ export interface IpdOrderItem {
   external_order_ref: string | null;
   result_ref: Record<string, unknown> | null;
   charge_posting_id: string | null;
+  cancelled_reason?: string | null;
+  created_at?: string;
   // joined
   service?: ServiceMaster;
+  parent_order?: Pick<IpdOrder, 'id' | 'order_datetime' | 'priority' | 'clinical_notes' | 'status'> & {
+    ordered_by?: string;
+    treatment_plan_id?: string | null;
+    doctor?: { name: string | null } | null;
+  };
+  reports?: IpdReport[];
+}
+
+// --- 025: Treatment plan, consultations, diet, reports -------------------------
+
+export interface TreatmentPlan {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  plan_date: string;          // yyyy-MM-dd
+  recorded_at: string;
+  doctor_id: string | null;
+  subjective: string | null;
+  objective: string | null;
+  assessment: string | null;
+  plan: string | null;
+  advice: string | null;
+  voice_transcript: string | null;
+  status: 'active' | 'superseded';
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // joined
+  doctor?: { id: string; name: string | null } | null;
+}
+
+export interface IpdConsultation {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  treatment_plan_id: string | null;
+  specialty: string | null;
+  doctor_id: string | null;
+  external_doctor_name: string | null;
+  reason: string;
+  urgency: 'routine' | 'urgent' | 'stat';
+  status: 'requested' | 'seen' | 'cancelled';
+  opinion: string | null;
+  charge_posting_id: string | null;
+  requested_by: string | null;
+  requested_at: string;
+  seen_by: string | null;
+  seen_at: string | null;
+  cancelled_reason: string | null;
+  // joined
+  doctor?: { id: string; name: string | null } | null;
+}
+
+export type DietType =
+  | 'normal' | 'soft' | 'liquid' | 'semi_solid' | 'diabetic' | 'renal' | 'cardiac'
+  | 'low_salt' | 'high_protein' | 'low_fat' | 'bland' | 'pediatric' | 'npo' | 'other';
+
+export type DietRoute = 'oral' | 'ryles_tube' | 'peg' | 'npo' | 'tpn';
+
+export type MealSlot =
+  | 'early_morning' | 'breakfast' | 'mid_morning' | 'lunch' | 'evening' | 'dinner' | 'bedtime';
+
+export interface DietOrder {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  treatment_plan_id: string | null;
+  diet_type: DietType;
+  route: DietRoute;
+  calories_kcal: number | null;
+  protein_g: number | null;
+  fluid_restriction_ml: number | null;
+  special_instructions: string | null;
+  restrictions: string | null;
+  start_date: string;
+  end_date: string | null;
+  status: 'active' | 'stopped';
+  ordered_by: string | null;
+  stopped_reason: string | null;
+  created_at: string;
+}
+
+export interface DietChartEntry {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  diet_order_id: string | null;
+  entry_date: string;
+  meal: MealSlot;
+  items: string | null;
+  status: 'planned' | 'served' | 'refused' | 'withheld';
+  intake_percent: number | null;
+  notes: string | null;
+  served_by: string | null;
+  served_at: string | null;
+  created_at: string;
+}
+
+export interface IpdReport {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  order_item_id: string | null;
+  report_type: 'pathology' | 'radiology' | 'cardiology' | 'other';
+  title: string;
+  report_date: string;
+  performed_at: string | null;
+  file_url: string | null;
+  file_name: string | null;
+  mime_type: string | null;
+  findings: string | null;
+  impression: string | null;
+  is_abnormal: boolean;
+  status: 'filed' | 'reviewed';
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  // joined
+  order_item?: { id: string; service?: { name: string } | null } | null;
 }
 
 // --- 005: Nursing --------------------------------------------------------------
@@ -332,6 +455,7 @@ export interface MedicationOrder {
   ordered_by: string | null;
   status: 'active' | 'held' | 'stopped' | 'completed';
   stopped_reason: string | null;
+  treatment_plan_id?: string | null;
 }
 
 export interface MedicationScheduleSlot {

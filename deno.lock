@@ -24,7 +24,12 @@
     "https://edge.netlify.com/bootstrap/edge_function.ts": "b8253e86aa83c67341f5cfedeba5049d77fbf84dcab7eceff7566b7728ae9b39",
     "https://edge.netlify.com/bootstrap/globals/types.ts": "eaa6148ded3121d8dee62dd91c86e7fe76601df0f3ca8d7962243a30f4c8935f",
     "https://esm.sh/@supabase/supabase-js@2.108.1": "fca0990662d240263b440bc055ea919312c0d27f7ab295e835e1644cf49200ce",
-    "https://esm.sh/@supabase/supabase-js@2.51.0": "8603496eeecc4070b53b2f3c1f008367c2de72a0acdc8f7fb9c339a53dcff68e"
+    "https://esm.sh/@supabase/supabase-js@2.111.0": "276104e20b7318fac2be1c67eb9be93f4280f5ec9f2fc5ac7b32e1f0ed6f31ba",
+    "https://esm.sh/@supabase/supabase-js@2.39.8": "5cb81f5217dda9564abd7d7d6211484d30441d41a113954d5904bcd0ef1007e0",
+    "https://esm.sh/@supabase/supabase-js@2.45.4": "1108d69216995335d057dbd15907caaf514a4d1ef082f097050573b9d589a57c",
+    "https://esm.sh/@supabase/supabase-js@2.51.0": "8603496eeecc4070b53b2f3c1f008367c2de72a0acdc8f7fb9c339a53dcff68e",
+    "https://esm.sh/@supabase/supabase-js@2.74.0": "75871edbf5542b596fcb70bd14327c60864a5d88a2be39264f64cd304a5258fa",
+    "https://esm.sh/@supabase/supabase-js@2.95.0": "8f03cc20a55700f9625b75c9b6de887287727b59f376fc3e8598785fea5e4d14"
   },
   "workspace": {
     "packageJson": {
@@ -36,10 +41,12 @@
         "npm:@capacitor/dialog@^7.0.2",
         "npm:@capacitor/local-notifications@^7.0.3",
         "npm:@capacitor/push-notifications@^7.0.3",
+        "npm:@ckeditor/ckeditor5-react@^11.2.0",
         "npm:@eslint/js@^9.9.1",
         "npm:@google-cloud/vision@^5.3.0",
         "npm:@google/generative-ai@~0.24.1",
         "npm:@supabase/supabase-js@^2.51.0",
+        "npm:@types/jsbarcode@^3.11.4",
         "npm:@types/pg@^8.15.6",
         "npm:@types/qrcode@^1.5.6",
         "npm:@types/react-dom@^18.3.0",
@@ -47,12 +54,14 @@
         "npm:@types/react@^18.3.5",
         "npm:@vitejs/plugin-react@^4.3.1",
         "npm:autoprefixer@^10.4.18",
+        "npm:ckeditor5@^48.3.0",
         "npm:date-fns@^4.1.0",
         "npm:eslint-plugin-react-hooks@^5.1.0-rc.0",
         "npm:eslint-plugin-react-refresh@~0.4.11",
         "npm:eslint@^9.9.1",
         "npm:globals@^15.9.0",
         "npm:html2canvas@^1.4.1",
+        "npm:jsbarcode@^3.11.6",
         "npm:jspdf@^3.0.1",
         "npm:lucide-react@0.344",
         "npm:pdfjs-dist@^4.0.189",
@@ -67,7 +76,8 @@
         "npm:typescript-eslint@^8.3.0",
         "npm:typescript@^5.5.3",
         "npm:vite-plugin-pwa@^1.2.0",
-        "npm:vite@^5.4.2"
+        "npm:vite@^5.4.2",
+        "npm:xlsx@~0.18.5"
       ]
     }
   }

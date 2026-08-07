@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
+import { Ban } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { admissionService } from '../services/admissionService';
 import { bedService } from '../services/bedService';
 import { billingService } from '../services/billingService';
+import CancelAdmissionModal from '../components/ADT/CancelAdmissionModal';
 import type { Admission, Bed } from '../types/ipd';
 
 export default function CensusPage() {
-  const { clinicId } = useAuth();
+  const { clinicId, isAdmin } = useAuth();
   const [view, setView] = useState<'current' | 'past'>('current');
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [beds, setBeds] = useState<Bed[]>([]);
   const [dues, setDues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Admission | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!clinicId) return;
@@ -43,7 +47,7 @@ export default function CensusPage() {
         })
         .catch(() => setDues({}));
     }
-  }, [clinicId, view]);
+  }, [clinicId, view, refreshKey]);
 
   // ward-wise occupancy cards
   const wardStats = useMemo(() => {
@@ -138,6 +142,7 @@ export default function CensusPage() {
                 <th className="px-4 py-3">Doctor</th>
                 <th className="px-4 py-3">Admitted</th>
                 <th className="px-4 py-3">{view === 'current' ? 'Type' : 'Discharged'}</th>
+                {view === 'current' && isAdmin && <th className="px-4 py-3 w-10" />}
               </tr>
             </thead>
             <tbody>
@@ -171,6 +176,7 @@ export default function CensusPage() {
                       <span className={`text-xs uppercase px-2 py-0.5 rounded ${
                         a.status === 'discharged' ? 'bg-emerald-100 text-emerald-700'
                         : a.status === 'expired' ? 'bg-slate-200 text-slate-600'
+                        : a.status === 'cancelled' ? 'bg-red-100 text-red-700'
                         : 'bg-amber-100 text-amber-700'
                       }`}>
                         {a.status.replace('_', ' ')}
@@ -186,11 +192,31 @@ export default function CensusPage() {
                         ? format(new Date(a.discharge_datetime), 'dd MMM, HH:mm')
                         : '—'}
                   </td>
+                  {view === 'current' && isAdmin && (
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setCancelTarget(a)}
+                        title="Cancel this admission (wrong entry) — releases the bed"
+                        className="text-slate-400 hover:text-red-600"
+                      >
+                        <Ban className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {cancelTarget && (
+        <CancelAdmissionModal
+          admission={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onCancelled={() => setRefreshKey((k) => k + 1)}
+          onDeleted={() => setRefreshKey((k) => k + 1)}
+        />
       )}
     </div>
   );

@@ -1,38 +1,64 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { Printer, FilePlus, ReceiptText, ArrowRightLeft, LogOut, FileDown } from 'lucide-react';
+import { Printer, FilePlus, ReceiptText, ArrowRightLeft, LogOut, FileDown, Sparkles, Mic, Trash2, Loader2, AlertTriangle, CheckCircle2, Ban } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { admissionService, MlcDetails } from '../services/admissionService';
 import { chargeService } from '../services/chargeService';
-import { billingService } from '../services/billingService';
+import { billingService, BillAudit } from '../services/billingService';
 import { patientService } from '../services/patientService';
 import { printAdmissionLabels } from '../utils/labelGenerator';
 import { documentService } from '../services/documentService';
+import PatientDocumentsPanel from '../../../components/Patients/PatientDocumentsPanel';
 import TransferBedModal from '../components/ADT/TransferBedModal';
 import DischargeModal from '../components/ADT/DischargeModal';
+import CancelAdmissionModal from '../components/ADT/CancelAdmissionModal';
 import NursingTab from '../components/Nursing/NursingTab';
 import DocumentsTab from '../components/Documents/DocumentsTab';
 import MedicationsTab from '../components/Medications/MedicationsTab';
+import TreatmentPlanTab from '../components/TreatmentPlan/TreatmentPlanTab';
+import OrdersTab from '../components/Orders/OrdersTab';
+import InsuranceClaimsTab from '../components/Insurance/InsuranceClaimsTab';
 import { packageService, AdmissionPackage } from '../services/packageService';
 import type { Admission, BedAllocation, ChargePosting, Deposit, IpdBill, Profile, ServiceMaster } from '../types/ipd';
 
-type Tab = 'overview' | 'timeline' | 'nursing' | 'meds' | 'charges' | 'deposits' | 'billing' | 'documents';
+type Tab =
+  | 'overview' | 'plan' | 'orders' | 'timeline' | 'nursing' | 'meds'
+  | 'charges' | 'deposits' | 'billing' | 'audit' | 'insurance' | 'documents';
+
+const TABS: Tab[] = [
+  'overview', 'plan', 'orders', 'nursing', 'meds', 'timeline',
+  'charges', 'deposits', 'billing', 'audit', 'insurance', 'documents',
+];
+
+const TAB_LABELS: Partial<Record<Tab, string>> = {
+  plan: 'Treatment Plan',
+  orders: 'Orders & Reports',
+  timeline: 'OPD History',
+  audit: 'Bill Audit',
+  insurance: 'TPA / Insurance',
+};
+
 type OpdVisit = Awaited<ReturnType<typeof patientService.listVisits>>[number];
 
 // chart tabs beyond overview/history are permission-gated (shared OPD RBAC)
 const TAB_PERMISSIONS: Partial<Record<Tab, string>> = {
+  plan: 'ipd_clinical',
+  orders: 'ipd_clinical',
   nursing: 'ipd_clinical',
   meds: 'ipd_clinical',
   charges: 'ipd_charges',
   deposits: 'ipd_billing',
   billing: 'ipd_billing',
+  audit: 'ipd_billing',
+  insurance: 'ipd_billing',
   documents: 'ipd_documents',
 };
 
 export default function AdmissionDetailsPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clinicId, profile, isAdmin, hasPermission } = useAuth();
   const [admission, setAdmission] = useState<Admission | null>(null);
@@ -42,13 +68,12 @@ export default function AdmissionDetailsPage() {
   const [visits, setVisits] = useState<OpdVisit[]>([]);
   const [tab, setTab] = useState<Tab>(() => {
     const t = searchParams.get('tab') as Tab | null;
-    return t && ['overview', 'timeline', 'nursing', 'meds', 'charges', 'deposits', 'billing', 'documents'].includes(t)
-      ? t
-      : 'overview';
+    return t && TABS.includes(t) ? t : 'overview';
   });
   const [error, setError] = useState<string | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showDischarge, setShowDischarge] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
   const [admissionPackage, setAdmissionPackage] = useState<AdmissionPackage | null>(null);
 
   // deep links (?tab=…) cannot bypass tab permissions
@@ -168,6 +193,15 @@ export default function AdmissionDetailsPage() {
                 >
                   <ArrowRightLeft className="w-4 h-4" /> Transfer
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowCancel(true)}
+                    title="Wrong admission? Cancel it — the bed is released and the record is voided"
+                    className="flex items-center gap-1.5 border border-red-300 text-red-700 rounded-lg px-3 py-2 text-sm hover:bg-red-50"
+                  >
+                    <Ban className="w-4 h-4" /> Cancel admission
+                  </button>
+                )}
                 {isAdmin ? (
                   <button
                     onClick={() => setShowDischarge(true)}
@@ -207,10 +241,18 @@ export default function AdmissionDetailsPage() {
           onDone={reload}
         />
       )}
+      {showCancel && (
+        <CancelAdmissionModal
+          admission={admission}
+          onClose={() => setShowCancel(false)}
+          onCancelled={reload}
+          onDeleted={() => navigate('/ipd/census', { replace: true })}
+        />
+      )}
 
       {/* Tabs (permission-gated) */}
       <div className="flex gap-1 mb-4 flex-wrap">
-        {(['overview', 'timeline', 'nursing', 'meds', 'charges', 'deposits', 'billing', 'documents'] as Tab[])
+        {TABS
           .filter((t) => !TAB_PERMISSIONS[t] || hasPermission(TAB_PERMISSIONS[t]!))
           .map((t) => (
             <button
@@ -220,15 +262,21 @@ export default function AdmissionDetailsPage() {
                 tab === t ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
               }`}
             >
-              {t === 'timeline' ? 'OPD History' : t}
+              {TAB_LABELS[t] ?? t}
             </button>
           ))}
       </div>
 
       {tab === 'overview' && <OverviewTab admission={admission} />}
+      {tab === 'plan' && (
+        <TreatmentPlanTab admission={admission} readOnly={admission.status !== 'admitted'} />
+      )}
+      {tab === 'orders' && (
+        <OrdersTab admission={admission} readOnly={admission.status !== 'admitted'} />
+      )}
       {tab === 'timeline' && <TimelineTab visits={visits} />}
       {tab === 'nursing' && (
-        <NursingTab admissionId={admission.id} readOnly={admission.status !== 'admitted'} />
+        <NursingTab admission={admission} readOnly={admission.status !== 'admitted'} />
       )}
       {tab === 'meds' && (
         <MedicationsTab admissionId={admission.id} readOnly={admission.status !== 'admitted'} />
@@ -294,6 +342,8 @@ export default function AdmissionDetailsPage() {
           onChange={reload}
         />
       )}
+      {tab === 'audit' && <BillAuditTab admission={admission} />}
+      {tab === 'insurance' && <InsuranceClaimsTab admission={admission} />}
     </div>
   );
 }
@@ -318,6 +368,117 @@ function OverviewTab({ admission }: { admission: Admission }) {
       </div>
       {admission.is_mlc && <MlcCard admission={admission} />}
       <TransferLogCard admissionId={admission.id} />
+      {admission.patient?.id && (
+        <PatientDocumentsPanel
+          patientId={admission.patient.id}
+          patientName={admission.patient.name}
+          patientPhone={admission.patient.phone}
+          contextLabel={admission.admission_number}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function BillAuditTab({ admission }: { admission: Admission }) {
+  const [audit, setAudit] = useState<BillAudit | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    billingService
+      .getBillAudit(admission.id)
+      .then(setAudit)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [admission.id]);
+
+  if (loading) return <p className="text-sm text-slate-500">Auditing bill…</p>;
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!audit) return null;
+
+  const losDays = Math.max(
+    1,
+    Math.ceil(
+      ((admission.discharge_datetime ? new Date(admission.discharge_datetime) : new Date()).getTime() -
+        new Date(admission.admission_datetime).getTime()) / 86_400_000
+    )
+  );
+  const roomShort = losDays - audit.roomRentPostings;
+
+  const issues =
+    audit.ordersNotCharged.length +
+    audit.consumablesNotCharged.length +
+    audit.doctorWorkMissingDoctor.length +
+    (roomShort > 0 ? 1 : 0);
+
+  const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center gap-2">
+          {issues === 0 ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+          )}
+          <span className="font-semibold text-slate-800">
+            {issues === 0 ? 'No leakage found — bill looks complete' : `${issues} item(s) to review before final bill`}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 text-sm">
+          <div>
+            <p className="text-xs text-slate-400">Pending (unbilled) charges</p>
+            <p className="font-bold text-slate-800">{audit.pendingCount} · {fmt(audit.pendingAmount)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Room-rent days billed</p>
+            <p className={`font-bold ${roomShort > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+              {audit.roomRentPostings} / {losDays} day(s)
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <AuditSection
+        title="Orders placed but not charged"
+        rows={audit.ordersNotCharged.map((o) => `${o.serviceName} · ordered ${fmtDate(o.orderedAt)}`)}
+        hint="Post these from the Orders/Charges tab — usually a rate that couldn't be resolved."
+      />
+      <AuditSection
+        title="Ward consumption not charged"
+        rows={audit.consumablesNotCharged.map((c) => `${c.name} × ${c.quantity} · ${fmtDate(c.at)}`)}
+        hint="No selling price is configured for these items — set it in pharmacy pricing, then re-issue."
+      />
+      <AuditSection
+        title="Doctor-work charges missing a performing doctor"
+        rows={audit.doctorWorkMissingDoctor.map((d) => `${d.serviceName} · ${fmt(d.amount)}`)}
+        hint="Tag the performing doctor on the Charges tab so doctor-wise revenue is attributable."
+      />
+      {roomShort > 0 && (
+        <AuditSection
+          title="Room rent may be under-billed"
+          rows={[`${audit.roomRentPostings} day(s) billed vs ${losDays} day(s) of stay`]}
+          hint="The nightly room-rent job may have missed a day, or the patient changed bed class."
+        />
+      )}
+    </div>
+  );
+}
+
+function AuditSection({ title, rows, hint }: { title: string; rows: string[]; hint: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="bg-white rounded-xl border border-amber-200 p-4">
+      <p className="font-medium text-amber-800 text-sm mb-1">{title} <span className="text-amber-500">({rows.length})</span></p>
+      <ul className="list-disc list-inside text-sm text-slate-700 space-y-0.5">
+        {rows.map((r, i) => <li key={i}>{r}</li>)}
+      </ul>
+      <p className="text-xs text-slate-400 mt-2">{hint}</p>
     </div>
   );
 }
@@ -555,6 +716,251 @@ const isDoctorWork = (svc: ServiceOption) =>
     (g) => svc.charge_group?.path === g || svc.charge_group?.path.startsWith(`${g}/`)
   );
 
+// --- AI charge capture (billing utility) -----------------------------------
+// Type or dictate plain language → matched services from the clinic master →
+// review → post. Browser speech-to-text is optional and degrades gracefully.
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void;
+  onerror: () => void;
+  onend: () => void;
+  start: () => void;
+  stop: () => void;
+};
+
+const getSpeechRecognitionCtor = (): (new () => SpeechRecognitionLike) | null => {
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+};
+
+interface CaptureRow {
+  service: ServiceOption;
+  quantity: number;
+  rate: string;
+  performedById: string;
+  needsDoctor: boolean;
+  phrase?: string;
+}
+
+function AiChargeCapture({
+  clinicId, admission, doctors, userId, onChange,
+}: {
+  clinicId: string; admission: Admission; doctors: Profile[]; userId?: string; onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [finding, setFinding] = useState(false);
+  const [rows, setRows] = useState<CaptureRow[]>([]);
+  const [unmatched, setUnmatched] = useState<string[]>([]);
+  const [posting, setPosting] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechCtor = getSpeechRecognitionCtor();
+
+  const toggleMic = () => {
+    if (listening) { recognitionRef.current?.stop(); return; }
+    if (!speechCtor) { toast.error('Voice input is not supported on this browser'); return; }
+    const rec = new speechCtor();
+    rec.lang = 'en-IN';
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.onresult = (e) => {
+      const t = Array.from(e.results).map((r) => r[0].transcript).join(' ');
+      setText((prev) => (prev ? `${prev} ${t}` : t));
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  const find = async () => {
+    if (!text.trim()) return;
+    setFinding(true);
+    try {
+      const res = await chargeService.aiCaptureCharges(clinicId, text.trim());
+      const built = await Promise.all(
+        res.matches.map(async (m) => {
+          let rate = m.service.base_price;
+          try {
+            rate = await chargeService.resolveRate(
+              m.service.id, admission.tariff_plan_id, admission.current_bed?.bed_type_id ?? null
+            );
+          } catch { /* fall back to base price */ }
+          const needsDoctor = isDoctorWork(m.service);
+          return {
+            service: m.service,
+            quantity: m.quantity,
+            rate: String(rate),
+            performedById: needsDoctor ? (admission.admitting_doctor_id ?? '') : '',
+            needsDoctor,
+            phrase: m.phrase,
+          } as CaptureRow;
+        })
+      );
+      setRows(built);
+      setUnmatched(res.unmatched);
+      if (built.length === 0) toast('No matching services found — try different words', { icon: 'ℹ️' });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setFinding(false);
+    }
+  };
+
+  const updateRow = (i: number, patch: Partial<CaptureRow>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const removeRow = (i: number) => setRows((prev) => prev.filter((_, idx) => idx !== i));
+
+  const postAll = async () => {
+    if (rows.length === 0) return;
+    if (rows.some((r) => r.needsDoctor && !r.performedById)) {
+      toast.error('Select the performing doctor for the highlighted services');
+      return;
+    }
+    setPosting(true);
+    try {
+      for (const r of rows) {
+        await chargeService.postCharge({
+          clinicId,
+          admissionId: admission.id,
+          serviceId: r.service.id,
+          quantity: r.quantity,
+          unitRate: Number(r.rate) || 0,
+          performingDoctorId: r.performedById || undefined,
+          userId,
+        });
+      }
+      toast.success(`${rows.length} charge${rows.length > 1 ? 's' : ''} posted`);
+      setRows([]); setUnmatched([]); setText(''); setOpen(false);
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm px-3 py-1.5 rounded-lg"
+        title="Type or speak charges in plain language and let AI match them"
+      >
+        <Sparkles className="w-4 h-4" /> AI charge capture
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full bg-violet-50 border border-violet-200 rounded-xl p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Sparkles className="w-4 h-4 text-violet-600" />
+        <span className="text-sm font-medium text-violet-800">AI charge capture</span>
+        <button
+          onClick={() => { setOpen(false); setRows([]); setUnmatched([]); }}
+          className="ml-auto text-xs text-slate-500 hover:text-slate-700"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="flex items-start gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          placeholder='e.g. "two dressings, one ECG, chest x-ray and a physician round"'
+          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y"
+        />
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={toggleMic}
+            className={`flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm border ${
+              listening ? 'bg-red-600 text-white border-red-600 animate-pulse' : 'bg-white text-slate-600 border-slate-300'
+            }`}
+            title={speechCtor ? 'Dictate' : 'Voice input not supported on this browser'}
+          >
+            <Mic className="w-4 h-4" /> {listening ? 'Stop' : 'Speak'}
+          </button>
+          <button
+            onClick={find}
+            disabled={finding || !text.trim()}
+            className="flex items-center justify-center gap-1 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-lg px-3 py-2 text-sm"
+          >
+            {finding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {finding ? 'Finding…' : 'Find charges'}
+          </button>
+        </div>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="space-y-1.5">
+          {rows.map((r, i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-lg p-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-mono text-xs text-navy-700 bg-slate-100 rounded px-1 py-0.5">{r.service.service_code}</span>
+              <span className="flex-1 min-w-40">{r.service.name}</span>
+              <input
+                type="number" min="1" value={r.quantity}
+                onChange={(e) => updateRow(i, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                className="w-14 border border-slate-300 rounded px-2 py-1" title="Qty"
+              />
+              <input
+                type="number" value={r.rate}
+                onChange={(e) => updateRow(i, { rate: e.target.value })}
+                className="w-24 border border-slate-300 rounded px-2 py-1" title="Rate"
+              />
+              {r.needsDoctor && (
+                <select
+                  value={r.performedById}
+                  onChange={(e) => updateRow(i, { performedById: e.target.value })}
+                  className={`max-w-40 border rounded px-2 py-1 ${r.performedById ? 'border-slate-300' : 'border-red-400 text-red-600'}`}
+                  title="Performed by (required)"
+                >
+                  <option value="">Performed by *</option>
+                  {doctors.map((d) => (
+                    <option key={d.id} value={d.id}>Dr. {d.name?.replace(/^dr\.?\s*/i, '')}</option>
+                  ))}
+                </select>
+              )}
+              <button onClick={() => removeRow(i)} className="p-1 text-slate-400 hover:text-red-600" title="Remove">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {unmatched.length > 0 && (
+        <p className="text-xs text-amber-700">
+          Not matched (add manually): {unmatched.join(', ')}
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={postAll}
+            disabled={posting}
+            className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg"
+          >
+            <FilePlus className="w-4 h-4" /> {posting ? 'Posting…' : `Post ${rows.length} charge${rows.length > 1 ? 's' : ''}`}
+          </button>
+          <button onClick={() => setRows([])} className="text-xs text-slate-500 hover:text-slate-700">Clear</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChargesTab({
   clinicId, admission, postings, activeAssignmentId, userId, onChange,
 }: {
@@ -703,6 +1109,13 @@ function ChargesTab({
             className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg">
             <FilePlus className="w-4 h-4" /> Post
           </button>
+          <AiChargeCapture
+            clinicId={clinicId}
+            admission={admission}
+            doctors={doctors}
+            userId={userId}
+            onChange={onChange}
+          />
         </div>
       )}
 

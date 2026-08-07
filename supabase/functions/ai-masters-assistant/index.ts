@@ -6,7 +6,7 @@
 // The plan schema is enforced server-side via output_config.format json_schema.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
 const corsHeaders = {

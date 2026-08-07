@@ -1,0 +1,1 @@
+supabase functions deploy patient-upload --no-verify-jwt

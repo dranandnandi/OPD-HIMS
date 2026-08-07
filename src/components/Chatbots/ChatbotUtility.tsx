@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { aiChatService, ChatMessage, AgentId } from '../../services/aiChatService';
+import { brand } from '../../config/branding';
 
 // Chatbot configurations
 interface ChatbotConfig {
@@ -320,11 +321,11 @@ const ChatbotUtility: React.FC = () => {
       pdf.setFillColor(headerColor[0], headerColor[1], headerColor[2]);
       pdf.rect(0, 0, pageWidth, 50, 'F');
       
-      // Add Doctorpreneur Logo/Branding
+      // Add platform logo/branding
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
-      pdf.text('DOCTORPRENEUR ACADEMY', margin, 12);
+      pdf.text(brand.company.toUpperCase(), margin, 12);
       
       // Title - without emoji
       pdf.setFontSize(22);
@@ -409,14 +410,14 @@ const ChatbotUtility: React.FC = () => {
         });
       });
 
-      // Footer with Doctorpreneur branding
+      // Footer with platform branding
       const totalPages = pdf.getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         pdf.setFontSize(8);
         pdf.setTextColor(128, 128, 128);
         pdf.text(
-          `Page ${i} of ${totalPages} | ${activeChatbot.name} | Doctorpreneur Academy | docpreneur.academy`,
+          `Page ${i} of ${totalPages} | ${activeChatbot.name} | ${brand.companyShort} | ${brand.website}`,
           pageWidth / 2,
           pageHeight - 10,
           { align: 'center' }
@@ -425,7 +426,7 @@ const ChatbotUtility: React.FC = () => {
 
       // Generate filename with branding
       const timestamp = new Date().toISOString().slice(0, 10);
-      const filename = `Doctorpreneur_${activeChatbot.name.replace(/\s+/g, '_')}_Report_${timestamp}.pdf`;
+      const filename = `${brand.fileSlug}_${activeChatbot.name.replace(/\s+/g, '_')}_Report_${timestamp}.pdf`;
       
       // Save the PDF
       pdf.save(filename);

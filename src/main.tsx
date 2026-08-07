@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
+import { applyBrandToDocument } from './config/branding';
+
+applyBrandToDocument();
 
 // Register service worker with immediate update
 const updateSW = registerSW({

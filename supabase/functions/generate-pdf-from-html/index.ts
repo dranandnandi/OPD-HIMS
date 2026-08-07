@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// Pinned: the floating `@2` tag resolves to 2.112.1, whose esm.sh build points
+// at https://esm.sh/@supabase/auth-js@2.112.1/denonext/auth-js.mjs — which 404s,
+// breaking `supabase functions deploy` at the bundling step. 2.111.0 resolves.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0'
+import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +72,145 @@ const extractImpressionDetails = (doctorNotes?: string | null) => {
     impressionItems: splitItems(impressionLines.join('\n')),
     remainingNotes: remainingLines.join('\n').trim()
   };
+}
+
+type LetterheadSpacing = { top: number; bottom: number; left: number; right: number };
+
+const DEFAULT_LETTERHEAD_SPACING: LetterheadSpacing = { top: 130, bottom: 130, left: 20, right: 20 };
+
+// Full-page letterhead mode.
+//
+// The band mode (separate header/footer images) hands the artwork to PDF.co's
+// header/footer templates, which Chromium renders in an isolated context outside
+// the page box. A whole-page letterhead cannot go there — it has to be painted
+// *behind* the content, edge to edge, on every page. That needs two independent
+// mechanisms working together:
+//
+//   1. a `position: fixed` div sized to the exact paper — fixed elements repeat
+//      on every printed page, absolute ones only land on page 1;
+//   2. a layout <table> whose <thead>/<tfoot> hold empty spacer rows — browsers
+//      repeat thead/tfoot on every page, so the content stays clear of the
+//      printed header/footer artwork on page 2, 3, 4… A plain `padding-top`
+//      would only protect page 1.
+//
+// The API side must then use zero margins and `displayheaderfooter: false`,
+// otherwise Chromium reserves header/footer bands and the background is pushed
+// down and clipped. See letteheaduse.md in this folder.
+const applyFullLetterhead = (
+  html: string,
+  letterheadUrl: string,
+  spacing: LetterheadSpacing,
+  paper: { width: string; height: string }
+): string => {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (!bodyMatch) {
+    console.warn('[PDF GEN] ⚠️ Could not locate <body> — skipping full letterhead wrap');
+    return html;
+  }
+
+  const bodyInner = bodyMatch[1];
+
+  // API margins are zero in this mode, so side padding must come from CSS.
+  // Floor it so text can never touch the paper edge if a clinic saved 0.
+  const padLeft = Math.max(0, spacing.left);
+  const padRight = Math.max(0, spacing.right);
+  const topSpacer = Math.max(0, spacing.top);
+  const bottomSpacer = Math.max(0, spacing.bottom);
+
+  const letterheadCss = `
+    /* === FULL-PAGE LETTERHEAD MODE === */
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    #page-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: ${paper.width};
+      height: ${paper.height};
+      z-index: 0;
+      pointer-events: none;
+      background-image: url('${letterheadUrl}');
+      background-repeat: no-repeat;
+      background-position: top left;
+      background-size: ${paper.width} ${paper.height};
+    }
+    /* The wrapper table must inherit none of the document's own table styling —
+       these templates set global border/padding/background rules on table/th/td. */
+    table.lh-frame {
+      width: 100%;
+      border: none !important;
+      border-collapse: collapse !important;
+      margin: 0 !important;
+      background: transparent !important;
+      position: relative;
+      z-index: 1;
+    }
+    table.lh-frame > thead,
+    table.lh-frame > tfoot,
+    table.lh-frame > tbody { background: transparent !important; }
+    table.lh-frame > thead > tr,
+    table.lh-frame > tfoot > tr,
+    table.lh-frame > tbody > tr {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    table.lh-frame > thead > tr > td,
+    table.lh-frame > tfoot > tr > td,
+    table.lh-frame > tbody > tr > td {
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: transparent !important;
+      background-color: transparent !important;
+      font-size: 0;
+      line-height: 0;
+    }
+    .lh-content {
+      position: relative;
+      z-index: 1;
+      padding: 0 ${padRight}px 0 ${padLeft}px;
+      background: transparent !important;
+      font-size: initial;
+      line-height: initial;
+    }
+    /* Keep rows and signature blocks from straddling a page break, where they
+       would land on top of the letterhead's footer artwork. */
+    .lh-content table tr { break-inside: avoid; page-break-inside: avoid; }
+    .lh-content .signature-section, .lh-content .sig-row { page-break-inside: avoid; }
+  `;
+
+  // Function replacers throughout: the injected CSS/body carry arbitrary clinic
+  // content, and a stray `$&` or `$'` in a string replacement would be treated
+  // as a substitution pattern.
+  const headInjection = `<style>${letterheadCss}</style></head>`;
+  const withCss = html.includes('</head>')
+    ? html.replace('</head>', () => headInjection)
+    : html.replace(/<body([^>]*)>/i, (_m, attrs) => `<head>${headInjection}<body${attrs}>`);
+
+  const wrappedBody = `
+      <div id="page-bg"></div>
+      <table class="lh-frame">
+        <thead style="display: table-header-group;">
+          <tr><td><div style="height: ${topSpacer}px;"></div></td></tr>
+        </thead>
+        <tfoot style="display: table-footer-group;">
+          <tr><td><div style="height: ${bottomSpacer}px;"></div></td></tr>
+        </tfoot>
+        <tbody>
+          <tr><td><div class="lh-content">${bodyInner}</div></td></tr>
+        </tbody>
+      </table>
+  `;
+
+  return withCss.replace(
+    /<body([^>]*)>[\s\S]*<\/body>/i,
+    (_m, attrs) => `<body${attrs}>${wrappedBody}</body>`
+  );
 }
 
 // Builds a QR code img tag pointing to the prescription verify page
@@ -173,63 +316,85 @@ serve(async (req) => {
       )
     }
 
-    // Helper to convert image URL to base64 with optimization
-    const imageUrlToBase64 = async (url: string): Promise<string> => {
+    // Letterhead images MUST be inlined as data: URIs. PDF.co maps `header`/
+    // `footer` onto Chrome's headerTemplate/footerTemplate, which render in an
+    // isolated print context that performs no network requests — a remote
+    // <img src="https://..."> there silently renders as a broken-image icon.
+    //
+    // But that same string is passed to the html2pdf binary as a command-line
+    // argument, and Linux caps one argument at 128KB (MAX_ARG_STRLEN); going
+    // over kills the job with "[Errno 7] Argument list too long".
+    //
+    // So the image is re-encoded here until it fits. Clinics upload PNG
+    // letterheads that are 5-6x larger than an equivalent JPEG, which is what
+    // blew the limit; re-encoding costs ~20ms and needs no re-upload.
+    const MAX_INLINE_BAND_IMAGE = 90000;      // characters of data: URI
+    const BAND_IMAGE_MAX_WIDTH = 1000;        // ample for a ~120px print band
+    const BAND_IMAGE_TARGET_BYTES = 60 * 1024;
+
+    const shrinkBandImage = async (bytes: Uint8Array, label: string): Promise<Uint8Array | null> => {
       try {
-        // If already base64, return as is
-        if (url.startsWith('data:image')) return url;
+        const decoded = await Image.decode(bytes);
 
-        let fetchUrl = url;
-
-        // Optimization for ImageKit URLs
-        if (url.includes('ik.imagekit.io')) {
-          console.log('[PDF GEN] Optimizing ImageKit URL for smaller Base64');
-          // If URL already contains a transformation path (tr:...), replace it or append to it
-          if (url.includes('/tr:')) {
-            // Existing transformation found, replace the specific transformation block
-            fetchUrl = url.replace(/\/tr:[^/]+/, '/tr:w-1200,q-75,f-webp');
-          } else {
-            // No transformation found, insert it after the ID
-            const urlParts = url.split('/');
-            // Typically: https://ik.imagekit.io/your_id/path/to/image.jpg
-            // We want: https://ik.imagekit.io/your_id/tr:w-800,q-70,f-webp/path/to/image.jpg
-            if (urlParts.length > 4) {
-              urlParts.splice(4, 0, 'tr:w-1200,q-75,f-webp');
-              fetchUrl = urlParts.join('/');
-            }
-          }
+        // Letterheads print onto white paper, so flatten any alpha channel —
+        // otherwise transparency encodes as black once we drop to JPEG.
+        const flat = new Image(decoded.width, decoded.height).fill(0xffffffff);
+        flat.composite(decoded, 0, 0);
+        if (flat.width > BAND_IMAGE_MAX_WIDTH) {
+          flat.resize(BAND_IMAGE_MAX_WIDTH, Image.RESIZE_AUTO);
         }
 
-        console.log(`[PDF GEN] Fetching image: ${fetchUrl.substring(0, 100)}...`);
-        const response = await fetch(fetchUrl);
-
-        // Fallback to original URL if optimized fails
-        if (!response.ok && fetchUrl !== url) {
-          console.warn(`[PDF GEN] Optimized fetch failed (${response.status}), trying original URL...`);
-          const fallbackResponse = await fetch(url);
-          if (!fallbackResponse.ok) throw new Error(`Failed to fetch original image: ${fallbackResponse.statusText}`);
-
-          const arrayBuffer = await fallbackResponse.arrayBuffer();
-          const base64String = encode(new Uint8Array(arrayBuffer));
-          const contentType = fallbackResponse.headers.get('content-type') || 'image/png';
-          return `data:${contentType};base64,${base64String}`;
+        let out: Uint8Array | null = null;
+        for (const quality of [80, 65, 50, 35]) {
+          out = await flat.encodeJPEG(quality);
+          if (out.length <= BAND_IMAGE_TARGET_BYTES) break;
         }
-
-        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
-
-        const arrayBuffer = await response.arrayBuffer();
-        const base64String = encode(new Uint8Array(arrayBuffer));
-        const contentType = response.headers.get('content-type') || 'image/png';
-
-        console.log(`[PDF GEN] ✅ Image converted to Base64 (${contentType})`);
-        return `data:${contentType};base64,${base64String}`;
+        return out;
       } catch (e) {
-        console.error('[PDF GEN] ❌ Failed to convert image to base64:', e);
-        // Fallback to original URL if conversion fails - PDF.co might still try to fetch it
-        return url;
+        console.error(`[PDF GEN] ${label} image could not be re-encoded:`, e);
+        return null;
       }
     };
 
+    const inlineBandImage = async (url: string, label: string): Promise<string | null> => {
+      try {
+        if (url.startsWith('data:image')) {
+          return url.length <= MAX_INLINE_BAND_IMAGE ? url : null;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        let bytes: Uint8Array = new Uint8Array(await response.arrayBuffer());
+        let contentType = response.headers.get('content-type') || 'image/png';
+        console.log(`[PDF GEN] ${label} image fetched: ${bytes.length} bytes (${contentType})`);
+
+        if (bytes.length > BAND_IMAGE_TARGET_BYTES) {
+          const shrunk = await shrinkBandImage(bytes, label);
+          if (shrunk) {
+            console.log(`[PDF GEN] ${label} image re-encoded: ${bytes.length} → ${shrunk.length} bytes`);
+            bytes = shrunk;
+            contentType = 'image/jpeg';
+          }
+        }
+
+        const src = `data:${contentType};base64,${encode(bytes)}`;
+
+        if (src.length > MAX_INLINE_BAND_IMAGE) {
+          console.warn(
+            `[PDF GEN] ⚠️ ${label} image still too large to inline (${src.length} chars > ${MAX_INLINE_BAND_IMAGE}) — using text band instead. ` +
+            `Re-upload a smaller letterhead in Settings → PDF Settings.`
+          );
+          return null;
+        }
+
+        console.log(`[PDF GEN] ✅ ${label} image inlined (${src.length} chars)`);
+        return src;
+      } catch (e) {
+        console.error(`[PDF GEN] ⚠️ ${label} image unavailable (${e instanceof Error ? e.message : e}) — using text band instead`);
+        return null;
+      }
+    };
 
     let htmlContent = '';
     let filename = 'document.pdf';
@@ -1331,19 +1496,98 @@ Translate now:`;
     const paperSize = (type === 'bill') ? invoicePaperSize : 'A4';
     const isA5Invoice = type === 'bill' && paperSize === 'A5';
 
+    // === LETTERHEAD MODE RESOLUTION ===
+    // Read straight from the DB rather than trusting the payload: callers build
+    // `clinicSettings` from the cached user profile, which carries only the
+    // columns that existed when it was written. Anything unreadable (columns not
+    // migrated yet, no clinic id) falls back to band mode — i.e. exactly the
+    // output every clinic gets today.
+    let letterheadMode: 'bands' | 'full' = 'bands';
+    let letterheadUrl = '';
+    let letterheadSpacing: LetterheadSpacing = { ...DEFAULT_LETTERHEAD_SPACING };
+
+    const clinicId = data.clinicSettings?.id;
+    if (clinicId) {
+      try {
+        const { data: lhRow, error: lhError } = await supabaseAdmin
+          .from('clinic_settings')
+          .select('pdf_letterhead_mode, pdf_letterhead_url, pdf_letterhead_spacing')
+          .eq('id', clinicId)
+          .maybeSingle();
+
+        if (lhError) throw lhError;
+
+        if (lhRow) {
+          letterheadMode = lhRow.pdf_letterhead_mode === 'full' ? 'full' : 'bands';
+          letterheadUrl = String(lhRow.pdf_letterhead_url || '').trim();
+          const saved = lhRow.pdf_letterhead_spacing || {};
+          letterheadSpacing = {
+            top: Number.isFinite(Number(saved.top)) ? Number(saved.top) : DEFAULT_LETTERHEAD_SPACING.top,
+            bottom: Number.isFinite(Number(saved.bottom)) ? Number(saved.bottom) : DEFAULT_LETTERHEAD_SPACING.bottom,
+            left: Number.isFinite(Number(saved.left)) ? Number(saved.left) : DEFAULT_LETTERHEAD_SPACING.left,
+            right: Number.isFinite(Number(saved.right)) ? Number(saved.right) : DEFAULT_LETTERHEAD_SPACING.right,
+          };
+        }
+      } catch (e) {
+        console.warn(
+          `[PDF GEN] Letterhead settings unavailable (${e instanceof Error ? e.message : e}) — using header/footer band mode`
+        );
+      }
+    }
+
+    // Print and compact versions are meant for pre-printed letterhead paper, so
+    // they never carry digital branding in either mode.
+    const useFullLetterhead = letterheadMode === 'full' && Boolean(letterheadUrl) && !printVersion && !compactVersion;
+
+    if (useFullLetterhead) {
+      // A5 invoices get the same artwork scaled to the smaller sheet; the saved
+      // spacers are measured against A4, so scale them by the A5/A4 ratio too.
+      const paper = isA5Invoice
+        ? { width: '148mm', height: '210mm' }
+        : { width: '210mm', height: '297mm' };
+      const scale = isA5Invoice ? 210 / 297 : 1;
+      const scaledSpacing: LetterheadSpacing = {
+        top: Math.round(letterheadSpacing.top * scale),
+        bottom: Math.round(letterheadSpacing.bottom * scale),
+        left: Math.round(letterheadSpacing.left * scale),
+        right: Math.round(letterheadSpacing.right * scale),
+      };
+
+      console.log(
+        `[PDF GEN] Full-page letterhead mode — paper ${paper.width}x${paper.height}, ` +
+        `spacers T${scaledSpacing.top}/B${scaledSpacing.bottom}, padding L${scaledSpacing.left}/R${scaledSpacing.right}`
+      );
+      htmlContent = applyFullLetterhead(htmlContent, letterheadUrl, scaledSpacing, paper);
+    }
+    // === END LETTERHEAD MODE RESOLUTION ===
+
     // Prepare header/footer for PDF.co (only for display version)
     // Convert to Base64 because some URLs might be private
     let pdfHeader = "";
     let pdfFooter = "";
     let fallbackHeaderFooterUsed = false;
-    const hasHeaderImage = Boolean(data.clinicSettings?.pdfHeaderUrl);
-    const hasFooterImage = Boolean(data.clinicSettings?.pdfFooterUrl);
+    // These drive headerheight/footerheight below, so they must reflect what is
+    // actually rendered — not merely that a URL is configured. An image that
+    // failed to inline falls back to the text band, which needs the smaller band.
+    let hasHeaderImage = false;
+    let hasFooterImage = false;
 
-    // Apply header/footer for both visits AND bills (display version only)
-    if (!printVersion && !compactVersion) {
-      if (data.clinicSettings?.pdfHeaderUrl) {
-        const headerBase64 = await imageUrlToBase64(data.clinicSettings.pdfHeaderUrl);
-        pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${headerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+    // Apply header/footer for both visits AND bills (display version only).
+    // The two modes are mutually exclusive — in full-letterhead mode the artwork
+    // is already painted behind the page, and adding API header/footer bands on
+    // top would shift and clip it.
+    if (!printVersion && !compactVersion && !useFullLetterhead) {
+      const headerSrc = data.clinicSettings?.pdfHeaderUrl
+        ? await inlineBandImage(data.clinicSettings.pdfHeaderUrl, 'Header')
+        : null;
+      const footerSrc = data.clinicSettings?.pdfFooterUrl
+        ? await inlineBandImage(data.clinicSettings.pdfFooterUrl, 'Footer')
+        : null;
+      hasHeaderImage = Boolean(headerSrc);
+      hasFooterImage = Boolean(footerSrc);
+
+      if (headerSrc) {
+        pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${headerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
       } else {
         fallbackHeaderFooterUsed = true;
         const clinicName = escapeHtml(data.clinicSettings?.clinicName || 'Clinic');
@@ -1365,9 +1609,8 @@ Translate now:`;
         `;
       }
 
-      if (data.clinicSettings?.pdfFooterUrl) {
-        const footerBase64 = await imageUrlToBase64(data.clinicSettings.pdfFooterUrl);
-        pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${footerBase64}" style="width: 100%; height: auto; display: block;" /></div>`;
+      if (footerSrc) {
+        pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${footerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
       } else {
         fallbackHeaderFooterUsed = true;
         const website = escapeHtml(data.clinicSettings?.website || '');
@@ -1387,7 +1630,12 @@ Translate now:`;
 
     // Determine margins based on document type and version
     let clinicMargins: string;
-    if (compactVersion || printVersion) {
+    if (useFullLetterhead) {
+      // Zero margins so the fixed background starts at 0,0 and bleeds to the
+      // edges. Any non-zero margin pushes the page box down and takes the
+      // letterhead with it. All spacing lives in the HTML instead.
+      clinicMargins = "0px 0px 0px 0px";
+    } else if (compactVersion || printVersion) {
       // Print/letterhead version - use print margins
       clinicMargins = data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px";
     } else if (type === 'bill') {
@@ -1405,8 +1653,10 @@ Translate now:`;
     console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
     console.log(`[PDF GEN] Paper size: ${paperSize}`);
     console.log(`[PDF GEN] Margins: ${clinicMargins}`);
-    console.log(`[PDF GEN] Header: ${pdfHeader ? 'Base64 image included' : 'None'}`);
-    console.log(`[PDF GEN] Footer: ${pdfFooter ? 'Base64 image included' : 'None'}`);
+    console.log(`[PDF GEN] Branding mode: ${useFullLetterhead ? 'FULL-PAGE LETTERHEAD' : 'HEADER/FOOTER BANDS'}`);
+    const bandKind = (html: string, isImage: boolean) => !html ? 'None' : isImage ? 'Letterhead image (inlined)' : 'Text band';
+    console.log(`[PDF GEN] Header: ${bandKind(pdfHeader, hasHeaderImage)}`);
+    console.log(`[PDF GEN] Footer: ${bandKind(pdfFooter, hasFooterImage)}`);
     if (pdfHeader) console.log(`[PDF GEN] Header length: ${pdfHeader.length} chars`);
     if (pdfFooter) console.log(`[PDF GEN] Footer length: ${pdfFooter.length} chars`);
 
@@ -1424,14 +1674,17 @@ Translate now:`;
         async: true,
         margins: clinicMargins,
         papersize: paperSize,
-        displayheaderfooter: !printVersion && !compactVersion, // No header/footer for print or compact
+        // No header/footer for print, compact, or full-letterhead mode
+        displayheaderfooter: !printVersion && !compactVersion && !useFullLetterhead,
         header: pdfHeader,
         footer: pdfFooter,
-        headerheight: (printVersion || compactVersion) ? "0px" : (isA5Invoice ? (hasHeaderImage ? "70px" : "42px") : (hasHeaderImage ? "120px" : "58px")),
-        footerheight: (printVersion || compactVersion) ? "0px" : (isA5Invoice ? (hasFooterImage ? "42px" : "26px") : (hasFooterImage ? "80px" : "42px")),
+        headerheight: (printVersion || compactVersion || useFullLetterhead) ? "0px" : (isA5Invoice ? (hasHeaderImage ? "70px" : "42px") : (hasHeaderImage ? "120px" : "58px")),
+        footerheight: (printVersion || compactVersion || useFullLetterhead) ? "0px" : (isA5Invoice ? (hasFooterImage ? "42px" : "26px") : (hasFooterImage ? "80px" : "42px")),
         scale: 1,
         mediatype: "print",
-        printbackground: !printVersion, // Colors only for display version
+        // Colors only for display version; the full-page letterhead is a CSS
+        // background, which Chromium drops entirely without this.
+        printbackground: !printVersion,
       }),
     })
 
@@ -1445,13 +1698,12 @@ Translate now:`;
 
     let pdfUrl: string | null = null;
 
-    // Handle synchronous response - URL returned directly (like LIMS app)
-    if (pdfCoData.url && pdfCoData.error === false) {
-      console.log(`[PDF GEN] ✅ PDF generated synchronously!`);
-      pdfUrl = pdfCoData.url;
-    }
+    // With async:true PDF.co returns BOTH `jobId` and `url` — that url is the
+    // *future* S3 location and 404s until the job finishes writing it. So the
+    // jobId branch must be checked FIRST; treating the url as ready skips
+    // polling entirely and the download fails with S3 NoSuchKey.
     // Handle async response - need to poll for completion
-    else if (pdfCoData.jobId) {
+    if (pdfCoData.jobId) {
       console.log(`[PDF GEN] PDF.co async job started: ${pdfCoData.jobId}`);
 
       // --- Poll PDF.co job status until complete ---
@@ -1462,6 +1714,10 @@ Translate now:`;
       for (let pollAttempt = 1; pollAttempt <= maxPollAttempts; pollAttempt++) {
         console.log(`[PDF GEN] Polling job status (attempt ${pollAttempt}/${maxPollAttempts})...`);
 
+        // Only transient transport faults are retried. The job's own verdict is
+        // evaluated outside the try so a terminal failure aborts immediately
+        // instead of being swallowed by the catch and re-polled for 2 minutes.
+        let statusData: any;
         try {
           const statusResponse = await fetch(`${PDFCO_JOB_STATUS_URL}?jobid=${pdfCoData.jobId}`, {
             method: 'GET',
@@ -1474,31 +1730,42 @@ Translate now:`;
             throw new Error(`Job status check failed: ${statusResponse.status}`);
           }
 
-          const statusData = await statusResponse.json();
-          console.log(`[PDF GEN] Job status:`, JSON.stringify(statusData));
-
-          // Check for success (polling returns status: "success")
-          if (statusData.status === 'success' && statusData.url) {
-            pdfUrl = statusData.url;
-            console.log(`[PDF GEN] ✅ Job complete! PDF URL: ${pdfUrl}`);
-            break;
-          } else if (statusData.status === 'error' || statusData.status === 'failed') {
-            throw new Error(`PDF.co job failed: ${statusData.message || 'Unknown error'}`);
-          }
-
-          // Job still processing, wait before next poll
-          if (pollAttempt < maxPollAttempts) {
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
-          }
-
+          statusData = await statusResponse.json();
         } catch (error) {
           console.error(`[PDF GEN] Polling error:`, error);
           if (pollAttempt >= maxPollAttempts) {
             throw error;
           }
           await new Promise(resolve => setTimeout(resolve, pollInterval));
+          continue;
+        }
+
+        console.log(`[PDF GEN] Job status:`, JSON.stringify(statusData));
+
+        // Check for success (polling returns status: "success")
+        if (statusData.status === 'success') {
+          // job/check does not always echo the url back — fall back to the
+          // pre-signed url handed to us when the job was created.
+          pdfUrl = statusData.url || pdfCoData.url;
+          console.log(`[PDF GEN] ✅ Job complete! PDF URL: ${pdfUrl}`);
+          break;
+        }
+
+        // Terminal verdict — retrying cannot change it.
+        if (statusData.status === 'failed' || statusData.status === 'error' || statusData.status === 'aborted') {
+          throw new Error(`PDF.co job failed: ${statusData.message || 'Unknown error'}`);
+        }
+
+        // Job still processing, wait before next poll
+        if (pollAttempt < maxPollAttempts) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
         }
       }
+    }
+    // Handle synchronous response - URL returned directly, no job to wait on
+    else if (pdfCoData.url && pdfCoData.error === false) {
+      console.log(`[PDF GEN] ✅ PDF generated synchronously!`);
+      pdfUrl = pdfCoData.url;
     } else {
       throw new Error('PDF.co did not return a URL or jobId');
     }
@@ -1543,26 +1810,24 @@ Translate now:`;
       throw new Error('PDF file failed to stabilize on PDF.co servers. Please try again in a few seconds.');
     }
 
-    // --- Return temp URL only after verification passes ---
-    console.log('[PDF GEN] ✅ Returning verified URL to user');
+    // --- Persist to Supabase Storage before responding ---
+    // Must be awaited: the isolate is torn down the moment we return a Response,
+    // so a fire-and-forget promise here would never run.
+    console.log('[PDF GEN] File verified, persisting to Storage...');
 
-    // Background persistence task
-    const persistToStorage = async () => {
+    const persistToStorage = async (): Promise<string | null> => {
       try {
-        console.log('[PDF GEN] Background: Waiting 6s for S3...');
-        await new Promise(resolve => setTimeout(resolve, 6000));
-
         let pdfBlob: Blob | null = null;
         const maxRetries = 5;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
-            console.log(`[PDF GEN] Background: Download ${attempt}/${maxRetries}...`);
+            console.log(`[PDF GEN] Persist: Download ${attempt}/${maxRetries}...`);
             const res = await fetch(pdfUrl!);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             pdfBlob = await res.blob();
             if (pdfBlob.size === 0) throw new Error('Empty');
-            console.log(`[PDF GEN] Background: ✅ Downloaded (${pdfBlob.size} bytes)`);
+            console.log(`[PDF GEN] Persist: ✅ Downloaded (${pdfBlob.size} bytes)`);
             break;
           } catch (e) {
             if (attempt < maxRetries) await new Promise(r => setTimeout(r, 2000 * attempt));
@@ -1570,8 +1835,8 @@ Translate now:`;
         }
 
         if (!pdfBlob) {
-          console.error('[PDF GEN] Background: ❌ Download failed');
-          return;
+          console.error('[PDF GEN] Persist: ❌ Download failed');
+          return null;
         }
 
         const bucketName = 'pdfs';
@@ -1593,12 +1858,12 @@ Translate now:`;
           .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: true });
 
         if (uploadError) {
-          console.error('[PDF GEN] Background: ❌ Upload failed:', uploadError.message);
-          return;
+          console.error('[PDF GEN] Persist: ❌ Upload failed:', uploadError.message);
+          return null;
         }
 
         const { data: { publicUrl } } = supabaseAdmin.storage.from(bucketName).getPublicUrl(storagePath);
-        console.log('[PDF GEN] Background: ✅ Persisted:', publicUrl);
+        console.log('[PDF GEN] Persist: ✅ Uploaded:', publicUrl);
 
         const table = type === 'bill' ? 'bills' : 'visits';
         const recordId = type === 'bill' ? data.bill?.id : data.visit?.id;
@@ -1608,25 +1873,46 @@ Translate now:`;
             : printVersion
               ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
               : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
-          await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
-          console.log('[PDF GEN] Background: ✅ DB updated with column:', column);
+          const { error: dbError } = await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
+          if (dbError) {
+            console.error('[PDF GEN] Persist: ❌ DB update failed:', dbError.message);
+          } else {
+            console.log('[PDF GEN] Persist: ✅ DB updated with column:', column);
+          }
         }
+
+        return publicUrl;
       } catch (err) {
-        console.error('[PDF GEN] Background error:', err);
+        console.error('[PDF GEN] Persist error:', err);
+        return null;
       }
     };
 
-    // Start background task (fire and forget)
-    persistToStorage().catch(e => console.error('[PDF GEN] Background task error:', e));
+    const permanentUrl = await persistToStorage();
 
-    // Return temp URL immediately
+    if (permanentUrl) {
+      console.log('[PDF GEN] ✅ Returning permanent Storage URL');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          url: permanentUrl,
+          filename,
+          temporary: false
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Storage persistence failed — fall back to the (1 hour) PDF.co temp URL
+    // so the user still gets their document.
+    console.warn('[PDF GEN] ⚠️ Storage persist failed, falling back to temp URL');
     return new Response(
       JSON.stringify({
         success: true,
         url: pdfUrl,
         filename,
         temporary: true,
-        message: 'PDF ready! Storage sync in progress...'
+        message: 'PDF ready, but permanent storage failed. This link expires in 1 hour.'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

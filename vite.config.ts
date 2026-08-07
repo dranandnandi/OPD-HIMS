@@ -12,7 +12,8 @@ export default defineConfig({
       includeAssets: ['favicon.ico', 'pwa-192x192.svg', 'pwa-512x512.svg'],
       manifest: {
         version: '2.0.1',
-        name: 'OPD Management System - Doctorpreneur Academy',
+        // Brand-neutral: one build serves multiple branded domains (see src/config/branding.ts)
+        name: 'OPD Management System',
         short_name: 'OPD Manager',
         description: 'Complete OPD Management System for Clinics - Appointments, Billing, Pharmacy, EMR',
         theme_color: '#2563eb',

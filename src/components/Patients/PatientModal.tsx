@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Shield, CheckCircle } from 'lucide-react';
+import { X, Shield, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toTitleCase } from '../../utils/stringUtils';
 import ABHALinkModal from './ABHALinkModal';
 import { abhaService, ABHAProfile } from '../../services/abhaService';
+import { patientService } from '../../services/patientService';
+import PatientDocumentsPanel from './PatientDocumentsPanel';
 
 interface PatientModalProps {
   patient: {
@@ -38,6 +40,8 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showABHAModal, setShowABHAModal] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [linkedABHA, setLinkedABHA] = useState<{ number: string; address?: string } | null>(
     patient?.abha_number ? { number: patient.abha_number, address: patient.abha_address } : null
   );
@@ -68,6 +72,26 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
       });
     }
   }, [patient]);
+
+  // Warn reception if a patient with the same phone already exists (only for new registrations).
+  const checkForDuplicate = async () => {
+    if (patient) return; // editing an existing patient — skip
+    const phone = formData.phone.trim();
+    if (phone.length < 10) {
+      setDuplicateWarning(false);
+      return;
+    }
+    setCheckingDuplicate(true);
+    try {
+      const exists = await patientService.checkIfPatientExistsByPhone(phone);
+      setDuplicateWarning(exists);
+    } catch {
+      // Non-blocking: a failed lookup should never stop registration.
+      setDuplicateWarning(false);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,9 +160,23 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
                 onChange={(e) => {
                   setFormData({ ...formData, phone: e.target.value });
                   setFormError(null); // Clear error when phone changes
+                  setDuplicateWarning(false); // Re-check on next blur
                 }}
+                onBlur={checkForDuplicate}
                 className="input-field"
               />
+              {checkingDuplicate && (
+                <p className="mt-1 text-xs text-gray-500">Checking for existing patient…</p>
+              )}
+              {duplicateWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-amber-800">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs">
+                    A patient with this phone number already exists in this clinic. Please search
+                    existing patients before creating a duplicate.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -280,6 +318,15 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
                 </div>
               )}
             </div>
+          )}
+
+          {/* Patient document upload portal (share link + view uploads) */}
+          {patient && (
+            <PatientDocumentsPanel
+              patientId={patient.id}
+              patientName={patient.name}
+              patientPhone={patient.phone}
+            />
           )}
 
           <div className="flex justify-end gap-4 pt-6">

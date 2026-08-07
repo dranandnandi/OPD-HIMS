@@ -59,6 +59,7 @@ export class WhatsAppAutoSendService {
     'visit_prescription': 'Dear {{patientName}}, your prescription is ready. Download here: {{pdfUrl}} - {{clinicName}}',
     'invoice_generated': 'Dear {{patientName}}, your invoice #{{billNumber}} for {{totalAmount}} is ready. Download: {{pdfUrl}} - {{clinicName}}',
     'gmb_review_request': 'Thank you for visiting {{clinicName}}! We hope you are feeling better. Please share your experience: {{reviewLink}}',
+    'patient_registration': 'Welcome to {{clinicName}}, {{patientName}}! You are now registered with us. For faster service, you can securely upload your ID, insurance/TPA policy and reports here: {{uploadLink}}',
     'thank_you': 'Thank you for visiting {{clinicName}} today! We hope you feel better soon.'
   };
 
@@ -84,6 +85,7 @@ export class WhatsAppAutoSendService {
         'visit_prescription': 'visit_prescription',
         'invoice_generated': 'invoice_generated',
         'gmb_review_request': 'thank_you',
+        'patient_registration': 'patient_registration',
         'thank_you': 'thank_you'
       };
 
@@ -447,6 +449,54 @@ export class WhatsAppAutoSendService {
       eventType: 'invoice_generated',
       messageContent: message,
       metadata: { billId, pdfUrl }
+    });
+  }
+
+  // Patient registration welcome — also carries the patient-specific document
+  // upload link so they can submit ID / insurance / reports for TPA up front.
+  static async sendRegistrationWelcome(params: {
+    clinicId: string;
+    patient: { id: string; name: string; phone?: string | null };
+  }): Promise<void> {
+    if (!supabase) return;
+    const { clinicId, patient } = params;
+    if (!patient.phone) return;
+
+    const enabled = await this.isAutoSendEnabled(clinicId, 'patient_registration');
+    if (!enabled) return;
+
+    const template = await this.getTemplate(clinicId, 'patient_registration');
+    if (!template) return;
+
+    // Patient-specific upload link (stable id on the patient row).
+    const { data: p } = await supabase
+      .from('patients')
+      .select('upload_link_id')
+      .eq('id', patient.id)
+      .single();
+    const uploadLink = p?.upload_link_id
+      ? `${window.location.origin}/patient-upload?c=${p.upload_link_id}`
+      : '';
+
+    const { data: clinic } = await supabase
+      .from('clinic_settings')
+      .select('clinic_name')
+      .eq('id', clinicId)
+      .single();
+
+    const message = replaceTemplateVariables(template, {
+      patientName: patient.name,
+      clinicName: clinic?.clinic_name || 'our clinic',
+      uploadLink,
+    });
+
+    await this.queueMessage({
+      clinicId,
+      patientId: patient.id,
+      phoneNumber: patient.phone,
+      eventType: 'patient_registration',
+      messageContent: message,
+      metadata: { uploadLink },
     });
   }
 

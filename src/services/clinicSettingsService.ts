@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { ClinicSetting } from '../types';
+import { ClinicSetting, PublicBookingPolicy } from '../types';
 import { getCurrentProfile } from './profileService';
 import type { DatabaseClinicSetting } from '../lib/supabase';
 
@@ -46,6 +46,12 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   pdfPrintMargins: dbSetting.pdf_print_margins,
   invoicePaperSize: dbSetting.invoice_paper_size as 'A4' | 'A5' | undefined,
   invoiceMargins: dbSetting.invoice_margins,
+  pdfLetterheadMode: dbSetting.pdf_letterhead_mode === 'full' ? 'full' : 'bands',
+  pdfLetterheadUrl: dbSetting.pdf_letterhead_url,
+  pdfLetterheadSpacing: dbSetting.pdf_letterhead_spacing,
+  publicSlug: dbSetting.public_slug ?? null,
+  publicBookingEnabled: dbSetting.public_booking_enabled ?? false,
+  publicBookingPolicy: dbSetting.appointment_config ?? null,
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -195,6 +201,9 @@ export const clinicSettingsService = {
     if (settings.pdfMargins !== undefined) dbSettings.pdf_margins = settings.pdfMargins;
     if (settings.invoicePaperSize !== undefined) dbSettings.invoice_paper_size = settings.invoicePaperSize;
     if (settings.invoiceMargins !== undefined) dbSettings.invoice_margins = settings.invoiceMargins;
+    if (settings.pdfLetterheadMode !== undefined) dbSettings.pdf_letterhead_mode = settings.pdfLetterheadMode;
+    if (settings.pdfLetterheadUrl !== undefined) dbSettings.pdf_letterhead_url = settings.pdfLetterheadUrl;
+    if (settings.pdfLetterheadSpacing !== undefined) dbSettings.pdf_letterhead_spacing = settings.pdfLetterheadSpacing;
     if (settings.whatsappSharedSessionUserId !== undefined) dbSettings.whatsapp_shared_session_user_id = settings.whatsappSharedSessionUserId;
 
     const { data, error } = await supabase
@@ -332,6 +341,62 @@ export const clinicSettingsService = {
   async updateWorkingHours(workingHours: ClinicSetting['workingHours']): Promise<ClinicSetting> {
     const settings = await this.getOrCreateClinicSettings();
     return await this.updateClinicSettings(settings.id, { workingHours });
+  },
+
+  // Public self-booking config.
+  //
+  // Written directly rather than through updateClinicSettings because the slug
+  // carries a uniqueness constraint whose violation needs a specific message,
+  // and because these columns must never ride along on an unrelated save.
+  async updatePublicBooking(
+    clinicId: string,
+    config: {
+      publicSlug?: string | null;
+      publicBookingEnabled?: boolean;
+      publicBookingPolicy?: PublicBookingPolicy;
+    }
+  ): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    const updates: Record<string, unknown> = {};
+
+    if (config.publicSlug !== undefined) {
+      const slug = config.publicSlug?.trim().toLowerCase() || null;
+
+      if (slug !== null && !/^[a-z0-9][a-z0-9-]{1,40}$/.test(slug)) {
+        throw new Error(
+          'Link name must be 2-41 characters: lowercase letters, numbers and hyphens, starting with a letter or number.'
+        );
+      }
+
+      updates.public_slug = slug;
+    }
+
+    if (config.publicBookingEnabled !== undefined) {
+      updates.public_booking_enabled = config.publicBookingEnabled;
+    }
+
+    if (config.publicBookingPolicy !== undefined) {
+      updates.appointment_config = config.publicBookingPolicy;
+    }
+
+    if (Object.keys(updates).length === 0) return;
+
+    const { error } = await supabase
+      .from('clinic_settings')
+      .update(updates)
+      .eq('id', clinicId);
+
+    if (error) {
+      // 23505 = idx_clinic_settings_public_slug. Slugs are global across every
+      // clinic on the platform, so collisions are expected and normal.
+      if (error.code === '23505') {
+        throw new Error('That link name is already taken. Please choose another.');
+      }
+      throw new Error(`Failed to save public booking settings: ${error.message}`);
+    }
   },
 
   // Platform-managed flag (like clinic_tier): deliberately not part of the

@@ -13,18 +13,21 @@ import {
   Pill,
   Star,
   TrendingUp,
-  Bot,
   RefreshCw,
   ChevronDown,
   LayoutDashboard,
   BedDouble,
   UserPlus,
   Receipt,
-  Warehouse
+  Warehouse,
+  ShieldCheck,
+  Percent,
+  MessageCircle
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import InstallPWA from '../PWA/InstallPWA';
+import { brand } from '../../config/branding';
 
 interface NavItem {
   path: string;
@@ -61,6 +64,11 @@ const Navigation: React.FC = () => {
   const hasIpdPermission = (perm: string) =>
     isAdmin || permissions.includes(perm) || permissions.includes('all');
 
+  // Mirrors AdminOrReceptionRoute in App.tsx, which guards /settings/whatsapp-ai.
+  const isAdminOrReception = Boolean(
+    isAdmin || roleName === 'receptionist' || roleName === 'reception'
+  );
+
   // IPD items are permission-filtered per user; the whole group hides when the
   // clinic's ipd_enabled flag is off or the user holds no ipd_* permission.
   const ipdItems: NavItem[] = ipdEnabled
@@ -69,6 +77,9 @@ const Navigation: React.FC = () => {
       { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', description: 'Live bed status', perm: 'ipd_census' },
       { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', description: 'Admit a patient', perm: 'ipd_admissions' },
       { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', description: 'Deposits, interim & final bills', perm: 'ipd_billing' },
+      { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', description: 'Discharge worklist & clearance', perm: 'ipd_billing' },
+      { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', description: 'Pre-auth & claim worklist', perm: 'ipd_billing' },
+      { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', description: 'Share rules & settlements', perm: 'ipd_billing' },
       { path: '/ipd/stores', icon: Warehouse, label: 'Stores', description: 'Ward stores & indents', perm: 'ipd_stores' },
     ] as Array<NavItem & { perm: string }>)
       .filter(({ perm }) => hasIpdPermission(perm))
@@ -115,16 +126,19 @@ const Navigation: React.FC = () => {
         label: 'Growth & AI',
         items: [
           { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients' },
-          { path: '/chatbots', icon: Bot, label: 'AI Health Assistant', description: 'Ayurvedic chatbot support' },
+          ...(isAdminOrReception
+            ? [{ path: '/settings/whatsapp-ai', icon: MessageCircle, label: 'WhatsApp & AI', description: 'Scan QR to link WhatsApp' }]
+            : []),
         ],
       }]
       : []),
   ];
 
   // Analytics & Settings stay pinned at the bottom of the list, outside groups.
-  // Waiting Sequences, Doctor Availability, AI Master Data, User Management,
-  // WhatsApp & AI and IPD Masters are reachable from the Settings page instead
-  // of crowding the sidebar.
+  // Waiting Sequences, Doctor Availability, AI Master Data, User Management
+  // and IPD Masters are reachable from the Settings page instead of crowding
+  // the sidebar. WhatsApp & AI is surfaced under Growth & AI because linking
+  // the WhatsApp QR is a routine task, not one-time configuration.
   const bottomItems: NavItem[] = [
     { path: '/analytics', icon: BarChart3, label: 'Analytics', description: 'Reports & insights' },
     { path: '/settings', icon: Settings, label: 'Settings', description: 'System configuration' },
@@ -213,12 +227,12 @@ const Navigation: React.FC = () => {
           {/* Platform Branding */}
           <div className="flex items-center gap-2">
             <img
-              src="https://i.ibb.co/XxgNyzFj/DC-logo.png"
-              alt="Doctorpreneur Academy Logo"
-              className="w-6 h-6 object-contain"
+              src={brand.logoUrl}
+              alt={`${brand.company} Logo`}
+              className={brand.navLogoClass}
             />
             <div>
-              <p className="text-xs text-gray-500">Powered by The Doctorpreneur Academy</p>
+              <p className="text-xs text-gray-500">{brand.poweredBy}</p>
             </div>
           </div>
         </div>

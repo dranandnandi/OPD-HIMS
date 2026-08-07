@@ -145,6 +145,8 @@ export const medicationService = {
     frequencyCode: string;
     days: number;
     instructions?: string;
+    /** set when the order came out of a treatment-plan entry / dictation */
+    treatmentPlanId?: string | null;
     userId?: string;
   }): Promise<MedicationOrder> {
     const startAt = new Date();
@@ -166,6 +168,7 @@ export const medicationService = {
         start_at: startAt.toISOString(),
         end_at: endAt?.toISOString() ?? null,
         instructions: params.instructions ?? null,
+        treatment_plan_id: params.treatmentPlanId ?? null,
         ordered_by: params.userId ?? null,
       })
       .select()

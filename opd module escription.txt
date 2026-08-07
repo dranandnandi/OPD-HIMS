@@ -1,0 +1,355 @@
+Here’s a useful handoff brief for another agent planning an IPD module over this OPD app.
+
+**App Description**
+
+This is a multi-clinic OPD management system for Indian clinics. It is built around patient registration, appointments, doctor visits, EMR/prescriptions, billing, pharmacy, reports, WhatsApp communication, AI-assisted OCR/NLP, LIMS/HIMS lab order integration, ABDM/ABHA fields, and clinic analytics.
+
+The app is clinic-tenant based: most core records have `clinic_id`, and frontend services first resolve the current user’s `Profile` and `clinicId` before reading/writing data. The existing design should be extended, not bypassed, for IPD.
+
+**Tech Stack**
+
+- Frontend: React 18 + TypeScript + Vite
+- Styling/UI: Tailwind CSS, lucide-react icons
+- Routing: `react-router-dom`
+- Backend/database: Supabase Postgres
+- Auth: Supabase Auth with `profiles`, `roles`, `permissions`, `clinic_settings`
+- Server functions: Supabase Edge Functions under `supabase/functions`
+- Netlify Functions: WhatsApp proxy/backend calls under `netlify/functions`
+- Mobile/PWA: Capacitor + Vite PWA
+- AI: Google Vision OCR, Gemini NLP, medical text/image analysis
+- PDFs: frontend PDF generation plus Supabase function `generate-pdf-from-html`
+
+**Important Existing Modules**
+
+Frontend routes/components live mostly under `src/components`:
+
+- Appointments: `src/components/Appointments`
+- Patients and timelines: `src/components/Patients`
+- Visits/EMR: `src/components/Visits`, `src/components/CaseUpload`
+- Billing: `src/components/Billing`
+- Pharmacy: `src/components/Pharmacy`
+- Analytics: `src/components/Analytics`
+- Settings/admin: `src/components/Settings`
+- WhatsApp queue: `src/components/WhatsApp`
+- Auth/layout: `src/components/Auth`, `src/components/Layout`
+
+Services live under `src/services`:
+
+- `patientService.ts`
+- `appointmentService.ts`
+- `visitService.ts`
+- `billingService.ts`
+- `pharmacyService.ts`
+- `profileService.ts`
+- `clinicSettingsService.ts`
+- `limsService.ts`
+- `analyticsService.ts`
+- `whatsappAutoSendService.ts`
+
+Main route wiring is in `src/App.tsx`. Navigation is in `src/components/Layout/Navigation.tsx`.
+
+**Current Data Model**
+
+Core existing tables from `database_schema.md`:
+
+- `clinic_settings`: tenant/clinic config, fees, PDF settings, WhatsApp settings, clinic tier
+- `profiles`: users/staff/doctors, role, permissions, clinic assignment
+- `roles`: role names and permissions
+- `patients`: demographics, phone, ABHA fields, soft hide
+- `appointments`: OPD appointment scheduling/status
+- `visits`: OPD encounter/EMR root record
+- `symptoms`, `diagnoses`, `prescriptions`, `tests_ordered`, `test_results`: visit-linked clinical data
+- `bills`, `bill_items`, `payment_records`, `refund_requests`: billing and collection
+- `medicines_master`, `pharmacy_inward_*`, `pharmacy_dispensed_items`, `stock_movement_log`: pharmacy/inventory
+- `hims_lab_orders`, `lims_outbound_orders`: lab integration
+- `whatsapp_message_queue`, `whatsapp_message_log`, `whatsapp_auto_send_rules`, `whatsapp_message_templates`: messaging automation
+- `abdm_audit_log`: ABDM audit trail
+- `ocr_uploads`, `ocr_results`, `voice_transcripts`: AI/EMR capture support
+
+**Recommended IPD Module Shape**
+
+Add IPD as a first-class module that reuses patients, profiles, billing, pharmacy, lab orders, PDFs, WhatsApp, and analytics.
+
+Suggested frontend structure:
+
+```txt
+src/components/IPD/
+  IPDDashboard.tsx
+  AdmissionList.tsx
+  AdmissionModal.tsx
+  AdmissionDetails.tsx
+  BedBoard.tsx
+  WardManagement.tsx
+  BedTransferModal.tsx
+  NursingNotes.tsx
+  VitalsChart.tsx
+  MedicationAdministration.tsx
+  DoctorRounds.tsx
+  ProcedureOrders.tsx
+  DischargeSummary.tsx
+  IPDBillingPanel.tsx
+
+src/services/ipdService.ts
+src/types/ipd.ts
+```
+
+Suggested routes:
+
+```txt
+/ipd
+/ipd/admissions
+/ipd/admissions/:id
+/ipd/bed-board
+/ipd/wards
+/ipd/discharges
+/ipd/billing
+```
+
+Add navigation item in `Navigation.tsx`, probably near Visits/Billing.
+
+**Suggested IPD Tables**
+
+Minimum useful schema:
+
+```txt
+ipd_wards
+- id
+- clinic_id
+- name
+- floor
+- type
+- is_active
+- created_at
+- updated_at
+
+ipd_beds
+- id
+- clinic_id
+- ward_id
+- bed_number
+- bed_type
+- daily_rate
+- status: available | occupied | cleaning | maintenance | reserved
+- is_active
+- created_at
+- updated_at
+
+ipd_admissions
+- id
+- clinic_id
+- patient_id
+- admitting_doctor_id
+- current_bed_id
+- admission_number
+- admission_date
+- admission_type: planned | emergency | transfer
+- status: admitted | discharged | transferred | cancelled
+- diagnosis
+- reason_for_admission
+- notes
+- source_appointment_id nullable
+- source_visit_id nullable
+- created_by
+- created_at
+- updated_at
+
+ipd_bed_allocations
+- id
+- clinic_id
+- admission_id
+- bed_id
+- from_datetime
+- to_datetime nullable
+- rate_per_day
+- reason
+- created_by
+- created_at
+
+ipd_daily_notes
+- id
+- clinic_id
+- admission_id
+- note_type: doctor_round | nursing_note | progress_note
+- note
+- vitals jsonb nullable
+- created_by
+- created_at
+
+ipd_vitals
+- id
+- clinic_id
+- admission_id
+- temperature
+- blood_pressure
+- pulse
+- respiratory_rate
+- oxygen_saturation
+- weight
+- recorded_by
+- recorded_at
+
+ipd_medication_orders
+- id
+- clinic_id
+- admission_id
+- medicine_id nullable
+- medicine_name
+- dosage
+- route
+- frequency
+- start_at
+- end_at
+- status
+- ordered_by
+- created_at
+
+ipd_medication_administration
+- id
+- clinic_id
+- medication_order_id
+- admission_id
+- scheduled_at
+- administered_at
+- status: given | skipped | held
+- administered_by
+- notes
+
+ipd_discharge_summaries
+- id
+- clinic_id
+- admission_id
+- discharge_date
+- final_diagnosis
+- hospital_course
+- procedures
+- discharge_medications jsonb
+- follow_up_advice
+- condition_at_discharge
+- pdf_url
+- created_by
+- created_at
+- updated_at
+```
+
+Optional later tables:
+
+```txt
+ipd_procedure_orders
+ipd_diet_orders
+ipd_intake_output
+ipd_consent_forms
+ipd_deposits
+ipd_package_plans
+ipd_referrals
+ipd_room_service_charges
+```
+
+**Integration Rules**
+
+Use existing `patients` table. Do not create separate IPD patients.
+
+Use existing `profiles` for doctors, nurses, reception, admin. Add role/permission checks only if needed.
+
+Use existing `bills`, `bill_items`, and `payment_records` for IPD billing. Add `admission_id` to `bills` or create an `ipd_bill_links` table if avoiding migration risk. Bill item types should support room rent, nursing charge, procedure, pharmacy, lab, consultation, package, discount, deposit/advance.
+
+Use existing pharmacy stock deduction for IPD medication administration/dispensing. IPD medicine usage should update `pharmacy_dispensed_items` or a parallel IPD medication issue table that also writes stock movements.
+
+Use existing `tests_ordered`/`test_results` if possible, but they currently require `visit_id`. For IPD, either allow `admission_id` on lab orders or create an IPD-linked order wrapper.
+
+Use existing PDF infrastructure for discharge summary, IPD bill, consent forms, and admission sheet.
+
+Use existing WhatsApp queue/templates for admission confirmation, daily estimate, discharge summary, payment reminders, and follow-up after discharge.
+
+Use existing analytics function pattern for IPD dashboard metrics.
+
+**Security/RLS Pattern**
+
+Every new IPD table should include `clinic_id` and RLS like the existing pattern:
+
+```sql
+clinic_id IN (
+  SELECT clinic_id FROM profiles WHERE id = auth.uid()
+)
+```
+
+Also add indexes on:
+
+```txt
+clinic_id
+patient_id
+admission_id
+status
+created_at/admission_date
+current_bed_id
+```
+
+**Planning Priorities**
+
+Phase 1 MVP:
+
+1. Ward/bed master
+2. Admit patient from existing patient record
+3. Bed allocation and transfer
+4. Admission dashboard/list
+5. Basic nursing/doctor notes
+6. IPD billing with room rent calculation
+7. Discharge summary PDF
+
+Phase 2:
+
+1. Medication chart and administration
+2. Lab/procedure orders
+3. Deposits/advance payments
+4. WhatsApp notifications
+5. IPD analytics
+6. Pharmacy stock integration
+
+Phase 3:
+
+1. NABH-style forms/checklists
+2. Consent forms
+3. Diet chart
+4. Intake/output chart
+5. Insurance/TPA workflow
+6. Package billing
+
+**Best Prompt For Another Agent**
+
+```txt
+You are extending an existing React + TypeScript + Supabase OPD clinic management app into IPD.
+
+Current app:
+- Frontend: Vite React TypeScript, Tailwind, lucide-react.
+- Backend: Supabase Postgres/Auth/Edge Functions.
+- Multi-tenant clinic model: use clinic_id everywhere.
+- Current modules: patients, appointments, visits/EMR, prescriptions, billing, payment records, pharmacy, LIMS, WhatsApp queue, analytics, settings, ABDM.
+- Main routes: src/App.tsx.
+- Navigation: src/components/Layout/Navigation.tsx.
+- Services: src/services/*.
+- Types: src/types/index.ts.
+- DB schema reference: database_schema.md and supabase/migrations.
+
+IPD must reuse:
+- patients for patient identity
+- profiles for doctors/staff
+- clinic_settings for tenant config
+- bills/bill_items/payment_records for billing
+- pharmacy inventory for medicines
+- tests_ordered/test_results or compatible lab-order extension
+- WhatsApp queue/templates for notifications
+- PDF generation flow for discharge summary/bills
+
+Plan the IPD module with:
+- ward/bed management
+- admission lifecycle
+- bed transfers
+- doctor rounds and nursing notes
+- vitals chart
+- medication chart
+- IPD billing/advances
+- discharge summary
+- RLS and migrations using clinic_id
+- frontend routes/components/services/types following current app patterns
+```
+
+That should give the next agent a solid runway without making them rediscover the app from scratch.

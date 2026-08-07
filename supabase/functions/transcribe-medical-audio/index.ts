@@ -1,4 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+    resolveExaminationSchema,
+    describeExaminationSchema,
+    EXAMINATION_MAPPING_RULES
+} from "../_shared/examinationSchema.ts";
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -42,11 +47,11 @@ serve(async (req) => {
     }
 
     try {
-        const { audioBase64, mimeType, visitContext } = await req.json();
+        const { audioBase64, mimeType, visitContext, transcriptText } = await req.json();
 
-        if (!audioBase64) {
+        if (!audioBase64 && !transcriptText) {
             return new Response(JSON.stringify({
-                error: 'audioBase64 is required'
+                error: 'audioBase64 or transcriptText is required'
             }), {
                 status: 400,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -63,90 +68,84 @@ serve(async (req) => {
             });
         }
 
-        // Build comprehensive prompt for medical transcription and extraction
-        // Include examination template if provided
-        const hasExamTemplate = visitContext?.examinationTemplate?.sections?.length > 0;
-        const examTemplateInfo = hasExamTemplate
-            ? `\n\nEXAMINATION TEMPLATE (Doctor has created specific fields - FILL THESE):\n${JSON.stringify(visitContext.examinationTemplate.sections, null, 2)}\n\n**IMPORTANT**: The doctor has created a custom examination template. Extract examination findings into the EXACT fields defined in this template. Match field keys precisely (e.g., if template has "pallor", "icterus", use those exact keys in your examination output).`
-            : '';
+        // `examinationSchema` is the schema built by the client; `examinationTemplate`
+        // is the legacy full PhysicalExamination payload. Either yields section/field
+        // keys; neither present falls back to the standard OPD schema.
+        const examSchema = resolveExaminationSchema(
+            visitContext?.examinationSchema ?? visitContext?.examinationTemplate
+        );
+        const hasExamTemplate = examSchema.isTemplate;
+        const examSchemaText = describeExaminationSchema(examSchema);
 
         const systemPrompt = `You are an expert medical transcription AI specialized in doctor-patient consultations in Indian OPD (Outpatient Department) settings.
 
 YOUR TASK:
-1. Transcribe the audio accurately, preserving medical terminology
+1. ${transcriptText ? 'Re-read the supplied transcript' : 'Transcribe the audio accurately, preserving medical terminology'}
 2. Extract ALL clinically relevant information comprehensively
-3. Infer structured data even from casual conversation
+3. Map every extracted item onto the EMR target fields listed below
 4. Suggest probable diagnoses based on symptoms discussed
 5. Filter only very sensitive non-clinical info (financial, personal IDs)
 
-EXISTING VISIT CONTEXT (use to enhance extraction):
+🚨 THE GOLDEN RULE — NOTHING MAY BE LOST:
+Every clinically relevant statement in the consultation must appear somewhere in
+your JSON output. If a finding does not fit any structured field below, you MUST
+put it in "unmappedFindings" (with a short label) or in "doctorNotes". Silently
+dropping information is a serious error. Never invent information either.
+
+EXISTING VISIT CONTEXT (already in the EMR — extract it again only if the doctor restates or changes it):
 - Chief Complaint Entered: ${visitContext?.chiefComplaint || 'Not entered yet'}
-- Symptoms Already Added: ${visitContext?.currentSymptoms?.join(', ') || 'None added yet'}${examTemplateInfo}
+- Symptoms Already Added: ${visitContext?.currentSymptoms?.join(', ') || 'None added yet'}
+- Diagnoses Already Added: ${visitContext?.currentDiagnoses?.join(', ') || 'None added yet'}
+- Patient: ${visitContext?.patientAge ? `${visitContext.patientAge} years` : 'age unknown'}, ${visitContext?.patientGender || 'gender unknown'}
+- Doctor Specialization: ${visitContext?.doctorSpecialization || 'General Medicine'}
+
+EXAMINATION TARGET FIELDS ${hasExamTemplate
+                ? `(the doctor has LOADED THEIR OWN TEMPLATE${examSchema.templateName ? `: "${examSchema.templateName}"` : ''} — these exact keys must be used)`
+                : '(no template loaded — use this standard OPD schema)'}:
+${examSchemaText}
+
+${EXAMINATION_MAPPING_RULES}
 
 EXTRACTION GUIDELINES:
 
-**CHIEF COMPLAINT**: Extract the main reason for visit if discussed. Should be a brief 2-5 word summary.
+**CHIEF COMPLAINT**: The main reason for visit — a brief 2-5 word summary.
 
 **SYMPTOMS**: Extract with FULL DETAILS:
-- name: The symptom name (e.g., "abdominal pain", "fever", "cough")
-- location: Body location if mentioned (e.g., "right side", "lower back", "chest")
-- duration: How long (e.g., "2 days", "since morning", "1 week")
-- severity: mild/moderate/severe (infer from description - "little pain"=mild, "severe/unbearable"=severe)
-- pattern: When it occurs (e.g., "all day", "at night", "after eating", "intermittent")
-- character: Type of symptom (e.g., "sharp pain", "dull ache", "burning", "cramping")
-- associatedSymptoms: Other symptoms mentioned together
-- aggravatingFactors: What makes it worse
-- relievingFactors: What makes it better
+- name, location, duration, severity (mild/moderate/severe, inferred: "little pain"=mild, "can't bear"=severe),
+  pattern (when it occurs), character (sharp/dull/burning/cramping), associatedSymptoms,
+  aggravatingFactors, relievingFactors
 
-**VITALS**: Extract any mentioned:
-- temperature, bloodPressure, pulse, weight, height, oxygenSaturation, respiratoryRate
+**VITALS**: temperature, bloodPressure, pulse, weight, height, oxygenSaturation, respiratoryRate.
+Return them as plain strings with their units as spoken (e.g. "98.6 F", "120/80", "72", "98%").
 
-**PHYSICAL EXAMINATION**: ${hasExamTemplate
-                ? `CRITICAL: Use the examination template fields provided above. Extract findings into those EXACT field keys. For example, if the template has fields like "pallor", "icterus", "consciousness" - use those exact keys in your examination output.`
-                : `Extract any examination findings discussed:
-- general: Overall appearance, consciousness level
-- abdomen: Tenderness, distension, organomegaly
-- cardiovascular: Heart sounds, murmurs
-- respiratory: Breath sounds, crepitations
-- neurological: Reflexes, motor/sensory findings
-- other: Any other system findings`}
+**DIAGNOSES**: Any diagnosis the doctor mentions or confirms, even tentatively. Include ICD-10 where known.
 
-**DIAGNOSES**: 
-- Extract any diagnoses the doctor mentions or confirms
-- Include ICD-10 codes if you know them
+**DIFFERENTIAL DIAGNOSES**: AI-suggested possibilities, ranked by likelihood. These go in
+"suggestedDiagnoses" only — never in "diagnoses".
 
-**DIFFERENTIAL DIAGNOSES**: 
-- AI-suggested possible diagnoses based on symptoms discussed
-- Rank by likelihood
+**PRESCRIPTIONS**: medicine, dosage, frequency (BD/TDS/OD…), duration, instructions, route.
 
-**PRESCRIPTIONS**: Extract any medications discussed:
-- medicine: Drug name
-- dosage: Amount per dose
-- frequency: How often (e.g., "twice daily", "BD", "TDS")
-- duration: For how long
-- instructions: Special instructions (before/after food, etc.)
-- route: oral/topical/injection etc.
+**TESTS ORDERED**: testName, testType (lab/imaging/procedure), urgency (routine/urgent), instructions.
+Investigations mentioned for ordering belong here — NOT in advice.
 
-**TESTS ORDERED**: Any lab tests or imaging ordered:
-- testName: Name of test
-- testType: lab/imaging/procedure
-- urgency: routine/urgent
-- instructions: Any special prep
+**ADVICE**: Lifestyle advice, precautions, diet, do's and don'ts.
 
-**ADVICE**: Lifestyle advice, precautions, do's and don'ts
+**FOLLOW UP**: When to return, instructions, warning signs that should bring the patient back sooner.
 
-**FOLLOW UP**: When to return, any warning signs to watch for
+**DOCTOR NOTES**: Clinically relevant discussion that belongs in the record but fits no field above —
+past history, allergies, drug reactions, surgical history, family history, occupation-related factors,
+patient counselling, referral, red flags, prognosis discussion.
 
 OUTPUT JSON FORMAT (return ONLY this JSON, no other text):
 {
   "transcript": "Full cleaned transcription of the conversation",
-  "chiefComplaint": "Brief 2-5 word chief complaint if extractable",
+  "chiefComplaint": "Brief 2-5 word chief complaint if extractable, else null",
   "extractedFields": {
     "symptoms": [
       {
         "name": "string",
         "location": "string or null",
-        "duration": "string or null", 
+        "duration": "string or null",
         "severity": "mild|moderate|severe or null",
         "pattern": "string or null",
         "character": "string or null",
@@ -164,30 +163,11 @@ OUTPUT JSON FORMAT (return ONLY this JSON, no other text):
       "oxygenSaturation": "string or null",
       "respiratoryRate": "string or null"
     },
-    "examination": ${hasExamTemplate
-                ? `{
-      // Use EXACT field keys from the examination template
-      // For each section in the template, create a nested object with the field keys
-      // Example: if template has section "general" with fields ["pallor", "icterus"], output:
-      // "general": { "pallor": "present/absent/value", "icterus": "present/absent/value" }
-      // Match the template structure EXACTLY
-    }`
-                : `{
-      "general": "string or null",
-      "abdomen": "string or null",
-      "cardiovascular": "string or null",
-      "respiratory": "string or null",
-      "neurological": "string or null",
-      "localExamination": "string or null",
-      "other": {}
-    }`},
+    "examination": {
+      "<sectionId>": { "<fieldKey>": "value" }
+    },
     "diagnoses": [
-      {
-        "name": "string",
-        "icd10Code": "string or null",
-        "isPrimary": true/false,
-        "notes": "string or null"
-      }
+      { "name": "string", "icd10Code": "string or null", "isPrimary": true, "notes": "string or null" }
     ],
     "prescriptions": [
       {
@@ -200,64 +180,63 @@ OUTPUT JSON FORMAT (return ONLY this JSON, no other text):
       }
     ],
     "testsOrdered": [
-      {
-        "testName": "string",
-        "testType": "lab|imaging|procedure",
-        "urgency": "routine|urgent",
-        "instructions": "string or null"
-      }
+      { "testName": "string", "testType": "lab|imaging|procedure", "urgency": "routine|urgent", "instructions": "string or null" }
     ],
     "advice": ["array of advice strings"],
     "followUp": {
       "duration": "string or null",
       "instructions": "string or null",
       "warningSignsToWatch": ["array"] or null
-    }
+    },
+    "doctorNotes": "Other clinically relevant content, or null",
+    "unmappedFindings": [
+      { "label": "short label", "value": "the finding that fit no field above" }
+    ]
   },
   "suggestedDiagnoses": [
-    {
-      "name": "string",
-      "likelihood": "high|medium|low",
-      "reasoning": "brief explanation"
-    }
+    { "name": "string", "likelihood": "high|medium|low", "reasoning": "brief explanation" }
   ],
   "privacyRedactions": 0,
-  "confidence": {
-    "transcription": 0.0-1.0,
-    "extraction": 0.0-1.0
-  }
+  "confidence": { "transcription": 0.0, "extraction": 0.0 }
 }
 
 IMPORTANT RULES:
-1. Extract EVERYTHING mentioned, even casually
-2. For the example "right side pain for 2 days, constant" extract: location="right side", duration="2 days", pattern="constant/all day"
-3. Infer severity from context: "little pain" = mild, "can't bear" = severe
-4. If doctor mentions a diagnosis even tentatively, extract it
-5. ${hasExamTemplate ? '**CRITICAL**: Use the EXACT field keys from the examination template provided. Match the template structure precisely.' : ''}
-6. Return ONLY valid JSON, no markdown, no explanation
-7. Use null for fields not mentioned, don't omit them`;
+1. Extract EVERYTHING mentioned, even casually.
+2. "right side pain for 2 days, constant" → location="right side", duration="2 days", pattern="constant".
+3. Infer severity from context.
+4. If the doctor mentions a diagnosis even tentatively, extract it into "diagnoses".
+5. ${hasExamTemplate
+                ? 'CRITICAL: the examination keys above come from the doctor\'s own template — match them exactly.'
+                : 'No template is loaded, so use the standard schema keys above exactly.'}
+6. Return ONLY valid JSON, no markdown fences, no explanation.
+7. Use null for fields not mentioned; do not omit keys from the top-level structure.
+8. Re-check before answering: is every clinical statement represented somewhere? If not, add it to
+   "unmappedFindings" or "doctorNotes".`;
 
-        // Call Gemini with audio
+        const parts: unknown[] = [{ text: systemPrompt }];
+        if (transcriptText) {
+            parts.push({ text: `\n\nTRANSCRIPT TO RE-MAP (already transcribed — reproduce it verbatim in "transcript"):\n${transcriptText}` });
+        } else {
+            parts.push({
+                inline_data: {
+                    mime_type: mimeType || 'audio/webm',
+                    data: audioBase64
+                }
+            });
+        }
+
+        // Call Gemini with audio (or the supplied transcript)
         const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { text: systemPrompt },
-                        {
-                            inline_data: {
-                                mime_type: mimeType || 'audio/webm',
-                                data: audioBase64
-                            }
-                        }
-                    ]
-                }],
+                contents: [{ parts }],
                 generationConfig: {
                     temperature: 0.2,
                     topK: 1,
                     topP: 1,
-                    maxOutputTokens: 8192
+                    maxOutputTokens: 8192,
+                    responseMimeType: 'application/json'
                 }
             })
         });
@@ -282,20 +261,48 @@ IMPORTANT RULES:
             } else {
                 throw new Error('No valid JSON found in response');
             }
-        } catch (parseError) {
+        } catch (_parseError) {
+            // Never lose the content: keep the raw model output as the transcript
+            // and hand it to the form as an unmapped finding.
             result = {
-                transcript: generatedText,
+                transcript: transcriptText || generatedText,
                 extractedFields: {
                     symptoms: [],
                     vitals: {},
                     examination: {},
                     diagnoses: [],
                     prescriptions: [],
-                    advice: []
+                    testsOrdered: [],
+                    advice: [],
+                    followUp: null,
+                    doctorNotes: generatedText,
+                    unmappedFindings: []
                 },
                 suggestedDiagnoses: [],
-                privacyRedactions: 0
+                privacyRedactions: 0,
+                parseError: true
             };
+        }
+
+        // Ensure the structured envelope is always complete for the client mapper
+        result.extractedFields = result.extractedFields || {};
+        const fields = result.extractedFields;
+        fields.symptoms = fields.symptoms || [];
+        fields.vitals = fields.vitals || {};
+        fields.examination = fields.examination || {};
+        fields.diagnoses = fields.diagnoses || [];
+        fields.prescriptions = fields.prescriptions || [];
+        fields.testsOrdered = fields.testsOrdered || [];
+        fields.advice = fields.advice || [];
+        fields.unmappedFindings = fields.unmappedFindings || [];
+        fields.chiefComplaint = fields.chiefComplaint ?? result.chiefComplaint ?? null;
+        result.suggestedDiagnoses = result.suggestedDiagnoses || [];
+        // Mirror onto extractedFields so a client that only forwards that object
+        // still receives the differentials.
+        fields.suggestedDiagnoses = result.suggestedDiagnoses;
+
+        if (transcriptText && !result.transcript) {
+            result.transcript = transcriptText;
         }
 
         // Apply additional privacy filtering to transcript
@@ -307,6 +314,11 @@ IMPORTANT RULES:
 
         return new Response(JSON.stringify({
             success: true,
+            examinationSchemaUsed: {
+                isTemplate: examSchema.isTemplate,
+                templateName: examSchema.templateName,
+                sectionCount: examSchema.sections.length
+            },
             ...result
         }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

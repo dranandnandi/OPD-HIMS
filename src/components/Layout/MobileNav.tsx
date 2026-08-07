@@ -16,16 +16,19 @@ import {
   Pill,
   Star,
   TrendingUp,
-  Bot,
   RefreshCw,
   LayoutDashboard,
   BedDouble,
   UserPlus,
   Receipt,
-  Warehouse
+  Warehouse,
+  ShieldCheck,
+  Percent,
+  MessageCircle
 } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import InstallPWA from '../PWA/InstallPWA';
+import { brand } from '../../config/branding';
 
 const MobileNav: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -48,15 +51,23 @@ const MobileNav: React.FC = () => {
   const hasIpdPermission = (perm: string) =>
     isAdmin || permissions.includes(perm) || permissions.includes('all');
 
+  // Mirrors AdminOrReceptionRoute in App.tsx, which guards /settings/whatsapp-ai.
+  const isAdminOrReception = Boolean(
+    isAdmin || roleName === 'receptionist' || roleName === 'reception'
+  );
+
   // Same grouped structure as the desktop sidebar (Navigation.tsx). Items
   // moved off the menu (Waiting Sequences, Doctor Availability, AI Master
-  // Data, User Management, WhatsApp & AI, IPD Masters) live in Settings.
+  // Data, User Management, IPD Masters) live in Settings.
   const ipdItems = ipdEnabled
     ? [
       { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', perm: 'ipd_census' },
       { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', perm: 'ipd_census' },
       { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', perm: 'ipd_admissions' },
       { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', perm: 'ipd_billing' },
+      { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', perm: 'ipd_billing' },
+      { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', perm: 'ipd_billing' },
+      { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', perm: 'ipd_billing' },
       { path: '/ipd/stores', icon: Warehouse, label: 'Stores', perm: 'ipd_stores' },
     ].filter(({ perm }) => hasIpdPermission(perm))
     : [];
@@ -96,7 +107,9 @@ const MobileNav: React.FC = () => {
         label: 'Growth & AI',
         items: [
           { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' },
-          { path: '/chatbots', icon: Bot, label: 'AI Health Assistant' },
+          ...(isAdminOrReception
+            ? [{ path: '/settings/whatsapp-ai', icon: MessageCircle, label: 'WhatsApp & AI' }]
+            : []),
         ],
       }]
       : []),
@@ -158,12 +171,12 @@ const MobileNav: React.FC = () => {
 
             {/* Platform Branding */}
             <img
-              src="https://i.ibb.co/XxgNyzFj/DC-logo.png"
-              alt="Doctorpreneur Academy Logo"
-              className="w-5 h-5 object-contain"
+              src={brand.logoUrl}
+              alt={`${brand.company} Logo`}
+              className={brand.navLogoClassSmall}
             />
             <div className="hidden sm:block">
-              <p className="text-xs text-gray-500">Doctorpreneur Academy</p>
+              <p className="text-xs text-gray-500">{brand.companyShort}</p>
             </div>
           </div>
 
@@ -207,12 +220,12 @@ const MobileNav: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <img
-                  src="https://i.ibb.co/XxgNyzFj/DC-logo.png"
-                  alt="Doctorpreneur Academy Logo"
-                  className="w-6 h-6 object-contain"
+                  src={brand.logoUrl}
+                  alt={`${brand.company} Logo`}
+                  className={brand.navLogoClass}
                 />
                 <div>
-                  <p className="text-xs text-gray-500">The Doctorpreneur Academy</p>
+                  <p className="text-xs text-gray-500">{brand.company}</p>
                 </div>
               </div>
               <button
