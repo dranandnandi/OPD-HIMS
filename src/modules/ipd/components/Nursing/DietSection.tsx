@@ -267,7 +267,7 @@ export default function DietSection({ admission, readOnly }: Props) {
             onClick={() =>
               documentService.printDietChart({
                 admission,
-                clinicName: 'MediTrust Clinics',
+                clinicId: clinicId!,
                 order: active,
                 entries: dayEntries,
                 date: chartDate,

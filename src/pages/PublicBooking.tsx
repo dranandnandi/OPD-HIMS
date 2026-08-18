@@ -31,15 +31,16 @@ import PatientDetailsForm, {
   type PatientDetails,
 } from '../components/PublicBooking/PatientDetailsForm';
 import BookingConfirmation from '../components/PublicBooking/BookingConfirmation';
+import { createTranslator, type TextKey } from '../components/PublicBooking/i18n';
 
 type Step = 'doctor' | 'slot' | 'details' | 'done';
 
 const STEP_ORDER: Step[] = ['doctor', 'slot', 'details', 'done'];
-const STEP_LABELS: Record<Step, string> = {
-  doctor: 'Doctor',
-  slot: 'Date & time',
-  details: 'Your details',
-  done: 'Confirmed',
+const STEP_LABELS: Record<Step, TextKey> = {
+  doctor: 'stepDoctor',
+  slot: 'stepDateTime',
+  details: 'stepDetails',
+  done: 'stepConfirmed',
 };
 
 const EMPTY_DETAILS: PatientDetails = {
@@ -140,6 +141,11 @@ const PublicBooking: React.FC = () => {
 
     return () => observer.disconnect();
   }, [isEmbed, step, slots.length]);
+
+  // Page furniture renders as "English (regional)" once the clinic's chosen
+  // language arrives. Doctor names, appointment types and the clinic's own
+  // notice are passed through untouched -- see PublicBooking/i18n.ts.
+  const t = useMemo(() => createTranslator(data?.clinic.language), [data?.clinic.language]);
 
   const selectedDoctor = useMemo(
     () => data?.doctors.find((doctor) => doctor.id === doctorId) ?? null,
@@ -272,18 +278,16 @@ const PublicBooking: React.FC = () => {
           // freshly loaded grid rather than leaving a dead slot selected.
           setSelectedSlot('');
           setStep('slot');
-          setBanner('That slot was just taken. Please choose another time.');
+          setBanner(t('slotTaken'));
           break;
 
         case 'rate_limited':
-          setBanner(
-            'Too many booking attempts from this number. Please call the clinic instead.',
-          );
+          setBanner(t('rateLimited'));
           break;
 
         case 'invalid':
           setInvalidField(result.field);
-          setBanner('Please check the highlighted field.');
+          setBanner(t('checkField'));
           break;
       }
     } catch (error) {
@@ -396,7 +400,7 @@ const PublicBooking: React.FC = () => {
                     index <= stepIndex ? 'font-medium text-blue-700' : 'text-gray-400'
                   }`}
                 >
-                  {STEP_LABELS[entry]}
+                  {t(STEP_LABELS[entry])}
                 </span>
               </li>
             ))}
@@ -428,6 +432,7 @@ const PublicBooking: React.FC = () => {
               selectedDoctorId={doctorId}
               selectedTypeLabel={typeLabel}
               currency={clinic.currency}
+              t={t}
               onSelectDoctor={handleSelectDoctor}
               onSelectType={handleSelectType}
             />
@@ -443,6 +448,7 @@ const PublicBooking: React.FC = () => {
               selectedSlot={selectedSlot}
               slots={slots}
               loading={slotsLoading}
+              t={t}
               onSelectDate={handleSelectDate}
               onSelectSlot={handleSelectSlot}
             />
@@ -452,6 +458,7 @@ const PublicBooking: React.FC = () => {
             <PatientDetailsForm
               value={details}
               invalidField={invalidField}
+              t={t}
               onChange={setDetails}
             />
           )}
@@ -460,6 +467,7 @@ const PublicBooking: React.FC = () => {
             <BookingConfirmation
               booking={booking}
               clinic={clinic}
+              t={t}
               onBookAnother={resetForAnother}
             />
           )}
@@ -474,7 +482,7 @@ const PublicBooking: React.FC = () => {
                 className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Back
+                {t('back')}
               </button>
             )}
 
@@ -485,7 +493,7 @@ const PublicBooking: React.FC = () => {
                 disabled={!doctorId}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
-                See available times
+                {t('seeTimes')}
                 <ArrowRight className="h-4 w-4" />
               </button>
             )}
@@ -500,10 +508,10 @@ const PublicBooking: React.FC = () => {
                 {submitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Booking...
+                    {t('bookingInProgress')}
                   </>
                 ) : (
-                  'Confirm appointment'
+                  t('confirmAppointment')
                 )}
               </button>
             )}

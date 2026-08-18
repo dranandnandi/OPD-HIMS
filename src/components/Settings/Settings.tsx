@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/useAuth';
+import { hasReceptionAccess, isAdminUser } from '../../utils/roleAccess';
+import { hasModuleAccess } from '../../utils/modulePermissions';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { ClinicSetting } from '../../types';
 import {
@@ -61,17 +63,8 @@ const Settings: React.FC = () => {
   ];
 
   // Combine tabs based on user role
-  const roleNameLower = user?.roleName?.toLowerCase();
-  const permissionsList = user?.permissions ?? [];
-  const isAdminUser = Boolean(
-    user && (
-      roleNameLower === 'admin' ||
-      roleNameLower === 'super_admin' ||
-      permissionsList.includes('admin') ||
-      permissionsList.includes('all')
-    )
-  );
-  const isReception = roleNameLower === 'receptionist' || roleNameLower === 'reception';
+  const isAdmin = isAdminUser(user);
+  const isReception = hasReceptionAccess(user);
   const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
 
   const tabs = user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin')
@@ -81,12 +74,12 @@ const Settings: React.FC = () => {
   // These live on their own routes (removed from the main sidebar to keep it
   // compact) and are surfaced here as direct links.
   const linkTabs = [
-    ...(isAdminUser ? [{ to: '/waiting-sequences', label: 'Waiting Sequences', icon: Timer }] : []),
-    ...(user?.isOpenForConsultation || isAdminUser || isReception
+    ...(isAdmin ? [{ to: '/waiting-sequences', label: 'Waiting Sequences', icon: Timer }] : []),
+    ...(user?.isOpenForConsultation || isAdmin || isReception
       ? [{ to: '/settings/availability', label: 'Doctor Availability', icon: Clock }]
       : []),
-    ...(isAdminUser ? [{ to: '/settings/users', label: 'User Management', icon: UserCog }] : []),
-    ...(ipdEnabled && (isAdminUser || permissionsList.includes('ipd_masters'))
+    ...(isAdmin ? [{ to: '/settings/users', label: 'User Management', icon: UserCog }] : []),
+    ...(ipdEnabled && hasModuleAccess(user, 'ipd_masters')
       ? [{ to: '/ipd/masters', label: 'IPD Masters', icon: BedDouble }]
       : []),
   ];

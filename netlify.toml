@@ -6,6 +6,21 @@
 [build.environment]
   NODE_VERSION = "18"
 
+# ---------------------------------------------------------------------------
+# Automatic WhatsApp reminders
+#
+# queue-auto-reminders inserts due reminders; process-whatsapp-queue drains the
+# queue one message at a time per clinic, honouring the 5-10 minute anti-ban gap
+# configured per clinic. Both need SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in
+# the site environment, alongside the existing WHATSAPP_* vars.
+# ---------------------------------------------------------------------------
+
+[functions."queue-auto-reminders"]
+  schedule = "0 * * * *"
+
+[functions."process-whatsapp-queue"]
+  schedule = "*/5 * * * *"
+
 # Don't redirect these patterns - let them pass through to Vite
 [[redirects]]
   from = "/src/*"

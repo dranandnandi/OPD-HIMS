@@ -7,6 +7,7 @@ import { orderService, categoryOfServiceType, OrderCategory } from '../../servic
 import { documentService } from '../../services/documentService';
 import OrderComposer from './OrderComposer';
 import ReportsSection from './ReportsSection';
+import { ORDER_STATUS_STYLE } from './orderStatus';
 import type { Admission, IpdOrderItem } from '../../types/ipd';
 
 interface Props {
@@ -21,14 +22,6 @@ const CATEGORY_LABEL: Record<OrderCategory, string> = {
   radiology: 'Radiology',
   procedure: 'Procedures',
   other: 'Other',
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  pending: 'bg-amber-100 text-amber-700',
-  sent_external: 'bg-blue-100 text-blue-700',
-  resulted: 'bg-violet-100 text-violet-700',
-  done: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-slate-100 text-slate-500',
 };
 
 /** Investigations ordered on the chart + the reports that answer them. */
@@ -105,7 +98,7 @@ export default function OrdersTab({ admission, readOnly }: Props) {
           <button
             onClick={() =>
               documentService.printOrderSheet({
-                admission, clinicName: 'MediTrust Clinics', items,
+                admission, clinicId: clinicId!, items,
               })
             }
             title="Print the ward file order sheet"
@@ -130,6 +123,7 @@ export default function OrdersTab({ admission, readOnly }: Props) {
               clinicId={clinicId!}
               admission={admission}
               userId={profile?.id}
+              existingItems={items}
               onPlaced={reload}
             />
           )}
@@ -160,8 +154,11 @@ export default function OrdersTab({ admission, readOnly }: Props) {
                         {i.reports?.length ? ` · ${i.reports.length} report(s) filed` : ''}
                       </p>
                     </div>
-                    <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[i.status]}`}>
-                      {i.status.replace('_', ' ')}
+                    <span
+                      title={i.status === 'pending' ? 'Order placed — sample / scan not sent yet' : undefined}
+                      className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${ORDER_STATUS_STYLE[i.status]}`}
+                    >
+                      {i.status === 'pending' ? 'awaiting sample' : i.status.replace('_', ' ')}
                     </span>
                     {!readOnly && !['cancelled', 'done'].includes(i.status) && (
                       <div className="flex gap-1">

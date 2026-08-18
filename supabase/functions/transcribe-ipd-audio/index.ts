@@ -48,7 +48,17 @@ const EMPTY_RESULT = {
     diet: null,
     nursingTasks: [],
     intakeOutput: [],
+    additionalNotes: null,
+    unmappedFindings: [],
 };
+
+// Must match DietType / DietRoute in src/modules/ipd/types/ipd.ts and the
+// diet_type CHECK constraint on ipd_diet_orders.
+const DIET_TYPES = [
+    'normal', 'soft', 'liquid', 'semi_solid', 'diabetic', 'renal', 'cardiac',
+    'low_salt', 'high_protein', 'low_fat', 'bland', 'pediatric', 'npo', 'other'
+];
+const DIET_ROUTES = ['oral', 'ryles_tube', 'peg', 'npo', 'tpn'];
 
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
@@ -82,6 +92,14 @@ serve(async (req) => {
 A doctor or nurse is dictating during or just after a ward round. Transcribe what is said and split it
 into the exact chart sections listed below, so each part can be filed into the right field automatically.
 
+🚨 THE GOLDEN RULE — NOTHING MAY BE LOST:
+Every clinically relevant statement in the dictation must appear somewhere in your JSON output.
+If something fits none of sections 1-9, you MUST put it in "additionalNotes" (prose) or
+"unmappedFindings" (labelled items) — for example prognosis discussions, counselling of relatives,
+consent, code status / DNR, discharge planning, procedures performed, transfusions given,
+device or catheter changes, billing or administrative instructions to staff.
+Silently dropping information is a serious error. Inventing information is equally serious.
+
 ADMITTED PATIENT CONTEXT (use it to resolve pronouns, abbreviations and "continue same"):
 - Patient: ${ctx.patientName || 'Unknown'}${ctx.age ? `, ${ctx.age} yrs` : ''}${ctx.gender ? `, ${ctx.gender}` : ''}
 - Ward / bed: ${ctx.wardBed || 'not specified'}
@@ -108,7 +126,20 @@ SECTIONS TO EXTRACT (leave a section empty when nothing was said about it — ne
 
 3. vitals — only if numbers were spoken. Use plain numbers, metric units:
    temperature (°C), pulse, bpSystolic, bpDiastolic, respRate, spo2 (%), painScore (0-10),
-   bloodSugar (mg/dL), weightKg. Convert Fahrenheit to Celsius. "BP 130 by 80" → 130 / 80.
+   bloodSugar (mg/dL), weightKg. "BP 130 by 80" → 130 / 80.
+
+   temperature MUST be Celsius, one decimal, and MUST fall between 30 and 45.
+   Indian wards usually speak Fahrenheit, so ANY temperature above 45 is Fahrenheit —
+   convert it with C = (F - 32) * 5 / 9 before writing it out.
+     "temp 98.6" / "ninety eight point six" → 37.0
+     "running 99.4"                         → 37.4
+     "spiked to 102"                        → 38.9
+     "temp 37.2"                            → 37.2   (already Celsius, leave it)
+   These are hard limits — a value outside them is rejected and the reading is lost.
+   Every other vital has a valid range too; if a spoken number falls outside it,
+   it was misheard — set that field to null rather than guessing:
+     pulse 0-300, respRate 0-100, bpSystolic 0-350, bpDiastolic 0-250,
+     spo2 0-100, painScore 0-10.
 
 4. medications — every drug started, changed or stopped. One entry per drug:
    - medicine: generic or brand name as spoken
@@ -133,9 +164,12 @@ SECTIONS TO EXTRACT (leave a section empty when nothing was said about it — ne
    - urgency: routine | urgent | stat
 
 7. diet — only if the diet was discussed:
-   - dietType: one of normal | soft | liquid | semi_solid | diabetic | renal | cardiac | low_salt |
-     high_protein | low_fat | bland | pediatric | npo | other
-   - route: oral | ryles_tube | peg | npo | tpn
+   - dietType: EXACTLY one of these codes, verbatim — ${DIET_TYPES.join(' | ')}
+     (map what was said: "salt restricted"/"low salt diet" = low_salt, "nil by mouth"/"NBM" = npo,
+      "regular"/"full diet" = normal, "high protein diet" = high_protein. If nothing fits, use "other"
+      and put the actual wording in diet.instructions — never invent a new code.)
+   - route: EXACTLY one of — ${DIET_ROUTES.join(' | ')}
+     ("RT feeds"/"Ryle's tube" = ryles_tube, "nil by mouth" = npo, "TPN"/"parenteral" = tpn)
    - caloriesKcal, proteinG, fluidRestrictionMl: numbers if stated, else null
    - instructions: free-text diet advice
    - restrictions: foods to avoid / allergy-driven restrictions
@@ -147,6 +181,14 @@ SECTIONS TO EXTRACT (leave a section empty when nothing was said about it — ne
 
 9. intakeOutput — only if intake/output volumes were dictated:
    - ioType: intake | output, route (oral/iv/ryles/urine/drain/vomit/stool), volumeMl
+     (volumeMl must be a number in millilitres — convert "1 litre" to 1000. If no volume was
+      stated, do NOT guess: put the statement in additionalNotes instead.)
+
+10. additionalNotes — free prose for clinically relevant content that belongs in the chart but fits
+    none of the sections above. This is the safety net for rule "nothing may be lost".
+
+11. unmappedFindings — the same idea, but as labelled items when the content is list-like:
+    [{ "label": "Consent", "value": "High-risk consent taken from son" }]
 
 OUTPUT JSON ONLY — no markdown, no commentary:
 {
@@ -161,6 +203,8 @@ OUTPUT JSON ONLY — no markdown, no commentary:
   "diet": { "dietType": "string", "route": "string", "caloriesKcal": null, "proteinG": null, "fluidRestrictionMl": null, "instructions": "string or null", "restrictions": "string or null" },
   "nursingTasks": [ { "task": "string", "recurrence": "string or null", "dueInHours": null } ],
   "intakeOutput": [ { "ioType": "intake|output", "route": "string", "volumeMl": 0 } ],
+  "additionalNotes": "string or null",
+  "unmappedFindings": [ { "label": "string", "value": "string" } ],
   "privacyRedactions": 0,
   "confidence": { "transcription": 0.0, "extraction": 0.0 }
 }
@@ -174,7 +218,9 @@ RULES:
 4. If the dictation is only a progress note, fill treatmentPlan and leave the order arrays empty.
 5. Use null for anything not stated. Do not guess doses, frequencies or test names.
 6. Keep clinical wording; do not paraphrase into lay language.
-7. Return ONLY valid JSON.`;
+7. Return ONLY valid JSON.
+8. Before answering, re-read the dictation: is every clinical statement represented somewhere in the
+   JSON? Anything still unaccounted for goes into "additionalNotes" or "unmappedFindings".`;
 
         const parts: Array<Record<string, unknown>> = [{ text: systemPrompt }];
         if (audioBase64) {
@@ -194,7 +240,8 @@ RULES:
                         temperature: 0.2,
                         topK: 1,
                         topP: 1,
-                        maxOutputTokens: 8192
+                        maxOutputTokens: 8192,
+                        responseMimeType: 'application/json'
                     }
                 })
             }
@@ -216,16 +263,37 @@ RULES:
             if (!jsonMatch) throw new Error('No valid JSON found in response');
             result = JSON.parse(jsonMatch[0]);
         } catch {
+            // Never lose the dictation: keep the raw model output as notes rather
+            // than returning an empty chart entry.
             result = {
                 transcript: textInput || generatedText,
                 noteKind: 'round',
                 ...EMPTY_RESULT,
-                privacyRedactions: 0
+                additionalNotes: generatedText,
+                privacyRedactions: 0,
+                parseError: true
             };
         }
 
         // Defensive defaults so the client never has to null-check every section
         result = { ...EMPTY_RESULT, ...result };
+
+        // Constrain the diet codes here rather than trusting the model — the
+        // diet_type column has a CHECK constraint and a bad code fails the insert.
+        const diet = result.diet as Record<string, unknown> | null;
+        if (diet && typeof diet === 'object') {
+            const spokenType = String(diet.dietType ?? '').trim();
+            if (!DIET_TYPES.includes(spokenType)) {
+                diet.dietType = 'other';
+                if (spokenType) {
+                    diet.instructions = [diet.instructions, `Diet as dictated: ${spokenType}`]
+                        .filter(Boolean).join(' | ');
+                }
+            }
+            if (!DIET_ROUTES.includes(String(diet.route ?? '').trim())) {
+                diet.route = 'oral';
+            }
+        }
 
         if (typeof result.transcript === 'string') {
             const { filtered, redactionCount } = filterSensitiveContent(result.transcript);

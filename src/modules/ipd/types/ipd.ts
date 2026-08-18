@@ -551,6 +551,7 @@ export interface IpdBill {
   status: 'draft' | 'issued' | 'partially_paid' | 'settled' | 'cancelled';
   pdf_url: string | null;
   lines?: IpdBillLine[];
+  payments?: IpdPayment[];
 }
 
 export interface IpdBillLine {

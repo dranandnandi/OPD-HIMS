@@ -79,6 +79,43 @@ export const FREQUENCY_OPTIONS = [
 
 export const ROUTE_OPTIONS = ['oral', 'iv', 'im', 'sc', 'topical', 'inhalation', 'per_rectal', 'sublingual'];
 
+/** Label a formulary medicine the way it should read on the order/eMAR line */
+export function medicineLabel(m: MedicineOption): string {
+  return `${m.name}${m.strength ? ` ${m.strength}` : ''}`;
+}
+
+/**
+ * Dose values offered once a medicine is picked — its own strength first, then
+ * the usual units for that dosage form. The first entry is what auto-fills.
+ */
+export function doseSuggestions(m: MedicineOption | null): string[] {
+  if (!m) return [];
+  const form = (m.dosage_form ?? '').toLowerCase();
+  const strength = m.strength?.trim();
+  const out: string[] = [];
+  if (strength) out.push(strength);
+  if (/tab|cap/.test(form)) out.push('1 tab', '2 tab', '1/2 tab');
+  else if (/syr|susp|solution|liquid|drop|elixir/.test(form)) out.push('5 ml', '10 ml', '2.5 ml');
+  else if (/inj|vial|amp|infusion/.test(form)) out.push('1 vial', '1 amp');
+  else if (/inhal|respul|nebul|rotacap|puff/.test(form)) out.push('2 puffs', '1 respule');
+  else if (/oint|cream|gel|lotion/.test(form)) out.push('Local application');
+  else if (/drop/.test(form)) out.push('2 drops');
+  return [...new Set(out.filter(Boolean))];
+}
+
+/** Route implied by the dosage form, so it does not have to be set by hand */
+export function defaultRouteFor(m: MedicineOption | null): string | null {
+  const form = (m?.dosage_form ?? '').toLowerCase();
+  if (!form) return null;
+  if (/inj|vial|amp|infusion/.test(form)) return 'iv';
+  if (/inhal|respul|nebul|rotacap|puff/.test(form)) return 'inhalation';
+  if (/oint|cream|gel|lotion|patch/.test(form)) return 'topical';
+  if (/suppos|enema/.test(form)) return 'per_rectal';
+  if (/subling/.test(form)) return 'sublingual';
+  if (/tab|cap|syr|susp|solution|liquid|powder|sachet/.test(form)) return 'oral';
+  return null;
+}
+
 function expandSchedule(frequencyCode: string, startAt: Date, days: number): Date[] {
   if (frequencyCode === 'stat') return [new Date()];
   if (frequencyCode === 'sos') return [];
@@ -102,17 +139,22 @@ export const medicationService = {
     return getOrCreatePharmIssueService(clinicId);
   },
 
-  /** Search the shared OPD pharmacy master, with clinic selling price + stock */
+  /**
+   * Search the shared OPD pharmacy master, with clinic selling price + stock.
+   * An empty term browses the formulary (used by the picker dropdown when the
+   * field is focused but nothing has been typed yet).
+   */
   async searchMedicines(clinicId: string, term: string): Promise<MedicineOption[]> {
-    if (term.trim().length < 2) return [];
-    const { data, error } = await supabase
+    const search = term.trim();
+    let query = supabase
       .from('medicines_master')
       .select('id, name, strength, dosage_form, current_stock, clinic_medicine_prices(selling_price)')
       .eq('clinic_id', clinicId)
-      .eq('is_active', true)
-      .ilike('name', `%${term}%`)
+      .eq('is_active', true);
+    if (search) query = query.ilike('name', `%${search}%`);
+    const { data, error } = await query
       .order('name')
-      .limit(15);
+      .limit(search ? 15 : 50);
     if (error) throw error;
     return (data as any[]).map((m) => ({
       id: m.id,

@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabase';
 import { generateBarcodeDataUrl } from '../utils/labelGenerator';
+import { getClinicInfo, EMPTY_CLINIC_INFO, type ClinicInfo } from './clinicInfoService';
 import { nursingService } from './nursingService';
 import { treatmentPlanService } from './treatmentPlanService';
 import { FREQUENCY_OPTIONS } from './medicationService';
@@ -36,6 +37,25 @@ export interface IpdDocument {
   created_at: string;
   updated_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Every IPD document type the app can produce. Must stay in sync with the
+// doc_type CHECK constraint on ipd_documents / ipd_document_templates.
+// ---------------------------------------------------------------------------
+export const DOC_TYPES: { key: string; label: string }[] = [
+  { key: 'discharge_summary', label: 'Discharge Summary' },
+  { key: 'discharge_medication', label: 'Discharge Medication' },
+  { key: 'admission_sheet', label: 'Admission Sheet' },
+  { key: 'consent', label: 'Consent Form' },
+  { key: 'ot_note', label: 'OT Note' },
+  { key: 'death_summary', label: 'Death Summary' },
+  { key: 'dama_form', label: 'DAMA Form' },
+  { key: 'referral_letter', label: 'Referral Letter' },
+  { key: 'estimate', label: 'Estimate' },
+];
+
+export const docTypeLabel = (docType: string): string =>
+  DOC_TYPES.find((d) => d.key === docType)?.label ?? docType.replace(/_/g, ' ');
 
 // ---------------------------------------------------------------------------
 // Placeholder catalog — every {{key}} the resolver understands. The Template
@@ -143,9 +163,133 @@ const DEFAULT_DISCHARGE_TEMPLATE = `
 `;
 
 // ---------------------------------------------------------------------------
+// Skeletons for the non-discharge document types. Each is a heading list — the
+// sections a clinician is expected to fill, either by typing or by dictating
+// (the voice panel offers exactly these headings as target fields).
+// ---------------------------------------------------------------------------
+const DOC_TYPE_SECTIONS: Record<string, string[]> = {
+  discharge_medication: [
+    'Diagnosis', 'Medications on Discharge', 'Diet Advice', 'Advice & Follow-up',
+  ],
+  admission_sheet: [
+    'Presenting Complaints', 'History of Present Illness', 'Past History',
+    'Personal & Family History', 'General Examination', 'Systemic Examination',
+    'Provisional Diagnosis', 'Plan of Management',
+  ],
+  consent: [
+    'Procedure / Treatment Proposed', 'Explanation Given', 'Risks & Complications Explained',
+    'Alternatives Discussed', 'Consent Declaration',
+  ],
+  ot_note: [
+    'Pre-operative Diagnosis', 'Procedure Performed', 'Surgeon & Team', 'Anaesthesia',
+    'Operative Findings', 'Procedure in Detail', 'Specimen / Implants',
+    'Blood Loss & Fluids', 'Post-operative Instructions',
+  ],
+  death_summary: [
+    'Diagnosis', 'Hospital Course', 'Investigations', 'Treatment Given',
+    'Events Leading to Death', 'Cause of Death', 'Time of Death',
+  ],
+  dama_form: [
+    'Diagnosis', 'Condition at Time of Leaving', 'Advice Given',
+    'Risks Explained', 'Reason Stated by Patient / Relative', 'Declaration',
+  ],
+  referral_letter: [
+    'Reason for Referral', 'Clinical Summary', 'Investigations',
+    'Treatment Given So Far', 'Condition at Referral', 'Advice / Request',
+  ],
+  estimate: [
+    'Provisional Diagnosis', 'Proposed Treatment / Procedure', 'Estimated Length of Stay',
+    'Estimated Cost Breakup', 'Notes & Disclaimer',
+  ],
+};
+
+/** Shared patient/admission header used by every generated skeleton */
+const DOC_HEADER_BLOCK = `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px">
+  <tr>
+    <td style="padding:2px 4px"><b>Patient:</b> {{patient.name}} ({{patient.age}}y / {{patient.gender}})</td>
+    <td style="padding:2px 4px"><b>Admission No:</b> {{admission.number}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Admitted:</b> {{admission.date}}</td>
+    <td style="padding:2px 4px"><b>Ward/Bed:</b> {{admission.bed}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Consultant:</b> Dr. {{doctor.name}}</td>
+    <td style="padding:2px 4px"><b>Diagnosis:</b> {{admission.diagnosis}}</td>
+  </tr>
+</table>`;
+
+/**
+ * Build a skeleton template for a document type that has no clinic template
+ * yet. Sections the chart can already answer are pre-filled with placeholders;
+ * the rest are left as empty paragraphs for typing or dictation.
+ */
+function buildSkeletonTemplate(docType: string): string {
+  const PREFILL: Record<string, string> = {
+    'Diagnosis': '<p>{{admission.diagnosis}}</p>',
+    'Provisional Diagnosis': '<p>{{admission.diagnosis}}</p>',
+    'Pre-operative Diagnosis': '<p>{{admission.diagnosis}}</p>',
+    'Presenting Complaints': '<p>{{admission.reason}}</p>',
+    'Reason for Referral': '<p>{{admission.reason}}</p>',
+    'Medications on Discharge': '{{medications.discharge}}',
+    'Treatment Given': '{{medications.course}}',
+    'Treatment Given So Far': '{{medications.course}}',
+    'Investigations': '{{investigations.list}}',
+    'Hospital Course': '{{notes.course}}',
+    'Clinical Summary': '{{notes.course}}',
+    'Diet Advice': '<p>{{diet.current}}</p>',
+    'Advice & Follow-up': '{{narrative.advice}}',
+    'Condition at Referral': '<p>{{vitals.latest}}</p>',
+    'Condition at Time of Leaving': '<p>{{vitals.latest}}</p>',
+  };
+  const sections = (DOC_TYPE_SECTIONS[docType] ?? ['Details', 'Advice'])
+    .map((heading) => `<h3>${heading}</h3>\n${PREFILL[heading] ?? '<p></p>'}`)
+    .join('\n\n');
+
+  return `<h2 style="text-align:center;margin:0 0 4px">${docTypeLabel(docType).toUpperCase()}</h2>
+${DOC_HEADER_BLOCK}
+
+${sections}
+
+<br/><br/>
+<table style="width:100%;font-size:13px">
+  <tr>
+    <td><b>Dr. {{doctor.name}}</b><br/>Consultant</td>
+    <td style="text-align:right">Date: {{discharge.date}}</td>
+  </tr>
+</table>
+`;
+}
+
+/** The built-in template body for a doc type — discharge has a bespoke one */
+const defaultTemplateHtml = (docType: string): string =>
+  docType === 'discharge_summary' ? DEFAULT_DISCHARGE_TEMPLATE : buildSkeletonTemplate(docType);
+
+/** Name given to auto-created templates — the marker for the auto-upgrade path */
+const defaultTemplateName = (docType: string): string => `Default ${docTypeLabel(docType)}`;
+
+// ---------------------------------------------------------------------------
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * Left-hand letterhead block shared by every printed sheet: the clinic's own
+ * name and contact line from clinic_settings. Blank fields are dropped so a
+ * clinic that hasn't filled in its address still prints a clean header.
+ */
+const letterheadInner = (clinic: ClinicInfo, subtitle: string) => {
+  const contact = [
+    clinic.address,
+    clinic.phone ? `Ph: ${clinic.phone}` : null,
+  ].filter(Boolean).join(' · ');
+
+  return `<div>
+      ${clinic.name ? `<h1>${esc(clinic.name)}</h1>` : ''}
+      ${contact ? `<div class="sub">${esc(contact)}</div>` : ''}
+      <div class="sub">${esc(subtitle)}</div>
+    </div>`;
+};
 
 const FREQ_LABEL = new Map(FREQUENCY_OPTIONS.map((f) => [f.code, f.label.split('—')[0].trim()]));
 
@@ -419,6 +563,10 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
   };
 }
 
+/** True when a template has {{narrative.*}} slots the AI writer can fill */
+export const hasNarrativePlaceholders = (html: string): boolean =>
+  /\{\{\s*narrative\./.test(html);
+
 function resolvePlaceholders(template: string, map: Record<string, string>): string {
   return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => map[key] ?? `{{${key}}}`);
 }
@@ -485,13 +633,13 @@ export const documentService = {
       // upgrade an untouched auto-created default to the current built-in
       // (Studio saves bump version, so customized templates are skipped)
       if (
-        existing.name === 'Default Discharge Summary' &&
+        existing.name === defaultTemplateName(docType) &&
         (existing.version ?? 1) < DEFAULT_TEMPLATE_VERSION
       ) {
         const { data: upgraded } = await supabase
           .from('ipd_document_templates')
           .update({
-            html_template: DEFAULT_DISCHARGE_TEMPLATE,
+            html_template: defaultTemplateHtml(docType),
             placeholders: PLACEHOLDER_CATALOG.map((p) => p.key),
             version: DEFAULT_TEMPLATE_VERSION,
             updated_at: new Date().toISOString(),
@@ -509,8 +657,8 @@ export const documentService = {
       .insert({
         clinic_id: clinicId,
         doc_type: docType,
-        name: 'Default Discharge Summary',
-        html_template: DEFAULT_DISCHARGE_TEMPLATE,
+        name: defaultTemplateName(docType),
+        html_template: defaultTemplateHtml(docType),
         placeholders: PLACEHOLDER_CATALOG.map((p) => p.key),
         version: DEFAULT_TEMPLATE_VERSION,
       })
@@ -617,7 +765,8 @@ export const documentService = {
     }
     const docType = template.doc_type;
     let map = await buildPlaceholderMap(params.admission);
-    if (params.useAi) {
+    // Only worth an AI round-trip when the template actually has narrative slots
+    if (params.useAi && hasNarrativePlaceholders(template.html_template)) {
       map = await applyAiNarrative(map);
     }
     const content = resolvePlaceholders(template.html_template, map);
@@ -672,23 +821,31 @@ export const documentService = {
    * itemized charges grouped by charge code, totals with deposits applied
    * and balance. Uses the same iframe print path as documents.
    */
-  printBill(params: { bill: IpdBill; admission: Admission; clinicName: string }): void {
-    const html = buildBillHtml(params.bill, params.admission, params.clinicName, true);
+  async printBill(params: { bill: IpdBill; admission: Admission; clinicId: string }): Promise<void> {
+    const clinic = await getClinicInfo(params.clinicId);
+    const html = buildBillHtml(params.bill, params.admission, clinic, true);
     printHtml(html);
   },
 
   /** Client-side payment receipt (A5) — printed when recording a bill payment */
-  printPaymentReceipt(params: {
+  async printPaymentReceipt(params: {
     payment: IpdPayment;
     bill: IpdBill;
     admission: Admission;
-    clinicName: string;
-  }): void {
+    clinicId: string;
+    /** Balance as it stood right after this receipt. Pass it when reprinting an
+     *  older receipt — bill.balance_amount already reflects that payment by then. */
+    balanceAfter?: number;
+  }): Promise<void> {
     const { payment, bill, admission } = params;
+    const clinic = await getClinicInfo(params.clinicId);
     const inr = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const isRefund = payment.record_type === 'refund';
     const barcode = generateBarcodeDataUrl(admission.admission_number, { height: 26, fontSize: 8, margin: 2 });
-    const balanceAfter = Math.max(bill.balance_amount - (isRefund ? -payment.amount : payment.amount), 0);
+    const balanceAfter = Math.max(
+      params.balanceAfter ?? bill.balance_amount - (isRefund ? -payment.amount : payment.amount),
+      0,
+    );
 
     const html = `<!doctype html>
 <html>
@@ -714,10 +871,7 @@ export const documentService = {
 </head>
 <body>
   <div class="head">
-    <div>
-      <h1>${params.clinicName}</h1>
-      <div class="sub">Inpatient Department</div>
-    </div>
+    ${letterheadInner(clinic, 'Inpatient Department')}
     <img src="${barcode}" style="height:26px" alt="${admission.admission_number}" />
   </div>
   <div class="title">${isRefund ? 'PAYMENT REFUND RECEIPT' : 'PAYMENT RECEIPT'}</div>
@@ -743,8 +897,13 @@ export const documentService = {
   },
 
   /** Client-side deposit / refund receipt (A5, browser print) */
-  printDepositReceipt(params: { deposit: Deposit; admission: Admission; clinicName: string }): void {
+  async printDepositReceipt(params: {
+    deposit: Deposit;
+    admission: Admission;
+    clinicId: string;
+  }): Promise<void> {
     const { deposit, admission } = params;
+    const clinic = await getClinicInfo(params.clinicId);
     const inr = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const isRefund = deposit.entry_type === 'refund';
     const barcode = generateBarcodeDataUrl(admission.admission_number, { height: 26, fontSize: 8, margin: 2 });
@@ -773,10 +932,7 @@ export const documentService = {
 </head>
 <body>
   <div class="head">
-    <div>
-      <h1>${params.clinicName}</h1>
-      <div class="sub">Inpatient Department</div>
-    </div>
+    ${letterheadInner(clinic, 'Inpatient Department')}
     <img src="${barcode}" style="height:26px" alt="${admission.admission_number}" />
   </div>
   <div class="title">${isRefund ? 'DEPOSIT REFUND RECEIPT' : 'ADVANCE DEPOSIT RECEIPT'}</div>
@@ -803,14 +959,15 @@ export const documentService = {
   // --- ward file sheets ------------------------------------------------------
 
   /** Kitchen / ward copy of the diet order + the day's meal chart */
-  printDietChart(params: {
+  async printDietChart(params: {
     admission: Admission;
-    clinicName: string;
+    clinicId: string;
     order: DietOrder | null;
     entries: DietChartEntry[];
     date: string;
-  }): void {
+  }): Promise<void> {
     const { order, entries, date } = params;
+    const clinic = await getClinicInfo(params.clinicId);
     const dietLabel = order
       ? DIET_TYPES.find((d) => d.key === order.diet_type)?.label ?? order.diet_type
       : 'No diet ordered';
@@ -845,7 +1002,7 @@ export const documentService = {
         weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
       }),
       admission: params.admission,
-      clinicName: params.clinicName,
+      clinic,
       body: `${orderBox}
         <table class="grid">
           <thead><tr><th>Meal</th><th>Items served</th><th>Status</th><th>Intake</th><th>Nurse sign</th></tr></thead>
@@ -855,11 +1012,12 @@ export const documentService = {
   },
 
   /** Ward file copy of investigations ordered, for the nurses' station */
-  printOrderSheet(params: {
+  async printOrderSheet(params: {
     admission: Admission;
-    clinicName: string;
+    clinicId: string;
     items: IpdOrderItem[];
-  }): void {
+  }): Promise<void> {
+    const clinic = await getClinicInfo(params.clinicId);
     const rows = params.items
       .filter((i) => i.status !== 'cancelled')
       .map(
@@ -878,7 +1036,7 @@ export const documentService = {
       title: 'INVESTIGATION ORDER SHEET',
       subtitle: `Printed ${new Date().toLocaleString('en-IN')}`,
       admission: params.admission,
-      clinicName: params.clinicName,
+      clinic,
       body: rows
         ? `<table class="grid">
             <thead><tr><th>Date</th><th>Test / procedure</th><th>Priority</th><th>Status</th><th>Instructions</th><th>Collected by</th></tr></thead>
@@ -889,11 +1047,12 @@ export const documentService = {
   },
 
   /** Date-wise treatment plan sheet for the paper file */
-  printPlanSheet(params: {
+  async printPlanSheet(params: {
     admission: Admission;
-    clinicName: string;
+    clinicId: string;
     plans: TreatmentPlan[];
-  }): void {
+  }): Promise<void> {
+    const clinic = await getClinicInfo(params.clinicId);
     const ordered = [...params.plans].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
     const blocks = ordered
       .map((p) => {
@@ -919,7 +1078,7 @@ export const documentService = {
       title: 'TREATMENT PLAN / PROGRESS SHEET',
       subtitle: `${ordered.length} entr${ordered.length === 1 ? 'y' : 'ies'}`,
       admission: params.admission,
-      clinicName: params.clinicName,
+      clinic,
       body: blocks || '<p>No plan documented.</p>',
     }));
   },
@@ -936,7 +1095,7 @@ export const documentService = {
     forceRegenerate?: boolean;
   }): Promise<string> {
     // no local letterhead — the server adds the clinic header/footer images
-    const html = buildBillHtml(params.bill, params.admission, '', false);
+    const html = buildBillHtml(params.bill, params.admission, EMPTY_CLINIC_INFO, false);
     const { data, error } = await supabase.functions.invoke('generate-ipd-pdf', {
       body: {
         html,
@@ -995,11 +1154,12 @@ export const documentService = {
    * admission barcode (Code 128) top-right, footer with doc number.
    * (Server-side letterhead PDF via the LIMS pipeline comes later.)
    */
-  printDocument(params: {
+  async printDocument(params: {
     doc: IpdDocument;
     admission: Admission;
-    clinicName: string;
-  }): void {
+    clinicId: string;
+  }): Promise<void> {
+    const clinic = await getClinicInfo(params.clinicId);
     const barcode = generateBarcodeDataUrl(params.admission.admission_number, {
       height: 32,
       fontSize: 9,
@@ -1027,10 +1187,7 @@ export const documentService = {
 </head>
 <body>
   <div class="letterhead">
-    <div>
-      <h1>${params.clinicName}</h1>
-      <div class="sub">Inpatient Department</div>
-    </div>
+    ${letterheadInner(clinic, 'Inpatient Department')}
     <div class="barcode"><img src="${barcode}" alt="${params.admission.admission_number}" /></div>
   </div>
   ${params.doc.content_html}
@@ -1067,7 +1224,7 @@ export const documentService = {
 function buildBillHtml(
   bill: IpdBill,
   admission: Admission,
-  clinicName: string,
+  clinic: ClinicInfo,
   letterhead: boolean
 ): string {
   const lines = bill.lines ?? [];
@@ -1144,10 +1301,7 @@ function buildBillHtml(
 
   const headerBlock = letterhead
     ? `<div class="letterhead">
-        <div>
-          <h1>${clinicName}</h1>
-          <div class="sub">Inpatient Department — ${bill.bill_type.toUpperCase()} BILL</div>
-        </div>
+        ${letterheadInner(clinic, `Inpatient Department — ${bill.bill_type.toUpperCase()} BILL`)}
         <img src="${barcode}" alt="${admission.admission_number}" style="height:32px" />
       </div>`
     : `<div class="billtitle">
@@ -1219,7 +1373,7 @@ function chartSheetHtml(params: {
   title: string;
   subtitle?: string;
   admission: Admission;
-  clinicName: string;
+  clinic: ClinicInfo;
   body: string;
 }): string {
   const { admission } = params;
@@ -1260,10 +1414,7 @@ function chartSheetHtml(params: {
 </head>
 <body>
   <div class="head">
-    <div>
-      <h1>${esc(params.clinicName)}</h1>
-      <div class="sub">Inpatient Department</div>
-    </div>
+    ${letterheadInner(params.clinic, 'Inpatient Department')}
     <img src="${barcode}" style="height:26px" alt="${esc(admission.admission_number)}" />
   </div>
   <div class="title">${esc(params.title)}</div>

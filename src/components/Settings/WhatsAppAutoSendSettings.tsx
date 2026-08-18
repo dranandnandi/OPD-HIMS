@@ -3,6 +3,7 @@ import { Save, Bell, MessageSquare, DollarSign, Star, Calendar, TestTube, Clipbo
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
 import type { WhatsAppEventType, WhatsAppAutoSendRule, WhatsAppMessageTemplate } from '../../types/whatsapp';
+import ReminderAutomationSettings from './ReminderAutomationSettings';
 
 const EVENT_TYPES: { type: WhatsAppEventType; label: string; icon: React.ElementType; description: string }[] = [
   {
@@ -15,7 +16,13 @@ const EVENT_TYPES: { type: WhatsAppEventType; label: string; icon: React.Element
     type: 'appointment_reminder',
     label: 'Appointment Reminder',
     icon: Bell,
-    description: 'Remind patients before appointment'
+    description: 'Automatically remind patients before their appointment (scheduled server-side)'
+  },
+  {
+    type: 'follow_up_reminder',
+    label: 'Follow-Up Reminder',
+    icon: Bell,
+    description: 'Automatically remind patients when a visit follow-up falls due (scheduled server-side)'
   },
   {
     type: 'bill_created',
@@ -318,6 +325,9 @@ const WhatsAppAutoSendSettings: React.FC = () => {
           Configure automatic WhatsApp message sending for different events. Messages are sent via your connected WhatsApp session.
         </p>
       </div>
+
+      {/* Pacing + timing for the server-side reminder scheduler */}
+      <ReminderAutomationSettings />
 
       {/* Rules List */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

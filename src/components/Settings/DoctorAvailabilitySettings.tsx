@@ -5,20 +5,9 @@ import { Profile } from '../../types';
 import { authService } from '../../services/authService';
 import { getCurrentProfile } from '../../services/profileService';
 import { doctorAvailabilityService, DoctorAvailability } from '../../services/doctorAvailabilityService';
+import { hasReceptionAccess } from '../../utils/roleAccess';
 
-const canManageClinicDoctors = (user: Profile | null | undefined) => {
-  const roleName = user?.roleName?.toLowerCase();
-  return Boolean(
-    user && (
-      roleName === 'admin' ||
-      roleName === 'super_admin' ||
-      roleName === 'receptionist' ||
-      roleName === 'reception' ||
-      user.permissions.includes('admin') ||
-      user.permissions.includes('all')
-    )
-  );
-};
+const canManageClinicDoctors = (user: Profile | null | undefined) => hasReceptionAccess(user);
 
 const DoctorAvailabilitySettings: React.FC = () => {
   const { user } = useAuth();

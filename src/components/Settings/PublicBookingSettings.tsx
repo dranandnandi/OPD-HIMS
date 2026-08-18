@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../Auth/useAuth';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { PublicBookingPolicy } from '../../types';
+import { REGIONAL_LANGUAGES, createTranslator } from '../PublicBooking/i18n';
 
 // Both production domains serve this same SPA, so the shareable link is built
 // from wherever the admin happens to be signed in. A clinic on docpreneur.academy
@@ -42,7 +43,12 @@ const embedSnippet = (slug: string) => `<!-- ${slug} appointment booking -->
 const DEFAULT_POLICY: Required<
   Pick<
     PublicBookingPolicy,
-    'leadTimeHours' | 'horizonDays' | 'maxPerPhonePerDay' | 'autoConfirm' | 'noticeText'
+    | 'leadTimeHours'
+    | 'horizonDays'
+    | 'maxPerPhonePerDay'
+    | 'autoConfirm'
+    | 'noticeText'
+    | 'language'
   >
 > = {
   leadTimeHours: 2,
@@ -50,6 +56,7 @@ const DEFAULT_POLICY: Required<
   maxPerPhonePerDay: 3,
   autoConfirm: false,
   noticeText: '',
+  language: '',
 };
 
 const suggestSlug = (clinicName: string) =>
@@ -240,6 +247,47 @@ const PublicBookingSettings: React.FC = () => {
             </span>
           </span>
         </label>
+      </section>
+
+      {/* --- language ----------------------------------------------------- */}
+      <section className="rounded-xl border border-gray-200 p-4">
+        <label htmlFor="pb-language" className="mb-1 block text-sm font-medium text-gray-900">
+          Regional language on the booking page
+        </label>
+        <select
+          id="pb-language"
+          value={policy.language ?? ''}
+          onChange={(event) => updatePolicy({ language: event.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm sm:max-w-xs"
+        >
+          <option value="">English only</option>
+          {REGIONAL_LANGUAGES.map((language) => (
+            <option key={language.code} value={language.code}>
+              English + {language.english} ({language.native})
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs text-gray-500">
+          Labels, buttons and instructions show in English with the chosen language
+          in brackets. Doctor names, degrees, specialisations, appointment types and
+          the notice below stay exactly as you have written them &mdash; medical
+          wording is never translated.
+        </p>
+
+        {policy.language && (
+          <div className="mt-3 rounded-lg bg-gray-50 p-3">
+            <span className="mb-1.5 block text-xs font-medium text-gray-700">
+              Preview
+            </span>
+            <ul className="space-y-1 text-sm text-gray-800">
+              {(['chooseDoctor', 'patientName', 'mobileNumber', 'confirmAppointment'] as const).map(
+                (key) => (
+                  <li key={key}>{createTranslator(policy.language)(key)}</li>
+                ),
+              )}
+            </ul>
+          </div>
+        )}
       </section>
 
       {/* --- policy ------------------------------------------------------- */}

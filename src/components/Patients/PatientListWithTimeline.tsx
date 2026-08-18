@@ -12,6 +12,7 @@ import AddVisitModal from './AddVisitModal';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase, getInitials } from '../../utils/stringUtils';
 import { printPatientQr } from '../../utils/patientQrPrint';
+import { formatDob } from '../../utils/dateOfBirth';
 
 type ExcelCellValue = string | number | boolean | null | undefined;
 type PatientWithOptionalBloodGroup = Patient & { bloodGroup?: string };
@@ -155,12 +156,15 @@ const PatientListWithTimeline: React.FC = () => {
     }
   };
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+
   const filteredPatients = patients.filter(
     (patient) =>
-      patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      patient.name.toLowerCase().includes(normalizedSearchTerm) ||
       patient.phone.includes(searchTerm) ||
       getPatientNumber(patient).includes(searchTerm) ||
-      patient.id.includes(searchTerm)
+      patient.id.includes(searchTerm) ||
+      (patient.address || '').toLowerCase().includes(normalizedSearchTerm)
   );
 
   const selectedFilteredPatients = filteredPatients.filter((patient) => selectedPatientIds.includes(patient.id));
@@ -224,6 +228,7 @@ const PatientListWithTimeline: React.FC = () => {
           'Patient Number',
           'Phone',
           'Age',
+          'Date of Birth',
           'Gender',
           'Address',
           'Emergency Contact',
@@ -241,6 +246,7 @@ const PatientListWithTimeline: React.FC = () => {
           getPatientNumber(patient),
           patient.phone,
           patient.age,
+          formatDob(patient.date_of_birth),
           patient.gender,
           patient.address || '',
           patient.emergency_contact || '',
@@ -615,7 +621,7 @@ const PatientListWithTimeline: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Search by patient no, name, or phone..."
+              placeholder="Search by patient no, name, phone, or address..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="input-field pl-12"
@@ -671,7 +677,10 @@ const PatientListWithTimeline: React.FC = () => {
                   {getPatientNumber(patient) && (
                     <p className="text-xs font-medium text-blue-700">Patient No: {getPatientNumber(patient)}</p>
                   )}
-                  <p className="text-sm text-gray-600">{patient.age} years - {patient.gender}</p>
+                  <p className="text-sm text-gray-600">
+                    {patient.age} years - {patient.gender}
+                    {formatDob(patient.date_of_birth) && ` - DOB ${formatDob(patient.date_of_birth)}`}
+                  </p>
                 </div>
               </div>
               <input

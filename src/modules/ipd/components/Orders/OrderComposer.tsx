@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FlaskConical, Plus, Send, Trash2, X, Layers, BookmarkPlus } from 'lucide-react';
 import { orderService, OrderCategory, OrderSet } from '../../services/orderService';
-import type { Admission, ServiceMaster } from '../../types/ipd';
+import { ORDER_STATUS_LABEL, isOpenOrder } from './orderStatus';
+import type { Admission, IpdOrderItem, ServiceMaster } from '../../types/ipd';
 
 interface Props {
   clinicId: string;
@@ -10,6 +11,8 @@ interface Props {
   userId?: string;
   /** raised from a treatment-plan entry — links the order back to that round */
   treatmentPlanId?: string | null;
+  /** what is already on the chart, so the same test isn't ordered (and charged) twice */
+  existingItems?: IpdOrderItem[];
   onPlaced: () => void;
   onCancel?: () => void;
   compact?: boolean;
@@ -27,7 +30,7 @@ interface Line { service: ServiceMaster; quantity: number }
 /** Place a diagnostics / procedure order — shared by the Orders tab and the
     "order tests" action on a treatment-plan entry. */
 export default function OrderComposer({
-  clinicId, admission, userId, treatmentPlanId, onPlaced, onCancel, compact,
+  clinicId, admission, userId, treatmentPlanId, existingItems, onPlaced, onCancel, compact,
 }: Props) {
   const [category, setCategory] = useState<OrderCategory | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -54,7 +57,32 @@ export default function OrderComposer({
     return () => clearTimeout(handle);
   }, [clinicId, category, search]);
 
+  /**
+   * A test dictated on the round is already ordered and sitting at "awaiting
+   * sample" — picking it again here would place a second order and post a
+   * second charge, which is what the duplicate chips on the plan card were.
+   */
+  const openOrders = useMemo(() => {
+    const map = new Map<string, IpdOrderItem>();
+    for (const i of existingItems ?? []) {
+      if (isOpenOrder(i.status) && !map.has(i.service_id)) map.set(i.service_id, i);
+    }
+    return map;
+  }, [existingItems]);
+
   const addLine = (service: ServiceMaster) => {
+    const open = openOrders.get(service.id);
+    if (
+      open
+      && !confirm(
+        `${service.name} is already ordered on this admission (${ORDER_STATUS_LABEL[open.status]}).\n\n`
+        + 'Order it again? A second charge will be posted.'
+      )
+    ) {
+      setSearch('');
+      setOptions([]);
+      return;
+    }
     setLines((prev) =>
       prev.some((l) => l.service.id === service.id)
         ? prev
@@ -175,6 +203,11 @@ export default function OrderComposer({
                       {s.service_code}
                     </span>
                     {s.name}
+                    {openOrders.has(s.id) && (
+                      <span className="ml-1.5 text-[10px] text-amber-700 bg-amber-100 rounded px-1">
+                        already ordered
+                      </span>
+                    )}
                   </span>
                   <span className="text-slate-400 whitespace-nowrap text-xs">
                     {s.service_type} · ₹{s.base_price}
@@ -234,6 +267,11 @@ export default function OrderComposer({
               <span className="flex-1 text-slate-700">
                 <span className="font-mono text-xs text-slate-400 mr-1.5">{l.service.service_code}</span>
                 {l.service.name}
+                {openOrders.has(l.service.id) && (
+                  <span className="ml-1.5 text-[10px] text-amber-700 bg-amber-100 rounded px-1">
+                    repeat — already open on this admission
+                  </span>
+                )}
               </span>
               <input
                 type="number"

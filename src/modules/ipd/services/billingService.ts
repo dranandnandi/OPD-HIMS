@@ -269,7 +269,7 @@ export const billingService = {
   async listBills(admissionId: string): Promise<IpdBill[]> {
     const { data, error } = await supabase
       .from('ipd_bills')
-      .select('*, lines:ipd_bill_lines(*)')
+      .select('*, lines:ipd_bill_lines(*), payments:ipd_payments(*)')
       .eq('admission_id', admissionId)
       .order('bill_datetime');
     if (error) throw error;

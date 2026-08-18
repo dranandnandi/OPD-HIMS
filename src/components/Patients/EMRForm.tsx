@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Plus, Trash2, Calendar, Zap, Image, Upload, Camera, Link, X, Loader2, Sparkles, Eye, AlertTriangle } from 'lucide-react';
+import { Save, Plus, Trash2, Calendar, Zap, Upload, Camera, Video, Link, X, Loader2, Sparkles, Eye, AlertTriangle, Paperclip, Play, FileText, File as FileIcon } from 'lucide-react';
 import { Patient, Visit, Prescription, Symptom, Diagnosis, TestOrdered, Profile, PhysicalExamination, VoiceTranscript, VisitImage, MedicineMaster, TestMaster, OcrResult } from '../../types';
 import PhysicalExaminationSection from './PhysicalExaminationSection';
 import VoiceRecorder from './VoiceRecorder';
@@ -12,6 +12,15 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase } from '../../utils/stringUtils';
 import { analyzeVisitImageWithAI } from '../../services/ocrService';
+import {
+  getAttachmentKind,
+  isAnalyzable,
+  validateAttachmentFile,
+  defaultImageTypeFor,
+  formatFileSize,
+  ATTACHMENT_ACCEPT,
+  FALLBACK_THUMB
+} from '../../utils/visitAttachments';
 import {
   normalizeExtraction,
   mergeExtractionIntoForm,
@@ -95,7 +104,9 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [analyzingImageId, setAnalyzingImageId] = useState<string | null>(null);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<VisitImage | null>(null);
   const [testsMaster, setTestsMaster] = useState<TestMaster[]>([]);
   const [testSearchQuery, setTestSearchQuery] = useState<{ [key: number]: string }>({});
   const [testSuggestions, setTestSuggestions] = useState<{ [key: number]: TestMaster[] }>({});
@@ -569,52 +580,69 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     }));
   };
 
-  // ── Image helpers ──────────────────────────────────────────────────
-  const uploadImageFile = async (file: File): Promise<string> => {
+  // ── Attachment helpers (images, videos, PDFs) ──────────────────────
+  /** Storage object keys must be ASCII-safe; the original name is kept as the label. */
+  const storageSafeName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  const uploadAttachmentFile = async (file: File): Promise<string> => {
     if (!supabase) throw new Error('Supabase not initialised');
-    const fileName = `visit_images/${Date.now()}_${file.name}`;
-    const { error } = await supabase.storage.from('ocruploads').upload(fileName, file);
+    const fileName = `visit_images/${Date.now()}_${storageSafeName(file.name)}`;
+    const { error } = await supabase.storage
+      .from('ocruploads')
+      .upload(fileName, file, { contentType: file.type || undefined });
     if (error) throw new Error(error.message);
     const { data: { publicUrl } } = supabase.storage.from('ocruploads').getPublicUrl(fileName);
     return publicUrl;
   };
 
-  const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachmentSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/webp'];
-    if (!validTypes.includes(file.type.toLowerCase())) {
-      alert('Please upload a valid image file (JPEG, PNG, HEIC, WebP).');
-      e.target.value = '';
+
+    const validationError = validateAttachmentFile(file);
+    if (validationError) {
+      setAttachmentError(validationError);
       return;
     }
+
+    setAttachmentError(null);
+    setUploadingAttachment(true);
     try {
-      const url = await uploadImageFile(file);
-      const newImage: VisitImage = {
-        id: `img_${Date.now()}`,
+      const url = await uploadAttachmentFile(file);
+      const newAttachment: VisitImage = {
+        id: `att_${Date.now()}`,
         url,
-        imageType: 'clinical_photo',
+        imageType: defaultImageTypeFor(file),
         label: file.name,
+        mimeType: file.type || undefined,
+        fileSize: file.size,
         uploadedAt: new Date().toISOString()
       };
-      setVisitImages(prev => [...prev, newImage]);
+      setVisitImages(prev => [...prev, newAttachment]);
     } catch (err) {
-      alert('Failed to upload image. Please try again.');
+      setAttachmentError(
+        err instanceof Error
+          ? `Upload failed: ${err.message}`
+          : 'Failed to upload the file. Please try again.'
+      );
+    } finally {
+      setUploadingAttachment(false);
     }
-    e.target.value = '';
   };
 
   const handleAddImageUrl = () => {
     const url = imageUrlInput.trim();
     if (!url) return;
-    const newImage: VisitImage = {
-      id: `img_${Date.now()}`,
+    const newAttachment: VisitImage = {
+      id: `att_${Date.now()}`,
       url,
+      // The kind is inferred from the URL extension when it is viewed.
       imageType: 'other',
-      label: 'Attached Image',
+      label: 'Linked attachment',
       uploadedAt: new Date().toISOString()
     };
-    setVisitImages(prev => [...prev, newImage]);
+    setVisitImages(prev => [...prev, newAttachment]);
     setImageUrlInput('');
     setShowUrlInput(false);
   };
@@ -1538,26 +1566,52 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         />
       </div>
 
-      {/* Clinical Images */}
+      {/* Clinical Attachments */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <Image className="w-4 h-4 text-teal-600" />
-            <label className="text-sm font-medium text-gray-700">Clinical Images</label>
-            <span className="text-xs text-gray-400">(reports, swelling, X-rays, case papers)</span>
+            <Paperclip className="w-4 h-4 text-teal-600" />
+            <label className="text-sm font-medium text-gray-700">Clinical Attachments</label>
+            <span className="text-xs text-gray-400">(prescriptions, reports, X-rays, videos, PDFs)</span>
           </div>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 cursor-pointer border border-teal-300 rounded-lg px-2 py-1">
+            <label className={`flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 cursor-pointer border border-teal-300 rounded-lg px-2 py-1 ${uploadingAttachment ? 'opacity-50 pointer-events-none' : ''}`}>
               <Upload className="w-3 h-3" />
               Upload
-              <input type="file" accept="image/*" onChange={handleImageFileSelect} className="hidden" />
+              <input
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                onChange={handleAttachmentSelect}
+                disabled={uploadingAttachment}
+                className="hidden"
+              />
             </label>
-            <label className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 cursor-pointer border border-teal-300 rounded-lg px-2 py-1">
+            <label className={`flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 cursor-pointer border border-teal-300 rounded-lg px-2 py-1 ${uploadingAttachment ? 'opacity-50 pointer-events-none' : ''}`}>
               <Camera className="w-3 h-3" />
-              Camera
-              <input type="file" accept="image/*" capture="environment" onChange={handleImageFileSelect} className="hidden" />
+              Photo
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleAttachmentSelect}
+                disabled={uploadingAttachment}
+                className="hidden"
+              />
+            </label>
+            <label className={`flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 cursor-pointer border border-teal-300 rounded-lg px-2 py-1 ${uploadingAttachment ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Video className="w-3 h-3" />
+              Video
+              <input
+                type="file"
+                accept="video/*"
+                capture="environment"
+                onChange={handleAttachmentSelect}
+                disabled={uploadingAttachment}
+                className="hidden"
+              />
             </label>
             <button
+              type="button"
               onClick={() => setShowUrlInput(v => !v)}
               className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 border border-teal-300 rounded-lg px-2 py-1"
             >
@@ -1567,23 +1621,42 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           </div>
         </div>
 
+        {uploadingAttachment && (
+          <div className="flex items-center gap-2 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 mb-3">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Uploading... large videos can take a while on a slow connection.
+          </div>
+        )}
+
+        {attachmentError && (
+          <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+            <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+            <span className="flex-1">{attachmentError}</span>
+            <button type="button" onClick={() => setAttachmentError(null)} className="text-red-500 hover:text-red-700">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
         {showUrlInput && (
           <div className="flex gap-2 mb-3">
             <input
               type="url"
               value={imageUrlInput}
               onChange={e => setImageUrlInput(e.target.value)}
-              placeholder="Paste image URL..."
+              placeholder="Paste image / video / PDF URL..."
               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               onKeyDown={e => e.key === 'Enter' && handleAddImageUrl()}
             />
             <button
+              type="button"
               onClick={handleAddImageUrl}
               className="px-3 py-2 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700"
             >
               Add
             </button>
             <button
+              type="button"
               onClick={() => setShowUrlInput(false)}
               className="px-3 py-2 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50"
             >
@@ -1594,81 +1667,118 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
 
         {visitImages.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {visitImages.map(img => (
-              <div key={img.id} className="relative group border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                {/* Thumbnail */}
-                <div
-                  className="relative cursor-pointer"
-                  onClick={() => setLightboxUrl(img.url)}
-                >
-                  <img
-                    src={img.url}
-                    alt={img.label || img.imageType}
-                    className="w-full h-28 object-cover"
-                    onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23e5e7eb" width="100" height="100"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12">No preview</text></svg>'; }}
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center">
-                    <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </div>
-
-                {/* Controls */}
-                <div className="p-2 space-y-1">
-                  <select
-                    value={img.imageType}
-                    onChange={e => updateImageType(img.id, e.target.value as VisitImage['imageType'])}
-                    className="w-full text-xs px-1 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-teal-500"
+            {visitImages.map(img => {
+              const kind = getAttachmentKind(img);
+              return (
+                <div key={img.id} className="relative group border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                  {/* Thumbnail */}
+                  <div
+                    className="relative cursor-pointer h-28"
+                    onClick={() => setPreviewAttachment(img)}
                   >
-                    <option value="clinical_photo">Clinical Photo</option>
-                    <option value="lab_report">Lab Report</option>
-                    <option value="xray">X-Ray</option>
-                    <option value="case_paper">Case Paper</option>
-                    <option value="other">Other</option>
-                  </select>
-
-                  <input
-                    type="text"
-                    value={img.context || ''}
-                    onChange={e => updateImageContext(img.id, e.target.value)}
-                    placeholder="Focus (e.g. check cartilage, fracture...)"
-                    className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-purple-400 placeholder-gray-300"
-                    title="Optional: tell AI what to specifically look for"
-                  />
-
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => handleAnalyzeImage(img)}
-                      disabled={analyzingImageId === img.id}
-                      className="flex-1 flex items-center justify-center gap-1 text-xs py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400"
-                    >
-                      {analyzingImageId === img.id
-                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Analyzing...</>
-                        : <><Sparkles className="w-3 h-3" /> AI Analyze</>
-                      }
-                    </button>
-                    <button
-                      onClick={() => removeImage(img.id)}
-                      className="p-1 text-red-500 hover:text-red-700"
-                      title="Remove"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    {kind === 'image' ? (
+                      <img
+                        src={img.url}
+                        alt={img.label || img.imageType}
+                        className="w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).src = FALLBACK_THUMB; }}
+                      />
+                    ) : kind === 'video' ? (
+                      <>
+                        <video src={img.url} className="w-full h-full object-cover bg-black" preload="metadata" muted playsInline />
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="bg-black/55 rounded-full p-2">
+                            <Play className="w-5 h-5 text-white" fill="white" />
+                          </span>
+                        </span>
+                      </>
+                    ) : kind === 'pdf' ? (
+                      <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center gap-1">
+                        <FileText className="w-7 h-7 text-red-500" />
+                        <span className="text-[10px] font-medium text-red-600">PDF</span>
+                      </div>
+                    ) : (
+                      <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center gap-1">
+                        <FileIcon className="w-7 h-7 text-gray-400" />
+                        <span className="text-[10px] font-medium text-gray-500">FILE</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
 
-                  {img.aiAnalysis && (
-                    <p className="text-xs text-gray-500 italic truncate" title={img.aiAnalysis}>
-                      ✓ {img.aiAnalysis.slice(0, 50)}…
-                    </p>
-                  )}
+                  {/* Controls */}
+                  <div className="p-2 space-y-1">
+                    <select
+                      value={img.imageType}
+                      onChange={e => updateImageType(img.id, e.target.value as VisitImage['imageType'])}
+                      className="w-full text-xs px-1 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-teal-500"
+                    >
+                      <option value="clinical_photo">Clinical Photo</option>
+                      <option value="lab_report">Lab Report</option>
+                      <option value="xray">X-Ray</option>
+                      <option value="case_paper">Case Paper</option>
+                      <option value="video">Video</option>
+                      <option value="document">Document</option>
+                      <option value="other">Other</option>
+                    </select>
+
+                    {isAnalyzable(img) && (
+                      <input
+                        type="text"
+                        value={img.context || ''}
+                        onChange={e => updateImageContext(img.id, e.target.value)}
+                        placeholder="Focus (e.g. check cartilage, fracture...)"
+                        className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-purple-400 placeholder-gray-300"
+                        title="Optional: tell AI what to specifically look for"
+                      />
+                    )}
+
+                    <div className="flex gap-1">
+                      {isAnalyzable(img) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleAnalyzeImage(img)}
+                          disabled={analyzingImageId === img.id}
+                          className="flex-1 flex items-center justify-center gap-1 text-xs py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400"
+                        >
+                          {analyzingImageId === img.id
+                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Analyzing...</>
+                            : <><Sparkles className="w-3 h-3" /> AI Analyze</>
+                          }
+                        </button>
+                      ) : (
+                        <span className="flex-1 text-[10px] text-gray-400 truncate self-center" title={img.label}>
+                          {formatFileSize(img.fileSize) || (kind === 'video' ? 'Video' : 'File')}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeImage(img.id)}
+                        className="p-1 text-red-500 hover:text-red-700"
+                        title="Remove"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {img.aiAnalysis && (
+                      <p className="text-xs text-gray-500 italic truncate" title={img.aiAnalysis}>
+                        {img.aiAnalysis.slice(0, 50)}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {visitImages.length === 0 && (
           <p className="text-xs text-gray-400 italic text-center py-2">
-            No images attached. Upload photos of reports, swelling, X-rays, or scan case papers.
+            Nothing attached yet. Upload prescription photos, lab reports, X-rays, PDFs, or record a short
+            clinical video (gait, movement, wound).
           </p>
         )}
       </div>
@@ -1685,33 +1795,51 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         </button>
       </div>
 
-      {/* Lightbox */}
-      {lightboxUrl && (
+      {/* Attachment preview */}
+      {previewAttachment && (
         <div
           className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4"
-          onClick={() => setLightboxUrl(null)}
+          onClick={() => setPreviewAttachment(null)}
         >
-          <div className="relative max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
-            <button
-              onClick={() => setLightboxUrl(null)}
-              className="absolute -top-10 right-0 text-white hover:text-gray-300"
-            >
-              <X className="w-8 h-8" />
-            </button>
-            <img
-              src={lightboxUrl}
-              alt="Full view"
-              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-            />
-            <a
-              href={lightboxUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute bottom-2 right-2 bg-white bg-opacity-80 text-gray-800 text-xs px-2 py-1 rounded"
-              onClick={e => e.stopPropagation()}
-            >
-              Open in new tab
-            </a>
+          <div className="relative w-full max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-2 text-white">
+              <p className="text-sm font-medium truncate">{previewAttachment.label || 'Attachment'}</p>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <a
+                  href={previewAttachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm hover:text-gray-300"
+                >
+                  Open in new tab
+                </a>
+                <button type="button" onClick={() => setPreviewAttachment(null)} className="hover:text-gray-300">
+                  <X className="w-7 h-7" />
+                </button>
+              </div>
+            </div>
+
+            {getAttachmentKind(previewAttachment) === 'video' ? (
+              <video
+                src={previewAttachment.url}
+                controls
+                autoPlay
+                playsInline
+                className="max-w-full max-h-[80vh] mx-auto rounded-lg bg-black"
+              />
+            ) : getAttachmentKind(previewAttachment) === 'pdf' ? (
+              <iframe
+                src={previewAttachment.url}
+                title={previewAttachment.label || 'PDF attachment'}
+                className="w-full h-[80vh] bg-white rounded-lg"
+              />
+            ) : (
+              <img
+                src={previewAttachment.url}
+                alt={previewAttachment.label || 'Full view'}
+                className="max-w-full max-h-[80vh] object-contain mx-auto rounded-lg shadow-2xl"
+              />
+            )}
           </div>
         </div>
       )}

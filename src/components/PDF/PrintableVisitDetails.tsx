@@ -2,7 +2,7 @@ import React from 'react';
 import { Visit, Patient, Profile, ClinicSetting } from '../../types';
 import { format } from 'date-fns';
 import { toTitleCase } from '../../utils/stringUtils';
-import { extractImpressionDetails, formatTestTypeLabel } from '../../utils/emrDetailFormatting';
+import { extractImpressionDetails, formatTestTypeLabel, stripAiNoteBlocks } from '../../utils/emrDetailFormatting';
 
 interface PrintableVisitDetailsProps {
   visit: Visit;
@@ -12,7 +12,8 @@ interface PrintableVisitDetailsProps {
 }
 
 const PrintableVisitDetails: React.FC<PrintableVisitDetailsProps> = ({ visit, patient, doctor, clinicSettings }) => {
-  const { impressionItems, remainingNotes } = extractImpressionDetails(visit.doctorNotes);
+  // AI dictation blocks stay in the app view only — the printed copy gets the doctor's own notes.
+  const { impressionItems, remainingNotes } = extractImpressionDetails(stripAiNoteBlocks(visit.doctorNotes));
   const patientNumber = patient.patientNumber || patient.patient_number;
 
   return (

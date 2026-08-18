@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { Profile, Role } from '../types';
 import type { DatabaseProfile, DatabaseRole } from '../lib/supabase';
 import { getCurrentProfile, saveProfileToLocalStorage, getProfileFromLocalStorage, convertDatabaseProfile } from './profileService';
+import { MODULE_ASSIGNMENT_MARKER } from '../utils/modulePermissions';
 
 export const convertDatabaseRole = (dbRole: DatabaseRole): Role => ({
   id: dbRole.id,
@@ -145,6 +146,47 @@ export const authService = {
     return data.map(convertDatabaseRole);
   },
 
+  /**
+   * Replace a role's module permissions, preserving every other permission
+   * string on the role (billing rights, `reception`, `all`, ...).
+   *
+   * A DB trigger (sync_profiles_on_role_update) fans the new array out to every
+   * profile holding the role, so staff pick the change up on their next login
+   * without being reassigned.
+   */
+  async updateRoleModulePermissions(
+    roleId: string,
+    modulePermissions: string[],
+    allModuleKeys: string[]
+  ): Promise<Role> {
+    if (!supabase) throw new Error('Supabase client not initialized');
+
+    const { data: existing, error: readError } = await supabase
+      .from('roles')
+      .select('permissions')
+      .eq('id', roleId)
+      .single();
+    if (readError) throw new Error('Failed to load role permissions');
+
+    const preserved = ((existing?.permissions as string[]) ?? [])
+      .filter((p) => !allModuleKeys.includes(p));
+    // The marker records that this role's modules were configured on purpose,
+    // so an empty selection locks the role down instead of reading as "never
+    // configured" and reopening every OPD tab.
+    const next = Array.from(
+      new Set([...preserved, ...modulePermissions, MODULE_ASSIGNMENT_MARKER])
+    );
+
+    const { data, error } = await supabase
+      .from('roles')
+      .update({ permissions: next })
+      .eq('id', roleId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message || 'Failed to update role permissions');
+    return convertDatabaseRole(data);
+  },
+
   async getRole(id: string): Promise<Role | null> {
     if (!supabase) throw new Error('Supabase client not initialized');
     const { data, error } = await supabase.from('roles').select('*').eq('id', id).single();
@@ -262,7 +304,11 @@ export const authService = {
 
   async hasPermission(permission: string): Promise<boolean> {
     const profile = await getCurrentProfile();
-    if (!profile?.permissions) return false;
+    if (!profile) return false;
+    // Same admin bypass as AuthProvider.hasPermission — keep the two in step.
+    const role = profile.roleName?.toLowerCase();
+    if (role === 'admin' || role === 'super_admin') return true;
+    if (!profile.permissions) return false;
     return profile.permissions.includes(permission) || profile.permissions.includes('all');
   },
 

@@ -1,10 +1,13 @@
 import React from 'react';
 import { CheckCircle2, Calendar, Clock, User, Hash, Phone, MapPin } from 'lucide-react';
 import type { BookingSuccess, PublicClinic } from '../../services/publicBookingService';
+import { englishOnly, type BookingTranslator } from './i18n';
 
 interface BookingConfirmationProps {
   booking: BookingSuccess;
   clinic: PublicClinic;
+  /** Bilingual label helper; defaults to English-only. */
+  t?: BookingTranslator;
   onBookAnother: () => void;
 }
 
@@ -44,6 +47,7 @@ const buildCalendarFile = (booking: BookingSuccess, clinic: PublicClinic): strin
 const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
   booking,
   clinic,
+  t = englishOnly,
   onBookAnother,
 }) => (
   <div className="space-y-5">
@@ -51,12 +55,15 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
       <CheckCircle2 className="h-12 w-12 text-green-600" />
       <div>
         <h2 className="text-lg font-semibold text-green-900">
-          {booking.autoConfirmed ? 'Appointment confirmed' : 'Appointment requested'}
+          {t(booking.autoConfirmed ? 'apptConfirmed' : 'apptRequested')}
         </h2>
         <p className="mt-1 text-sm text-green-800">
-          {booking.autoConfirmed
-            ? 'We look forward to seeing you.'
-            : 'The clinic will confirm your slot shortly on your mobile number.'}
+          {t.en(booking.autoConfirmed ? 'confirmedSub' : 'requestedSub')}
+          {t.bilingual && (
+            <span className="block">
+              {t.regional(booking.autoConfirmed ? 'confirmedSub' : 'requestedSub')}
+            </span>
+          )}
         </p>
       </div>
     </div>
@@ -85,8 +92,9 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
       <div className="flex items-center gap-3 p-4">
         <Clock className="h-4 w-4 flex-shrink-0 text-gray-400" />
         <dt className="sr-only">Duration</dt>
+        {/* Appointment type is the clinic's own clinical wording -- left as is. */}
         <dd className="text-sm text-gray-900">
-          {booking.appointmentType} &middot; {booking.duration} minutes
+          {booking.appointmentType} &middot; {booking.duration} {t('minutes')}
         </dd>
       </div>
 
@@ -100,8 +108,8 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
     </dl>
 
     <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
-      Please save your booking reference <strong>{booking.ref}</strong>. Bring it
-      with you, and call the clinic if you need to reschedule or cancel.
+      <strong>{booking.ref}</strong> &mdash; {t.en('saveRef')}
+      {t.bilingual && <span className="mt-1 block">{t.regional('saveRef')}</span>}
     </p>
 
     <div className="flex flex-col gap-2 sm:flex-row">
@@ -111,7 +119,7 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
         className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
       >
         <Calendar className="h-4 w-4" />
-        Add to calendar
+        {t('addToCalendar')}
       </a>
 
       {clinic.phone && (
@@ -120,7 +128,7 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
           className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
         >
           <Phone className="h-4 w-4" />
-          Call clinic
+          {t('callClinic')}
         </a>
       )}
     </div>
@@ -130,7 +138,7 @@ const BookingConfirmation: React.FC<BookingConfirmationProps> = ({
       onClick={onBookAnother}
       className="w-full rounded-lg px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50"
     >
-      Book another appointment
+      {t('bookAnother')}
     </button>
   </div>
 );

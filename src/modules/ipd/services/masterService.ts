@@ -24,6 +24,15 @@ export const masterService = {
     if (error) throw error;
   },
 
+  /** Soft delete: hides the ward (and is blocked in UI while it still has beds) */
+  async deactivateWard(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('ipd_wards')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
   // --- beds ----------------------------------------------------------------
   async createBed(bed: Pick<Bed, 'clinic_id' | 'ward_id' | 'bed_number' | 'bed_type_id'>): Promise<Bed> {
     const { data, error } = await supabase.from('ipd_beds').insert(bed).select().single();

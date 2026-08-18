@@ -16,6 +16,8 @@ export interface PublicClinic {
   timeZone: string;
   currency: string;
   notice: string;
+  /** Regional language code for page furniture; '' = English only. */
+  language: string;
   horizonDays: number;
   /** Today's date in the CLINIC's timezone -- never trust the device clock. */
   today: string;

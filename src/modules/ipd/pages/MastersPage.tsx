@@ -270,6 +270,37 @@ function WardsBedsTab({
     }
   };
 
+  const removeWard = async (w: Ward) => {
+    const attached = beds.filter((b) => b.ward_id === w.id);
+    if (attached.length > 0) {
+      toast.error(`"${w.name}" still has ${attached.length} bed(s) — delete them first`);
+      return;
+    }
+    if (!confirm(`Delete ward "${w.name}"?`)) return;
+    try {
+      await masterService.deactivateWard(w.id);
+      toast.success('Ward deleted');
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const removeBed = async (b: Bed) => {
+    if (b.status === 'occupied') {
+      toast.error(`Bed ${b.bed_number} is occupied — discharge or transfer the patient first`);
+      return;
+    }
+    if (!confirm(`Delete bed ${b.bed_number}${b.ward?.name ? ` (${b.ward.name})` : ''}?`)) return;
+    try {
+      await masterService.deactivateBed(b.id);
+      toast.success('Bed deleted');
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
   return (
     <div className="grid md:grid-cols-2 gap-4">
       <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -296,9 +327,15 @@ function WardsBedsTab({
         </div>
         <ul className="text-sm divide-y divide-slate-100">
           {wards.map((w) => (
-            <li key={w.id} className="py-2 flex justify-between">
+            <li key={w.id} className="py-2 flex justify-between items-center gap-2">
               <span>{w.name}</span>
-              <span className="text-slate-400 capitalize">{w.ward_type}</span>
+              <span className="flex items-center gap-1 shrink-0">
+                <span className="text-slate-400 capitalize">{w.ward_type}</span>
+                <button onClick={() => removeWard(w)} title="Delete ward"
+                  className="p-1 text-slate-400 hover:text-red-600">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </span>
             </li>
           ))}
           {wards.length === 0 && <li className="py-4 text-slate-400 text-center">No wards — seed defaults or add one</li>}
@@ -338,7 +375,7 @@ function WardsBedsTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-1.5">Bed</th><th>Ward</th><th>Type</th><th>Status</th>
+                <th className="py-1.5">Bed</th><th>Ward</th><th>Type</th><th>Status</th><th className="w-8" />
               </tr>
             </thead>
             <tbody>
@@ -348,6 +385,12 @@ function WardsBedsTab({
                   <td>{b.ward?.name}</td>
                   <td>{b.bed_type?.name}</td>
                   <td className="capitalize">{b.status}</td>
+                  <td className="text-right">
+                    <button onClick={() => removeBed(b)} title="Delete bed"
+                      className="p-1 text-slate-400 hover:text-red-600">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

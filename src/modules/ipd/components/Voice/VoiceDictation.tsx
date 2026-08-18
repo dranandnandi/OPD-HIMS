@@ -114,6 +114,7 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
     diet: !!data.diet,
     tasks: data.nursingTasks.map(() => true),
     io: data.intakeOutput.map(() => true),
+    additionalNotes: true,
   });
 
   const runDictation = async (payload: { audioBase64?: string; textInput?: string }) => {
@@ -170,6 +171,12 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
 
   const upd = (patch: Partial<DictationSelections>) =>
     setSelections((s) => (s ? { ...s, ...patch } : s));
+
+  // Drives both the plan card and where the leftovers get filed.
+  const planHasContent = !!result && [
+    result.treatmentPlan.subjective, result.treatmentPlan.objective,
+    result.treatmentPlan.assessment, result.treatmentPlan.plan, result.treatmentPlan.advice,
+  ].some((v) => v && v.trim());
 
   const toggleAt = (key: 'medications' | 'consultations' | 'tasks' | 'io', idx: number) =>
     setSelections((s) => {
@@ -288,9 +295,7 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
             </details>
 
             {/* Treatment plan */}
-            {[result.treatmentPlan.subjective, result.treatmentPlan.objective,
-              result.treatmentPlan.assessment, result.treatmentPlan.plan,
-              result.treatmentPlan.advice].some((v) => v) && (
+            {planHasContent && (
               <Section
                 title="Treatment plan (today)"
                 checked={selections.plan}
@@ -413,6 +418,14 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
                     Tests without a catalog match can't be ordered — add them under Masters → Services first.
                   </p>
                 )}
+                {(() => {
+                  const picked = selections.investigationServiceIds.filter(Boolean);
+                  return picked.length !== new Set(picked).size ? (
+                    <p className="text-xs text-amber-700 mt-1">
+                      Two lines point at the same catalog test — it will be ordered (and charged) once.
+                    </p>
+                  ) : null;
+                })()}
               </SectionShell>
             )}
 
@@ -500,6 +513,36 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
               </SectionShell>
             )}
 
+            {/* Anything that fits no section above — filed so a dictation is never lost */}
+            {(result.additionalNotes
+              || result.unmappedFindings.length > 0
+              || result.droppedLines.length > 0
+              || !planHasContent) && (
+              <Section
+                title="Other notes (nothing else claimed these)"
+                checked={selections.additionalNotes}
+                onToggle={() => upd({ additionalNotes: !selections.additionalNotes })}
+                tone="slate"
+              >
+                {result.additionalNotes && (
+                  <p className="text-slate-700 whitespace-pre-wrap">{result.additionalNotes}</p>
+                )}
+                {result.unmappedFindings.map((f, i) => (
+                  <p key={i} className="text-slate-700">
+                    <span className="text-slate-400">{f.label}:</span> {f.value}
+                  </p>
+                ))}
+                {result.droppedLines.map((l, i) => (
+                  <p key={`d${i}`} className="text-amber-700">⚠ {l}</p>
+                ))}
+                <p className="text-xs text-slate-400">
+                  {planHasContent
+                    ? 'Added to the treatment plan advice.'
+                    : 'Filed as a ward note together with the full transcript.'}
+                </p>
+              </Section>
+            )}
+
             <button
               onClick={apply}
               disabled={applying}
@@ -526,6 +569,7 @@ const TONES: Record<string, string> = {
   indigo: 'bg-indigo-50 border-indigo-200',
   lime: 'bg-lime-50 border-lime-200',
   cyan: 'bg-cyan-50 border-cyan-200',
+  slate: 'bg-slate-50 border-slate-200',
 };
 
 function SectionShell({

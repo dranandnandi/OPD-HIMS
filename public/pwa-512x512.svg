@@ -1,4 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#2563eb" rx="64"/>
-  <text x="256" y="320" font-family="Arial, sans-serif" font-size="192" font-weight="bold" fill="white" text-anchor="middle">OPD</text>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <g fill="#ffffff">
+    <rect x="78" y="182" width="356" height="148" rx="30"/>
+    <rect x="182" y="78" width="148" height="356" rx="30"/>
+  </g>
+  <polyline points="100,256 156,256 182,234 206,276 238,202 266,306 292,242 318,256 412,256"
+            fill="none" stroke="#1d4ed8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

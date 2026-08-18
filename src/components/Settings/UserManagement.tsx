@@ -4,6 +4,17 @@ import { useAuth } from '../Auth/useAuth';
 import { authService } from '../../services/authService';
 import { Profile, Role } from '../../types';
 import { toTitleCase } from '../../utils/stringUtils';
+import {
+  ALL_MODULE_PERMISSION_KEYS,
+  MODULE_ASSIGNMENT_MARKER,
+  MODULE_PERMISSION_GROUPS,
+} from '../../utils/modulePermissions';
+
+/** Admin roles bypass module gating entirely, so their matrix is not editable. */
+const isAdminRoleName = (name: string) => {
+  const n = name.toLowerCase();
+  return n === 'admin' || n === 'super_admin';
+};
 
 const UserManagement: React.FC = () => {
   const { user, hasPermission } = useAuth();
@@ -16,6 +27,11 @@ const UserManagement: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
+  // Role module editor
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [roleModulePerms, setRoleModulePerms] = useState<string[]>([]);
+  const [savingRole, setSavingRole] = useState(false);
+  const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -91,6 +107,45 @@ const UserManagement: React.FC = () => {
       alert('Failed to load user data. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openRoleEditor = (role: Role) => {
+    setEditingRole(role);
+    setRoleModulePerms(role.permissions.filter(p => ALL_MODULE_PERMISSION_KEYS.includes(p)));
+  };
+
+  const toggleRolePerm = (key: string) => {
+    setRoleModulePerms(prev =>
+      prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]
+    );
+  };
+
+  /** Tick the whole group unless it is already fully ticked, in which case clear it. */
+  const toggleGroupPerms = (keys: string[]) => {
+    setRoleModulePerms(prev => {
+      const allOn = keys.every(k => prev.includes(k));
+      return allOn
+        ? prev.filter(p => !keys.includes(p))
+        : Array.from(new Set([...prev, ...keys]));
+    });
+  };
+
+  const handleSaveRolePermissions = async () => {
+    if (!editingRole) return;
+    try {
+      setSavingRole(true);
+      const updated = await authService.updateRoleModulePermissions(
+        editingRole.id,
+        roleModulePerms,
+        ALL_MODULE_PERMISSION_KEYS
+      );
+      setRoles(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+      setEditingRole(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to save modules.');
+    } finally {
+      setSavingRole(false);
     }
   };
 
@@ -326,26 +381,135 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Roles Summary */}
+      {/* Roles & module access */}
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">System Roles</h3>
+        <h3 className="text-lg font-semibold text-gray-800 mb-1">System Roles</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Modules control which tabs a role sees in the sidebar. Changes apply to
+          everyone holding the role the next time they sign in.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {roles.map(role => (
-            <div key={role.id} className="p-4 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-blue-600" />
-                <h4 className="font-medium text-gray-800">{role.name}</h4>
+          {roles.map(role => {
+            const roleIsAdmin = isAdminRoleName(role.name) || role.permissions.includes('all');
+            const moduleCount = role.permissions.filter(p => ALL_MODULE_PERMISSION_KEYS.includes(p)).length;
+            return (
+              <div key={role.id} className="p-4 border border-gray-200 rounded-lg flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-blue-600" />
+                  <h4 className="font-medium text-gray-800">{role.name}</h4>
+                </div>
+                {role.description && (
+                  <p className="text-sm text-gray-600 mb-2">{role.description}</p>
+                )}
+                <div className="text-xs text-gray-500 mb-3">
+                  {roleIsAdmin
+                    ? 'Full access to every module'
+                    : moduleCount === 0
+                      ? 'No modules assigned — sees all OPD tabs (legacy)'
+                      : `${moduleCount} of ${ALL_MODULE_PERMISSION_KEYS.length} modules`}
+                </div>
+                {!roleIsAdmin && (
+                  <button
+                    onClick={() => openRoleEditor(role)}
+                    className="mt-auto text-sm text-blue-600 hover:text-blue-700 font-medium text-left"
+                  >
+                    Manage modules
+                  </button>
+                )}
               </div>
-              {role.description && (
-                <p className="text-sm text-gray-600 mb-2">{role.description}</p>
-              )}
-              <div className="text-xs text-gray-500">
-                {role.permissions.length} permissions
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* Role module editor */}
+      {editingRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b">
+              <div>
+                <h2 className="text-xl font-bold">Modules for “{editingRole.name}”</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Untick a module to hide that tab from this role entirely.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingRole(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 overflow-y-auto">
+              {roleModulePerms.length === 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  {editingRole.permissions.includes(MODULE_ASSIGNMENT_MARKER)
+                    ? 'Saving with nothing ticked leaves this role with no tabs at all — only its own profile page.'
+                    : 'This role has never had modules assigned, so it currently falls back to seeing every OPD tab. Saving switches it to strict access — tick everything it genuinely needs first.'}
+                </div>
+              )}
+
+              {MODULE_PERMISSION_GROUPS.map(([group, perms]) => (
+                <div key={group}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                      {group}
+                      {group === 'IPD' && !ipdEnabled && (
+                        <span className="ml-2 normal-case font-normal text-gray-400">
+                          (IPD not enabled for this clinic)
+                        </span>
+                      )}
+                    </h4>
+                    <button
+                      onClick={() => toggleGroupPerms(perms.map(p => p.key))}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      Toggle all
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {perms.map(perm => (
+                      <label
+                        key={perm.key}
+                        className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={roleModulePerms.includes(perm.key)}
+                          onChange={() => toggleRolePerm(perm.key)}
+                          className="mt-1 w-4 h-4 text-blue-600 rounded"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-gray-800">{perm.label}</span>
+                          <span className="block text-xs text-gray-500">{perm.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t">
+              <button
+                onClick={() => setEditingRole(null)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRolePermissions}
+                disabled={savingRole}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {savingRole ? 'Saving...' : 'Save modules'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* User Modal */}
       {showModal && (

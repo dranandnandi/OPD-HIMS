@@ -15,6 +15,7 @@ import { toTitleCase } from '../../utils/stringUtils';
 import { pdfService } from '../../services/pdfService';
 import { WhatsAppAutoSendService } from '../../services/whatsappAutoSendService';
 import { extractImpressionDetails } from '../../utils/emrDetailFormatting';
+import VisitAttachmentsGallery from './VisitAttachmentsGallery';
 
 type ExcelCellValue = string | number | boolean | null | undefined;
 
@@ -1491,6 +1492,13 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                   </div>
                 </div>
               </div>
+
+              {/* Clinical attachments - images, videos, PDFs */}
+              {visit.visitImages && visit.visitImages.length > 0 && (
+                <div className="card-standard p-6">
+                  <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments" />
+                </div>
+              )}
 
               {/* Associated Bills */}
               <div className="card-standard p-6">

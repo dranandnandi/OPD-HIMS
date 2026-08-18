@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, X, FileImage, Save, AlertCircle, LayoutPanelTop, FileText } from 'lucide-react';
+import { Upload, X, FileImage, Save, AlertCircle, LayoutPanelTop, FileText, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
 import type { PdfLetterheadMode, PdfLetterheadSpacing } from '../../types';
@@ -13,6 +13,11 @@ const A4_INVOICE_MARGINS = '180px 20px 150px 20px';
 const A5_INVOICE_MARGINS = '50px 10px 34px 10px';
 
 const DEFAULT_LETTERHEAD_SPACING: PdfLetterheadSpacing = { top: 130, bottom: 130, left: 20, right: 20 };
+
+// Print copies reserve generous top/bottom bands because they were designed to
+// land on pre-printed letterhead paper. The same room is what the header/footer
+// images drop into once print branding is switched on.
+const PRINT_MARGINS_DEFAULT = '180px 20px 150px 20px';
 
 // The full-page letterhead is fetched by PDF.co over the network rather than
 // inlined into a command-line argument, so it is not bound by the band images'
@@ -137,6 +142,7 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
     // ones. If they are not there yet, that half of the screen goes read-only
     // instead of taking the whole panel down with it.
     const [letterheadSupported, setLetterheadSupported] = useState(true);
+    const [printBrandingSupported, setPrintBrandingSupported] = useState(true);
 
     const [settings, setSettings] = useState({
         pdfHeaderUrl: '',
@@ -147,6 +153,8 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
         letterheadMode: 'bands' as PdfLetterheadMode,
         letterheadUrl: '',
         letterheadSpacing: { ...DEFAULT_LETTERHEAD_SPACING } as PdfLetterheadSpacing,
+        printMargins: PRINT_MARGINS_DEFAULT,
+        printBranding: false,
     });
 
     const isFullMode = settings.letterheadMode === 'full';
@@ -160,7 +168,7 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
         try {
             const { data, error } = await supabase
                 .from('clinic_settings')
-                .select('pdf_header_url, pdf_footer_url, pdf_margins, invoice_paper_size, invoice_margins')
+                .select('pdf_header_url, pdf_footer_url, pdf_margins, pdf_print_margins, invoice_paper_size, invoice_margins')
                 .eq('id', clinicId)
                 .single();
 
@@ -172,6 +180,7 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                     pdfHeaderUrl: data.pdf_header_url || '',
                     pdfFooterUrl: data.pdf_footer_url || '',
                     pdfMargins: data.pdf_margins || A4_INVOICE_MARGINS,
+                    printMargins: data.pdf_print_margins || PRINT_MARGINS_DEFAULT,
                     invoicePaperSize: data.invoice_paper_size || 'A4',
                     invoiceMargins: data.invoice_margins || (data.invoice_paper_size === 'A5' ? A5_INVOICE_MARGINS : A4_INVOICE_MARGINS),
                 }));
@@ -206,6 +215,25 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
         } catch (error) {
             console.warn('Full-letterhead columns unavailable — feature disabled:', error);
             setLetterheadSupported(false);
+        }
+
+        // Its own query for the same reason: this column ships in a later
+        // migration than the letterhead ones, and a project sitting between the
+        // two should still get everything else.
+        try {
+            const { data, error } = await supabase
+                .from('clinic_settings')
+                .select('pdf_print_branding')
+                .eq('id', clinicId)
+                .single();
+
+            if (error) throw error;
+
+            setSettings(prev => ({ ...prev, printBranding: data?.pdf_print_branding === true }));
+            setPrintBrandingSupported(true);
+        } catch (error) {
+            console.warn('Print-branding column unavailable — feature disabled:', error);
+            setPrintBrandingSupported(false);
         }
     };
 
@@ -347,6 +375,7 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                 pdf_header_url: settings.pdfHeaderUrl,
                 pdf_footer_url: settings.pdfFooterUrl,
                 pdf_margins: settings.pdfMargins,
+                pdf_print_margins: settings.printMargins,
                 invoice_paper_size: settings.invoicePaperSize,
                 invoice_margins: settings.invoiceMargins,
             };
@@ -355,6 +384,10 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                 payload.pdf_letterhead_mode = settings.letterheadMode;
                 payload.pdf_letterhead_url = settings.letterheadUrl;
                 payload.pdf_letterhead_spacing = settings.letterheadSpacing;
+            }
+
+            if (printBrandingSupported) {
+                payload.pdf_print_branding = settings.printBranding;
             }
 
             const { error } = await supabase
@@ -667,6 +700,70 @@ export const PDFSettings: React.FC<PDFSettingsProps> = ({ clinicId }) => {
                 </div>
             </div>
             {/* ---------- END HEADER / FOOTER BANDS ---------- */}
+
+            {/* ---------- PRINT / COMPACT PRINT COPIES ---------- */}
+            <div className="border-t border-gray-200 pt-6 mt-6">
+                <div className="flex items-center gap-2 mb-1">
+                    <Printer className="w-4 h-4 text-gray-600" />
+                    <h4 className="text-md font-semibold text-gray-800">Print &amp; Compact Print Copies</h4>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">
+                    The <strong>Print</strong> and <strong>Compact Print</strong> versions of a prescription or
+                    invoice leave the top and bottom of the page blank, so they can be printed onto your
+                    pre-printed letterhead stationery. Turn this on if you print on plain paper instead.
+                </p>
+
+                <label
+                    className={`flex items-start gap-3 border-2 rounded-lg p-4 mb-4 ${printBrandingSupported ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                        } ${settings.printBranding ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
+                >
+                    <input
+                        type="checkbox"
+                        className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        checked={settings.printBranding}
+                        disabled={!printBrandingSupported}
+                        onChange={(e) => setSettings(prev => ({ ...prev, printBranding: e.target.checked }))}
+                    />
+                    <div>
+                        <span className="block text-sm font-medium text-gray-800">
+                            Print branding on Print &amp; Compact Print copies (black &amp; white)
+                        </span>
+                        <span className="block text-xs text-gray-600 mt-1">
+                            {isFullMode
+                                ? 'Your full-page letterhead will be printed behind every page, desaturated to black & white.'
+                                : 'Your header and footer will be printed on every page, desaturated to black & white. If no images are uploaded, a plain text band with your clinic name, address and contact details is used instead.'}
+                        </span>
+                    </div>
+                </label>
+
+                {!printBrandingSupported && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-4">
+                        Not available yet — the database migration
+                        <code className="mx-1">20260808000000_pdf_print_branding.sql</code>
+                        has not been applied to this project.
+                    </p>
+                )}
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Print Margins (Top Right Bottom Left)
+                    </label>
+                    <input
+                        type="text"
+                        value={settings.printMargins}
+                        onChange={(e) => setSettings(prev => ({ ...prev, printMargins: e.target.value }))}
+                        placeholder={PRINT_MARGINS_DEFAULT}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                        Default: {PRINT_MARGINS_DEFAULT}. This is the blank space left for your letterhead —
+                        keep the top at 120px or more and the bottom at 80px or more so a printed header and
+                        footer have room to sit. Ignored in full-page letterhead mode, which uses the content
+                        spacing above.
+                    </p>
+                </div>
+            </div>
+            {/* ---------- END PRINT / COMPACT PRINT COPIES ---------- */}
 
             {/* Invoice/Bill Settings */}
             <div className="border-t border-gray-200 pt-6 mt-6">

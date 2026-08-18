@@ -1,15 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, User, Eye, Plus, FileText, CheckCircle, XCircle, Stethoscope } from 'lucide-react';
-import { Visit, Patient, Profile } from '../../types';
+import { Search, Filter, Calendar, User, Eye, Plus, FileText, CheckCircle, XCircle, Stethoscope, CalendarClock } from 'lucide-react';
+import { Visit, Patient, Profile, Appointment } from '../../types';
 import { visitService } from '../../services/visitService';
 import { patientService } from '../../services/patientService';
 import { authService } from '../../services/authService';
+import { appointmentService } from '../../services/appointmentService';
 import { useAuth } from '../Auth/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { format, isAfter } from 'date-fns';
+import { format, isAfter, addDays } from 'date-fns';
 import AddVisitModal from '../Patients/AddVisitModal';
 import VisitDetailsModal from './VisitDetailsModal';
 import { toTitleCase } from '../../utils/stringUtils';
+import { getAppointmentStatusColor, getAppointmentStatusLabel, isAppointmentActive } from '../../utils/appointmentUtils';
+
+/** How far ahead the visit list looks for a patient's next appointment */
+const UPCOMING_WINDOW_DAYS = 180;
+
+/**
+ * Keep only appointments that are still ahead of us and not cancelled/completed,
+ * bucketed per patient and sorted soonest-first.
+ */
+const groupUpcomingByPatient = (
+  appointments: Appointment[],
+  now: Date
+): Record<string, Appointment[]> => {
+  const grouped: Record<string, Appointment[]> = {};
+  appointments
+    .filter(a => isAppointmentActive(a.status) && isAfter(a.appointmentDate, now))
+    .sort((a, b) => a.appointmentDate.getTime() - b.appointmentDate.getTime())
+    .forEach(a => {
+      (grouped[a.patientId] ||= []).push(a);
+    });
+  return grouped;
+};
 
 const VisitList: React.FC = () => {
   const { user } = useAuth();
@@ -17,6 +40,8 @@ const VisitList: React.FC = () => {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Profile[]>([]);
+  /** patientId → their still-open appointments in the next UPCOMING_WINDOW_DAYS, soonest first */
+  const [upcomingByPatient, setUpcomingByPatient] = useState<Record<string, Appointment[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,15 +66,24 @@ const VisitList: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const [visitsData, patientsData, doctorsData] = await Promise.all([
+      const now = new Date();
+      const [visitsData, patientsData, doctorsData, appointmentsData] = await Promise.all([
         visitService.getAllVisits(),
         patientService.getPatients(),
-        authService.getDoctors()
+        authService.getDoctors(),
+        // Upcoming appointments are supplementary — never block the visit list on them
+        appointmentService
+          .getAppointmentsByDateRange(now, addDays(now, UPCOMING_WINDOW_DAYS))
+          .catch(err => {
+            console.error('Error loading upcoming appointments:', err);
+            return [] as Appointment[];
+          })
       ]);
-      
+
       setVisits(visitsData);
       setPatients(patientsData);
-      
+      setUpcomingByPatient(groupUpcomingByPatient(appointmentsData, now));
+
       // Filter doctors by current user's clinic ID
       const filteredDoctors = doctorsData.filter(doctor => doctor.clinicId === user?.clinicId);
       setDoctors(filteredDoctors);
@@ -74,7 +108,7 @@ const VisitList: React.FC = () => {
     return toTitleCase(patient?.name || 'Unknown Patient');
   };
 
-  const getDoctorName = (doctorId: string): string => {
+  const getDoctorName = (doctorId: string | null): string => {
     const doctor = doctors.find(d => d.id === doctorId);
     return toTitleCase(doctor?.name || 'Unknown Doctor');
   };
@@ -284,6 +318,8 @@ const VisitList: React.FC = () => {
               {filteredVisits.map(visit => {
                 const status = getVisitStatus(visit);
                 const isExpanded = expandedVisit === visit.id;
+                const upcoming = upcomingByPatient[visit.patientId] ?? [];
+                const nextAppointment = upcoming[0];
                 return (
                   <React.Fragment key={visit.id}>
                     <tr className={`hover:bg-gray-50 cursor-pointer transition-colors text-sm ${
@@ -321,8 +357,8 @@ const VisitList: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`status-chip ${
-                          status === 'Open' 
-                            ? 'status-chip-open' 
+                          status === 'Open'
+                            ? 'status-chip-open'
                             : 'status-chip-closed'
                         }`}>
                           {status === 'Open' ? (
@@ -332,6 +368,18 @@ const VisitList: React.FC = () => {
                           )}
                           {status}
                         </span>
+                        {nextAppointment && (
+                          <div
+                            className="mt-1 flex items-center gap-1 text-xs text-indigo-700"
+                            title={`Next appointment: ${format(nextAppointment.appointmentDate, 'EEE, MMM dd yyyy · hh:mm a')}`}
+                          >
+                            <CalendarClock className="w-3 h-3 shrink-0" />
+                            <span>Next: {format(nextAppointment.appointmentDate, 'MMM dd')}</span>
+                            {upcoming.length > 1 && (
+                              <span className="text-gray-400">+{upcoming.length - 1}</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -355,7 +403,7 @@ const VisitList: React.FC = () => {
                     {/* Expandable Row */}
                     {isExpanded && (
                       <tr className="bg-blue-50/30">
-                        <td colSpan={7} className="px-6 py-4">
+                        <td colSpan={6} className="px-6 py-4">
                           <div className="space-y-3">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* Symptoms */}
@@ -405,6 +453,70 @@ const VisitList: React.FC = () => {
                                       </span>
                                     )}
                                   </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Upcoming appointments for this patient */}
+                            <div className="border-t border-blue-100 pt-3">
+                              <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                                <CalendarClock className="w-4 h-4 text-indigo-600" />
+                                Upcoming Appointments
+                                {upcoming.length > 0 && (
+                                  <span className="text-xs font-normal text-gray-500">
+                                    ({upcoming.length})
+                                  </span>
+                                )}
+                              </h4>
+                              {upcoming.length === 0 ? (
+                                <p className="text-sm text-gray-500">
+                                  No upcoming appointment scheduled for this patient.
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {upcoming.slice(0, 3).map(appointment => (
+                                    <div
+                                      key={appointment.id}
+                                      className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border border-indigo-100 rounded-lg px-3 py-2 text-sm"
+                                    >
+                                      <span className="font-medium text-gray-900">
+                                        {format(appointment.appointmentDate, 'EEE, MMM dd yyyy')}
+                                      </span>
+                                      <span className="text-gray-600">
+                                        {format(appointment.appointmentDate, 'hh:mm a')}
+                                        <span className="text-gray-400"> · {appointment.duration} min</span>
+                                      </span>
+                                      <span className="text-gray-600">
+                                        {appointment.appointmentType.replace(/_/g, ' ')}
+                                      </span>
+                                      <span className="text-gray-600">
+                                        {toTitleCase(
+                                          appointment.doctor?.name || getDoctorName(appointment.doctorId)
+                                        )}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 text-xs rounded-full border ${getAppointmentStatusColor(appointment.status)}`}
+                                      >
+                                        {getAppointmentStatusLabel(appointment.status)}
+                                      </span>
+                                      {appointment.notes && (
+                                        <span className="text-xs text-gray-500 truncate max-w-xs">
+                                          {appointment.notes}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {upcoming.length > 3 && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate('/appointments');
+                                      }}
+                                      className="text-xs text-blue-600 hover:text-blue-700"
+                                    >
+                                      +{upcoming.length - 3} more — view all in Appointments
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>

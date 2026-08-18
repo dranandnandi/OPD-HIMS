@@ -6,6 +6,42 @@ Extracted from the working LIMS implementation (`supabase/functions/generate-pdf
 
 ---
 
+## 0. Status in this app
+
+Implemented as an **opt-in second mode** alongside the existing header/footer band
+images. Clinics choose one in **Settings → PDF Settings → Branding Style**; the
+default stays `bands`, so nothing changes for anyone who does not switch.
+
+| Piece | Where |
+|---|---|
+| Mode + spacing storage | `clinic_settings.pdf_letterhead_mode` / `pdf_letterhead_url` / `pdf_letterhead_spacing` (migration `20260807100000_pdf_full_letterhead.sql`) |
+| Settings UI + A4 image normalization | `src/components/Settings/PDFSettings.tsx` |
+| HTML wrap (§3) + payload switch (§7) | `applyFullLetterhead()` in `index.ts`, applied just before the PDF.co call |
+
+Notes specific to this app:
+
+- The mode is read **from the database inside the edge function**, not from the
+  request payload — callers build `clinicSettings` from a cached user profile
+  that predates these columns. A missing column or clinic id silently falls back
+  to band mode.
+- Applies to display PDFs of both prescriptions and invoices. The `printVersion`
+  and `compactVersion` outputs are meant for pre-printed letterhead paper, so
+  they carry no branding unless `clinic_settings.pdf_print_branding` is on
+  (migration `20260808000000_pdf_print_branding.sql`, default off) — in which
+  case whichever mode is configured is rendered in black and white.
+- Grayscale + fixed positioning is a trap worth knowing: the print templates
+  desaturate with `filter: grayscale(100%)` on `html, body`, and **a filtered
+  element becomes the containing block for its `position: fixed` descendants**.
+  Left alone, that pins `#page-bg` to the body and the letterhead appears on
+  page 1 only. `applyFullLetterhead` forces `filter: none` on `html, body` and
+  desaturates `#page-bg` and `.lh-content` separately instead.
+- A5 invoices reuse the same artwork with the background sized to 148×210mm and
+  the saved spacers scaled by 210/297.
+- Generated PDFs are cached per record, so an existing document keeps its old
+  layout until it is regenerated.
+
+---
+
 ## 1. The core principle
 
 Two independent mechanisms, both required:

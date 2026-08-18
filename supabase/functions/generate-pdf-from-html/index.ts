@@ -28,8 +28,32 @@ const formatDoctorName = (name: string | null | undefined): string => {
   return cleaned ? `Dr. ${cleaned}` : '';
 }
 
+const AI_BLOCK_HEADER_PATTERN = /^\[[^\]]+\]$/
+
+// Drops the "[Voice dictation]" / "[Case paper]" blocks that applyAiExtraction appends to
+// Doctor Notes. They are working notes for the doctor inside the app (echoed chief complaint,
+// AI differentials to review) and do not belong on a printed copy.
+const stripAiNoteBlocks = (doctorNotes?: string | null): string => {
+  let inAiBlock = false
+  return (doctorNotes || '')
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim()
+      if (AI_BLOCK_HEADER_PATTERN.test(trimmed)) {
+        inAiBlock = true
+        return false
+      }
+      if (!inAiBlock) return true
+      if (!trimmed || trimmed.startsWith('•')) return false
+      inAiBlock = false
+      return true
+    })
+    .join('\n')
+    .trim()
+}
+
 const extractImpressionDetails = (doctorNotes?: string | null) => {
-  const notes = doctorNotes?.trim() || '';
+  const notes = stripAiNoteBlocks(doctorNotes);
   if (!notes) {
     return {
       impressionItems: [] as string[],
@@ -100,7 +124,8 @@ const applyFullLetterhead = (
   html: string,
   letterheadUrl: string,
   spacing: LetterheadSpacing,
-  paper: { width: string; height: string }
+  paper: { width: string; height: string },
+  grayscale = false
 ): string => {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
   if (!bodyMatch) {
@@ -125,6 +150,15 @@ const applyFullLetterhead = (
       background: transparent !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
+      ${grayscale ? `
+      /* The print templates desaturate via a filter on html/body — but a
+         filtered element becomes the containing block for its position: fixed
+         descendants, which would pin #page-bg to the body instead of the page
+         and leave the letterhead on page 1 only. Strip it here and desaturate
+         the background and the content separately below. */
+      filter: none !important;
+      -webkit-filter: none !important;
+      ` : ''}
     }
     #page-bg {
       position: fixed;
@@ -138,15 +172,23 @@ const applyFullLetterhead = (
       background-repeat: no-repeat;
       background-position: top left;
       background-size: ${paper.width} ${paper.height};
+      ${grayscale ? 'filter: grayscale(100%); -webkit-filter: grayscale(100%);' : ''}
     }
     /* The wrapper table must inherit none of the document's own table styling —
-       these templates set global border/padding/background rules on table/th/td. */
+       every template sets global border/padding/background/font rules on
+       table/th/td, and without these overrides the wrapper would draw borders
+       around the whole page and resize all the body text (A5 invoices force
+       table font-size to 8px, for instance). Using inherit walks the font back
+       up to the body, so content renders at exactly the size it does in
+       header/footer band mode. */
     table.lh-frame {
       width: 100%;
       border: none !important;
       border-collapse: collapse !important;
       margin: 0 !important;
       background: transparent !important;
+      font-size: inherit !important;
+      line-height: inherit !important;
       position: relative;
       z-index: 1;
     }
@@ -167,16 +209,24 @@ const applyFullLetterhead = (
       margin: 0 !important;
       background: transparent !important;
       background-color: transparent !important;
-      font-size: 0;
-      line-height: 0;
+    }
+    /* Spacer cells hold nothing but a sized div — kill any inherited text metrics
+       so they cannot grow taller than the height asked for. */
+    table.lh-frame > thead > tr > td,
+    table.lh-frame > tfoot > tr > td {
+      font-size: 0 !important;
+      line-height: 0 !important;
+    }
+    table.lh-frame > tbody > tr > td {
+      font-size: inherit !important;
+      line-height: inherit !important;
     }
     .lh-content {
       position: relative;
       z-index: 1;
       padding: 0 ${padRight}px 0 ${padLeft}px;
       background: transparent !important;
-      font-size: initial;
-      line-height: initial;
+      ${grayscale ? 'filter: grayscale(100%); -webkit-filter: grayscale(100%);' : ''}
     }
     /* Keep rows and signature blocks from straddling a page break, where they
        would land on top of the letterhead's footer artwork. */
@@ -1505,13 +1555,14 @@ Translate now:`;
     let letterheadMode: 'bands' | 'full' = 'bands';
     let letterheadUrl = '';
     let letterheadSpacing: LetterheadSpacing = { ...DEFAULT_LETTERHEAD_SPACING };
+    let printBranding = false;
 
     const clinicId = data.clinicSettings?.id;
     if (clinicId) {
       try {
         const { data: lhRow, error: lhError } = await supabaseAdmin
           .from('clinic_settings')
-          .select('pdf_letterhead_mode, pdf_letterhead_url, pdf_letterhead_spacing')
+          .select('pdf_letterhead_mode, pdf_letterhead_url, pdf_letterhead_spacing, pdf_print_branding')
           .eq('id', clinicId)
           .maybeSingle();
 
@@ -1520,6 +1571,7 @@ Translate now:`;
         if (lhRow) {
           letterheadMode = lhRow.pdf_letterhead_mode === 'full' ? 'full' : 'bands';
           letterheadUrl = String(lhRow.pdf_letterhead_url || '').trim();
+          printBranding = lhRow.pdf_print_branding === true;
           const saved = lhRow.pdf_letterhead_spacing || {};
           letterheadSpacing = {
             top: Number.isFinite(Number(saved.top)) ? Number(saved.top) : DEFAULT_LETTERHEAD_SPACING.top,
@@ -1535,9 +1587,16 @@ Translate now:`;
       }
     }
 
-    // Print and compact versions are meant for pre-printed letterhead paper, so
-    // they never carry digital branding in either mode.
-    const useFullLetterhead = letterheadMode === 'full' && Boolean(letterheadUrl) && !printVersion && !compactVersion;
+    // Print and compact copies default to no digital branding at all — they are
+    // meant to go onto pre-printed letterhead stationery, which already carries
+    // it. Clinics printing on plain paper opt in with pdf_print_branding, and
+    // then get whichever style is configured, rendered in black and white to
+    // match the rest of those documents.
+    const isPrintCopy = Boolean(printVersion || compactVersion);
+    const brandingEnabled = !isPrintCopy || printBranding;
+    const grayscaleBranding = isPrintCopy;
+
+    const useFullLetterhead = letterheadMode === 'full' && Boolean(letterheadUrl) && brandingEnabled;
 
     if (useFullLetterhead) {
       // A5 invoices get the same artwork scaled to the smaller sheet; the saved
@@ -1554,10 +1613,10 @@ Translate now:`;
       };
 
       console.log(
-        `[PDF GEN] Full-page letterhead mode — paper ${paper.width}x${paper.height}, ` +
+        `[PDF GEN] Full-page letterhead mode${grayscaleBranding ? ' (B&W)' : ''} — paper ${paper.width}x${paper.height}, ` +
         `spacers T${scaledSpacing.top}/B${scaledSpacing.bottom}, padding L${scaledSpacing.left}/R${scaledSpacing.right}`
       );
-      htmlContent = applyFullLetterhead(htmlContent, letterheadUrl, scaledSpacing, paper);
+      htmlContent = applyFullLetterhead(htmlContent, letterheadUrl, scaledSpacing, paper, grayscaleBranding);
     }
     // === END LETTERHEAD MODE RESOLUTION ===
 
@@ -1572,11 +1631,25 @@ Translate now:`;
     let hasHeaderImage = false;
     let hasFooterImage = false;
 
-    // Apply header/footer for both visits AND bills (display version only).
-    // The two modes are mutually exclusive — in full-letterhead mode the artwork
-    // is already painted behind the page, and adding API header/footer bands on
-    // top would shift and clip it.
-    if (!printVersion && !compactVersion && !useFullLetterhead) {
+    // Apply header/footer for visits AND bills, on display copies always and on
+    // print copies when the clinic opted in.
+    //
+    // The two branding modes are mutually exclusive — in full-letterhead mode the
+    // artwork is already painted behind the page, and adding API header/footer
+    // bands on top would shift and clip it.
+    const useBands = brandingEnabled && !useFullLetterhead;
+
+    if (useBands) {
+      // Uploaded artwork can only be desaturated with a CSS filter, since it is an
+      // image. The generated text band instead just uses ink-black and greys — the
+      // header/footer template renders in its own isolated print context, so
+      // relying on a filter alone there is a gamble not worth taking.
+      const bwImage = grayscaleBranding ? 'filter: grayscale(100%); -webkit-filter: grayscale(100%);' : '';
+      const headerTextColor = grayscaleBranding ? '#000000' : '#111827';
+      const footerTextColor = grayscaleBranding ? '#333333' : '#4b5563';
+      const footerNoteColor = grayscaleBranding ? '#555555' : '#6b7280';
+      const ruleColor = grayscaleBranding ? '#000000' : '#d1d5db';
+
       const headerSrc = data.clinicSettings?.pdfHeaderUrl
         ? await inlineBandImage(data.clinicSettings.pdfHeaderUrl, 'Header')
         : null;
@@ -1587,7 +1660,7 @@ Translate now:`;
       hasFooterImage = Boolean(footerSrc);
 
       if (headerSrc) {
-        pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${headerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
+        pdfHeader = `<div style="width: 100%; text-align: center; margin: 0; padding: 0; ${bwImage}"><img src="${headerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
       } else {
         fallbackHeaderFooterUsed = true;
         const clinicName = escapeHtml(data.clinicSettings?.clinicName || 'Clinic');
@@ -1599,7 +1672,7 @@ Translate now:`;
         const headerNameSize = isA5Invoice ? '12px' : '16px';
         const headerDetailSize = isA5Invoice ? '8px' : '10px';
         pdfHeader = `
-          <div style="width: 100%; padding: ${headerPadding}; border-bottom: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #111827;">
+          <div style="width: 100%; padding: ${headerPadding}; border-bottom: 1px solid ${ruleColor}; font-family: Arial, sans-serif; color: ${headerTextColor};">
             <div style="font-size: ${headerNameSize}; font-weight: 700; line-height: 1.15;">${clinicName}</div>
             <div style="font-size: ${headerDetailSize}; line-height: 1.25; margin-top: 1px;">
               ${clinicAddress ? `<div>${clinicAddress}</div>` : ''}
@@ -1610,7 +1683,7 @@ Translate now:`;
       }
 
       if (footerSrc) {
-        pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0;"><img src="${footerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
+        pdfFooter = `<div style="width: 100%; text-align: center; margin: 0; padding: 0; ${bwImage}"><img src="${footerSrc}" style="width: 100%; height: auto; display: block;" /></div>`;
       } else {
         fallbackHeaderFooterUsed = true;
         const website = escapeHtml(data.clinicSettings?.website || '');
@@ -1620,9 +1693,9 @@ Translate now:`;
         const footerSize = isA5Invoice ? '7px' : '10px';
         const footerNoteSize = isA5Invoice ? '7px' : '9px';
         pdfFooter = `
-          <div style="width: 100%; padding: ${footerPadding}; border-top: 1px solid #d1d5db; font-family: Arial, sans-serif; color: #4b5563; font-size: ${footerSize}; line-height: 1.2; text-align: center;">
+          <div style="width: 100%; padding: ${footerPadding}; border-top: 1px solid ${ruleColor}; font-family: Arial, sans-serif; color: ${footerTextColor}; font-size: ${footerSize}; line-height: 1.2; text-align: center;">
             <div>${clinicName}${website ? ` | ${website}` : ''}${taxId ? ` | Tax ID: ${taxId}` : ''}</div>
-            <div style="font-size: ${footerNoteSize}; color: #6b7280;">This is a computer-generated medical document.</div>
+            <div style="font-size: ${footerNoteSize}; color: ${footerNoteColor};">This is a computer-generated medical document.</div>
           </div>
         `;
       }
@@ -1653,7 +1726,10 @@ Translate now:`;
     console.log(`[PDF GEN] Calling PDF.co with ${printVersion ? 'PRINT' : 'DISPLAY'} settings...`);
     console.log(`[PDF GEN] Paper size: ${paperSize}`);
     console.log(`[PDF GEN] Margins: ${clinicMargins}`);
-    console.log(`[PDF GEN] Branding mode: ${useFullLetterhead ? 'FULL-PAGE LETTERHEAD' : 'HEADER/FOOTER BANDS'}`);
+    const brandingLabel = !brandingEnabled
+      ? 'NONE (print copy, branding not enabled)'
+      : `${useFullLetterhead ? 'FULL-PAGE LETTERHEAD' : 'HEADER/FOOTER BANDS'}${grayscaleBranding ? ' (B&W)' : ''}`;
+    console.log(`[PDF GEN] Branding mode: ${brandingLabel}`);
     const bandKind = (html: string, isImage: boolean) => !html ? 'None' : isImage ? 'Letterhead image (inlined)' : 'Text band';
     console.log(`[PDF GEN] Header: ${bandKind(pdfHeader, hasHeaderImage)}`);
     console.log(`[PDF GEN] Footer: ${bandKind(pdfFooter, hasFooterImage)}`);
@@ -1674,17 +1750,16 @@ Translate now:`;
         async: true,
         margins: clinicMargins,
         papersize: paperSize,
-        // No header/footer for print, compact, or full-letterhead mode
-        displayheaderfooter: !printVersion && !compactVersion && !useFullLetterhead,
+        displayheaderfooter: useBands,
         header: pdfHeader,
         footer: pdfFooter,
-        headerheight: (printVersion || compactVersion || useFullLetterhead) ? "0px" : (isA5Invoice ? (hasHeaderImage ? "70px" : "42px") : (hasHeaderImage ? "120px" : "58px")),
-        footerheight: (printVersion || compactVersion || useFullLetterhead) ? "0px" : (isA5Invoice ? (hasFooterImage ? "42px" : "26px") : (hasFooterImage ? "80px" : "42px")),
+        headerheight: useBands ? (isA5Invoice ? (hasHeaderImage ? "70px" : "42px") : (hasHeaderImage ? "120px" : "58px")) : "0px",
+        footerheight: useBands ? (isA5Invoice ? (hasFooterImage ? "42px" : "26px") : (hasFooterImage ? "80px" : "42px")) : "0px",
         scale: 1,
         mediatype: "print",
-        // Colors only for display version; the full-page letterhead is a CSS
-        // background, which Chromium drops entirely without this.
-        printbackground: !printVersion,
+        // Colors only for display version — except the full-page letterhead,
+        // which is a CSS background Chromium drops entirely without this.
+        printbackground: !printVersion || useFullLetterhead,
       }),
     })
 

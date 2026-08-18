@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
+import { englishOnly, type BookingTranslator } from './i18n';
 
 export interface PatientDetails {
   name: string;
@@ -13,6 +14,8 @@ interface PatientDetailsFormProps {
   value: PatientDetails;
   /** Field name flagged by the server, e.g. "phone". */
   invalidField: string | null;
+  /** Bilingual label helper; defaults to English-only. */
+  t?: BookingTranslator;
   onChange: (next: PatientDetails) => void;
 }
 
@@ -26,6 +29,7 @@ const inputClass = (hasError: boolean) =>
 const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
   value,
   invalidField,
+  t = englishOnly,
   onChange,
 }) => {
   const update = (patch: Partial<PatientDetails>) => onChange({ ...value, ...patch });
@@ -34,7 +38,7 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
     <div className="space-y-4">
       <div>
         <label htmlFor="pb-name" className="mb-1 block text-sm font-medium text-gray-900">
-          Patient name <span className="text-red-500">*</span>
+          {t('patientName')} <span className="text-red-500">*</span>
         </label>
         <input
           id="pb-name"
@@ -42,20 +46,20 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
           autoComplete="name"
           value={value.name}
           onChange={(event) => update({ name: event.target.value })}
-          placeholder="Full name"
+          placeholder={t('fullName')}
           className={inputClass(invalidField === 'name')}
         />
         {invalidField === 'name' && (
           <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
             <AlertCircle className="h-3.5 w-3.5" />
-            Please enter the patient's full name.
+            {t('nameError')}
           </p>
         )}
       </div>
 
       <div>
         <label htmlFor="pb-phone" className="mb-1 block text-sm font-medium text-gray-900">
-          Mobile number <span className="text-red-500">*</span>
+          {t('mobileNumber')} <span className="text-red-500">*</span>
         </label>
         <input
           id="pb-phone"
@@ -64,16 +68,17 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
           autoComplete="tel"
           value={value.phone}
           onChange={(event) => update({ phone: event.target.value })}
-          placeholder="10-digit mobile number"
+          placeholder={t('mobilePlaceholder')}
           className={inputClass(invalidField === 'phone')}
         />
         <p className="mt-1 text-xs text-gray-500">
-          The clinic will call or message you on this number to confirm.
+          {t.en('mobileHint')}
+          {t.bilingual && <span className="block">{t.regional('mobileHint')}</span>}
         </p>
         {invalidField === 'phone' && (
           <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
             <AlertCircle className="h-3.5 w-3.5" />
-            Please enter a valid mobile number.
+            {t('phoneError')}
           </p>
         )}
       </div>
@@ -81,7 +86,7 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="pb-age" className="mb-1 block text-sm font-medium text-gray-900">
-            Age
+            {t('age')}
           </label>
           <input
             id="pb-age"
@@ -91,14 +96,14 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
             max={119}
             value={value.age}
             onChange={(event) => update({ age: event.target.value })}
-            placeholder="Years"
+            placeholder={t('years')}
             className={inputClass(false)}
           />
         </div>
 
         <div>
           <label htmlFor="pb-gender" className="mb-1 block text-sm font-medium text-gray-900">
-            Gender
+            {t('gender')}
           </label>
           <select
             id="pb-gender"
@@ -106,17 +111,22 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
             onChange={(event) => update({ gender: event.target.value })}
             className={inputClass(false)}
           >
-            <option value="">Select</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
+            <option value="">{t('select')}</option>
+            <option value="male">{t('male')}</option>
+            <option value="female">{t('female')}</option>
+            <option value="other">{t('other')}</option>
           </select>
         </div>
       </div>
 
       <div>
         <label htmlFor="pb-notes" className="mb-1 block text-sm font-medium text-gray-900">
-          Reason for visit <span className="font-normal text-gray-500">(optional)</span>
+          {t('reasonForVisit')}{' '}
+          {/* Already inside brackets, so the two words are slashed, not nested. */}
+          <span className="font-normal text-gray-500">
+            ({t.en('optional')}
+            {t.bilingual ? ` / ${t.regional('optional')}` : ''})
+          </span>
         </label>
         <textarea
           id="pb-notes"
@@ -124,14 +134,14 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
           maxLength={500}
           value={value.notes}
           onChange={(event) => update({ notes: event.target.value })}
-          placeholder="Briefly describe your symptoms or concern"
+          placeholder={t('notesPlaceholder')}
           className={inputClass(false)}
         />
       </div>
 
       <p className="text-xs leading-relaxed text-gray-500">
-        By booking you agree to the clinic contacting you about this appointment.
-        Please do not use this form for medical emergencies &mdash; call the clinic directly.
+        {t.en('consent')}
+        {t.bilingual && <span className="mt-1 block">{t.regional('consent')}</span>}
       </p>
     </div>
   );

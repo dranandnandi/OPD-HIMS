@@ -3,14 +3,19 @@ import { format, differenceInCalendarDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import {
   Stethoscope, Plus, FlaskConical, Pill, Users, CopyPlus, ChevronDown, ChevronRight,
-  CalendarDays, Trash2, X, Printer,
+  CalendarDays, Trash2, X, Printer, Truck, Check, Ban, Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { treatmentPlanService, TreatmentPlanInput } from '../../services/treatmentPlanService';
 import { documentService } from '../../services/documentService';
-import { medicationService, FREQUENCY_OPTIONS, ROUTE_OPTIONS, MedicineOption } from '../../services/medicationService';
+import {
+  medicationService, FREQUENCY_OPTIONS, ROUTE_OPTIONS, MedicineOption,
+  medicineLabel, doseSuggestions, defaultRouteFor,
+} from '../../services/medicationService';
+import MedicinePicker from '../Medications/MedicinePicker';
 import { orderService } from '../../services/orderService';
 import OrderComposer from '../Orders/OrderComposer';
+import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE } from '../Orders/orderStatus';
 import VoiceDictation from '../Voice/VoiceDictation';
 import ConsultationsPanel from './ConsultationsPanel';
 import type {
@@ -154,7 +159,7 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
 
   const printSheet = () =>
     documentService.printPlanSheet({
-      admission, clinicName: 'MediTrust Clinics', plans,
+      admission, clinicId: clinicId!, plans,
     });
 
   return (
@@ -279,6 +284,7 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
                   admission={admission}
                   readOnly={readOnly}
                   orderItems={orderItems.filter((i) => i.parent_order?.treatment_plan_id === p.id)}
+                  allOrderItems={orderItems}
                   medOrders={medOrders.filter((m) => m.treatment_plan_id === p.id)}
                   consultations={consultations.filter((c) => c.treatment_plan_id === p.id)}
                   activeAction={action?.planId === p.id ? action.kind : null}
@@ -317,13 +323,15 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
 // ---------------------------------------------------------------------------
 
 function PlanEntryCard({
-  plan, admission, readOnly, orderItems, medOrders, consultations,
+  plan, admission, readOnly, orderItems, allOrderItems, medOrders, consultations,
   activeAction, onAction, onDone, onEdit, onDelete,
 }: {
   plan: TreatmentPlan;
   admission: Admission;
   readOnly: boolean;
   orderItems: IpdOrderItem[];
+  /** every item on the admission — used to warn before ordering a duplicate */
+  allOrderItems: IpdOrderItem[];
   medOrders: MedicationOrder[];
   consultations: IpdConsultation[];
   activeAction: 'tests' | 'medicine' | 'consult' | null;
@@ -381,10 +389,7 @@ function PlanEntryCard({
           {(orderItems.length > 0 || medOrders.length > 0 || consultations.length > 0) && (
             <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
               {orderItems.map((i) => (
-                <span key={i.id} className="bg-orange-50 border border-orange-200 text-orange-800 rounded px-1.5 py-0.5">
-                  🧪 {i.service?.name ?? 'test'}
-                  <span className="text-orange-500"> · {i.status.replace('_', ' ')}</span>
-                </span>
+                <OrderChip key={i.id} item={i} readOnly={readOnly} onChanged={onDone} />
               ))}
               {medOrders.map((m) => (
                 <span key={m.id} className="bg-pink-50 border border-pink-200 text-pink-800 rounded px-1.5 py-0.5">
@@ -421,6 +426,7 @@ function PlanEntryCard({
                 admission={admission}
                 userId={profile?.id}
                 treatmentPlanId={plan.id}
+                existingItems={allOrderItems}
                 onPlaced={onDone}
                 onCancel={() => onAction('tests')}
                 compact
@@ -453,6 +459,91 @@ function PlanEntryCard({
   );
 }
 
+/**
+ * A test raised by this entry. The order is already placed — what the chip
+ * reports is where the sample has got to — so the ward actions that move it
+ * along live on the chip itself instead of only on the Orders tab.
+ */
+function OrderChip({
+  item, readOnly, onChanged,
+}: {
+  item: IpdOrderItem; readOnly: boolean; onChanged: () => void;
+}) {
+  const { clinicId, profile } = useAuth();
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<void>, done: string) => {
+    if (!clinicId) return;
+    setBusy(true);
+    try {
+      await fn();
+      toast.success(done);
+      onChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setStatus = (status: IpdOrderItem['status'], done: string) =>
+    run(() => orderService.setItemStatus({ clinicId: clinicId!, itemId: item.id, status, userId: profile?.id }), done);
+
+  const cancel = () => {
+    const reason = prompt(`Cancel "${item.service?.name ?? 'order'}" — reason?`);
+    if (reason === null) return;
+    run(
+      () => orderService.cancelItem({ clinicId: clinicId!, item, reason: reason || 'Cancelled', userId: profile?.id }),
+      'Order cancelled — charge reversed'
+    );
+  };
+
+  const actionable = !readOnly && !['done', 'cancelled'].includes(item.status);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 border rounded px-1.5 py-0.5 ${
+        item.status === 'cancelled'
+          ? 'bg-slate-50 border-slate-200 text-slate-400 line-through'
+          : 'bg-orange-50 border-orange-200 text-orange-800'
+      }`}
+    >
+      🧪 {item.service?.name ?? 'test'}
+      <span className={`text-[10px] rounded px-1 ${ORDER_STATUS_STYLE[item.status]}`}>
+        {ORDER_STATUS_LABEL[item.status]}
+      </span>
+      {busy && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+      {actionable && !busy && (
+        <>
+          {item.status === 'pending' && (
+            <button
+              onClick={() => setStatus('sent_external', 'Sample sent')}
+              title="Sample collected / patient sent — mark sent to lab"
+              className="p-0.5 rounded text-blue-700 hover:bg-blue-100"
+            >
+              <Truck className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={() => setStatus('done', 'Marked done')}
+            title="Mark completed"
+            className="p-0.5 rounded text-emerald-700 hover:bg-emerald-100"
+          >
+            <Check className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={cancel}
+            title="Cancel this test (reverses the charge)"
+            className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+          >
+            <Ban className="w-3.5 h-3.5" />
+          </button>
+        </>
+      )}
+    </span>
+  );
+}
+
 function ActionButton({
   active, onClick, icon: Icon, children,
 }: {
@@ -479,7 +570,6 @@ function PlanMedicineForm({
   onDone: () => void; onCancel: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [options, setOptions] = useState<MedicineOption[]>([]);
   const [selected, setSelected] = useState<MedicineOption | null>(null);
   const [dose, setDose] = useState('');
   const [route, setRoute] = useState('oral');
@@ -487,14 +577,22 @@ function PlanMedicineForm({
   const [days, setDays] = useState('3');
   const [instructions, setInstructions] = useState('');
   const [saving, setSaving] = useState(false);
+  const [doseTouched, setDoseTouched] = useState(false);
+  const [routeTouched, setRouteTouched] = useState(false);
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (selected) return;
-      medicationService.searchMedicines(clinicId, search).then(setOptions).catch(() => setOptions([]));
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [clinicId, search, selected]);
+  /** fill dose from the strength and route from the dosage form on pick */
+  const pickMedicine = (m: MedicineOption | null) => {
+    setSelected(m);
+    if (!m) return;
+    if (!doseTouched) {
+      const [suggested] = doseSuggestions(m);
+      if (suggested) setDose(suggested);
+    }
+    if (!routeTouched) {
+      const r = defaultRouteFor(m);
+      if (r) setRoute(r);
+    }
+  };
 
   const create = async () => {
     const name = selected?.name ?? search.trim();
@@ -505,7 +603,7 @@ function PlanMedicineForm({
         clinicId,
         admissionId,
         medicineId: selected?.id,
-        medicineName: selected ? `${selected.name}${selected.strength ? ` ${selected.strength}` : ''}` : name,
+        medicineName: selected ? medicineLabel(selected) : name,
         dose: dose || undefined,
         route,
         frequencyCode: frequency,
@@ -526,33 +624,26 @@ function PlanMedicineForm({
   return (
     <div className="mt-2 border border-slate-200 rounded-lg p-2.5 bg-slate-50">
       <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-48">
-          <input
-            value={selected ? `${selected.name}${selected.strength ? ` ${selected.strength}` : ''}` : search}
-            onChange={(e) => { setSearch(e.target.value); setSelected(null); }}
-            placeholder="Medicine…"
-            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
-          />
-          {options.length > 0 && !selected && (
-            <ul className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow max-h-44 overflow-auto">
-              {options.map((m) => (
-                <li
-                  key={m.id}
-                  onClick={() => { setSelected(m); setOptions([]); }}
-                  className="px-3 py-1.5 text-sm hover:bg-slate-50 cursor-pointer flex justify-between"
-                >
-                  <span>{m.name} {m.strength ?? ''}</span>
-                  <span className={`text-xs ${m.current_stock > 0 ? 'text-slate-400' : 'text-red-500'}`}>
-                    {m.current_stock > 0 ? `stock ${m.current_stock}` : 'out of stock'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="Dose"
-          className="w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
-        <select value={route} onChange={(e) => setRoute(e.target.value)}
+        <MedicinePicker
+          clinicId={clinicId}
+          value={search}
+          selected={selected}
+          onChange={setSearch}
+          onSelect={pickMedicine}
+          placeholder="Medicine…"
+          className="flex-1 min-w-48"
+        />
+        <input
+          value={dose}
+          onChange={(e) => { setDose(e.target.value); setDoseTouched(true); }}
+          list="plan-dose-options"
+          placeholder="Dose"
+          className="w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+        />
+        <datalist id="plan-dose-options">
+          {doseSuggestions(selected).map((d) => <option key={d} value={d} />)}
+        </datalist>
+        <select value={route} onChange={(e) => { setRoute(e.target.value); setRouteTouched(true); }}
           className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
           {ROUTE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>

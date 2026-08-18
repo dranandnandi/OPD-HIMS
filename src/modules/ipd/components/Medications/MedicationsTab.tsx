@@ -5,8 +5,10 @@ import { Pill, Plus, Square, Check, Ban, HandMetal, CalendarClock } from 'lucide
 import { useAuth } from '../../contexts/AuthContext';
 import {
   medicationService, MedicineOption, FREQUENCY_OPTIONS, ROUTE_OPTIONS,
+  medicineLabel, doseSuggestions, defaultRouteFor,
 } from '../../services/medicationService';
 import { storeService, Store } from '../../services/storeService';
+import MedicinePicker from './MedicinePicker';
 import type { MedicationOrder, MedicationScheduleSlot } from '../../types/ipd';
 
 interface Props {
@@ -97,21 +99,30 @@ function OrdersSection({
   userId?: string; readOnly: boolean; onChange: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [options, setOptions] = useState<MedicineOption[]>([]);
   const [selected, setSelected] = useState<MedicineOption | null>(null);
   const [dose, setDose] = useState('');
   const [route, setRoute] = useState('oral');
   const [frequency, setFrequency] = useState('bd');
   const [days, setDays] = useState('3');
   const [saving, setSaving] = useState(false);
+  /** once the dose/route is typed by hand, picking a medicine stops overwriting it */
+  const [doseTouched, setDoseTouched] = useState(false);
+  const [routeTouched, setRouteTouched] = useState(false);
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (selected) return;
-      medicationService.searchMedicines(clinicId, search).then(setOptions).catch(() => setOptions([]));
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [clinicId, search, selected]);
+  /** picking from the formulary fills the dose from the strength and the route
+      from the dosage form — both stay editable */
+  const pickMedicine = (m: MedicineOption | null) => {
+    setSelected(m);
+    if (!m) return;
+    if (!doseTouched) {
+      const [suggested] = doseSuggestions(m);
+      if (suggested) setDose(suggested);
+    }
+    if (!routeTouched) {
+      const r = defaultRouteFor(m);
+      if (r) setRoute(r);
+    }
+  };
 
   const create = async () => {
     const name = selected?.name ?? search.trim();
@@ -125,7 +136,7 @@ function OrdersSection({
         clinicId,
         admissionId,
         medicineId: selected?.id,
-        medicineName: selected ? `${selected.name}${selected.strength ? ` ${selected.strength}` : ''}` : name,
+        medicineName: selected ? medicineLabel(selected) : name,
         dose: dose || undefined,
         route,
         frequencyCode: frequency,
@@ -134,6 +145,7 @@ function OrdersSection({
       });
       toast.success('Medication ordered — schedule generated');
       setSearch(''); setSelected(null); setDose('');
+      setDoseTouched(false); setRouteTouched(false);
       onChange();
     } catch (e) {
       toast.error((e as Error).message);
@@ -158,33 +170,25 @@ function OrdersSection({
       {!readOnly && (
         <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3">
           <div className="flex flex-wrap gap-2">
-            <div className="relative flex-1 min-w-52">
-              <input
-                value={selected ? `${selected.name}${selected.strength ? ` ${selected.strength}` : ''}` : search}
-                onChange={(e) => { setSearch(e.target.value); setSelected(null); }}
-                placeholder="Medicine (from pharmacy master, or free text)…"
-                className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
-              />
-              {options.length > 0 && !selected && (
-                <ul className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow max-h-48 overflow-auto">
-                  {options.map((m) => (
-                    <li
-                      key={m.id}
-                      onClick={() => { setSelected(m); setOptions([]); }}
-                      className="px-3 py-1.5 text-sm hover:bg-slate-50 cursor-pointer flex justify-between"
-                    >
-                      <span>{m.name} {m.strength ?? ''}</span>
-                      <span className={`text-xs ${m.current_stock > 0 ? 'text-slate-400' : 'text-red-500 font-medium'}`}>
-                        {m.current_stock > 0 ? `stock ${m.current_stock}` : 'out of stock — to purchase'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="Dose (500mg)"
-              className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
-            <select value={route} onChange={(e) => setRoute(e.target.value)}
+            <MedicinePicker
+              clinicId={clinicId}
+              value={search}
+              selected={selected}
+              onChange={setSearch}
+              onSelect={pickMedicine}
+              className="flex-1 min-w-52"
+            />
+            <input
+              value={dose}
+              onChange={(e) => { setDose(e.target.value); setDoseTouched(true); }}
+              list="med-dose-options"
+              placeholder="Dose (500mg)"
+              className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+            <datalist id="med-dose-options">
+              {doseSuggestions(selected).map((d) => <option key={d} value={d} />)}
+            </datalist>
+            <select value={route} onChange={(e) => { setRoute(e.target.value); setRouteTouched(true); }}
               className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
               {ROUTE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>

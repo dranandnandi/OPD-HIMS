@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
-import { Search, Printer } from 'lucide-react';
+import { Search, Printer, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
 import { patientService } from '../services/patientService';
+import { patientService as opdPatientService } from '../../../services/patientService';
+import PatientModal from '../../../components/Patients/PatientModal';
 import { bedService } from '../services/bedService';
 import { masterService } from '../services/masterService';
 import { admissionService } from '../services/admissionService';
@@ -33,6 +35,7 @@ export default function NewAdmissionPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<Patient[]>([]);
   const [patient, setPatient] = useState<Patient | null>(null);
+  const [showNewPatient, setShowNewPatient] = useState(false);
 
   // form
   const [doctorId, setDoctorId] = useState('');
@@ -130,6 +133,41 @@ export default function NewAdmissionPage() {
       setPackageId('');
       setAgreedPrice('');
     }
+  };
+
+  // Walk-in / emergency arrivals are often not registered in OPD yet. Register
+  // them through the same OPD service the front desk uses so patient numbering,
+  // duplicate checks and the registration WhatsApp behave identically, then
+  // select the new patient straight into this admission form.
+  const handleCreatePatient = async (data: {
+    name: string;
+    phone: string;
+    age: number;
+    date_of_birth?: string | null;
+    gender: 'male' | 'female' | 'other';
+    address: string;
+    emergency_contact?: string;
+    blood_group?: string;
+    allergies?: string[];
+    referred_by?: string;
+  }) => {
+    const created = await opdPatientService.addPatient(data);
+    setPatient({
+      id: created.id,
+      clinic_id: clinicId ?? null,
+      name: created.name,
+      phone: created.phone,
+      age: created.age ?? null,
+      gender: created.gender ?? null,
+      address: created.address ?? null,
+      blood_group: created.blood_group ?? null,
+      allergies: created.allergies ?? null,
+      abha_number: created.abha_number ?? null,
+    });
+    setResults([]);
+    setSearchTerm('');
+    setShowNewPatient(false);
+    toast.success(`${created.name} registered`);
   };
 
   const handleSubmit = async () => {
@@ -274,6 +312,20 @@ export default function NewAdmissionPage() {
                 ))}
               </ul>
             )}
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                {searchTerm.trim().length >= 2 && results.length === 0
+                  ? 'No matching patient — register a new one.'
+                  : 'Not registered yet? Add the patient here.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowNewPatient(true)}
+                className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline whitespace-nowrap"
+              >
+                <UserPlus className="w-4 h-4" /> Add new patient
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -408,6 +460,15 @@ export default function NewAdmissionPage() {
       >
         {submitting ? 'Admitting…' : 'Admit Patient'}
       </button>
+
+      {showNewPatient && (
+        <PatientModal
+          patient={null}
+          clinicId={clinicId ?? undefined}
+          onSave={handleCreatePatient}
+          onClose={() => setShowNewPatient(false)}
+        />
+      )}
     </div>
   );
 }

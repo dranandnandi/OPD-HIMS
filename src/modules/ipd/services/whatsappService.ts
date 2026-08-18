@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabase';
 import { whatsappApi } from '../../../services/whatsappApi';
 import { formatPhoneForWhatsApp } from '../../../utils/phoneUtils';
 import { resolveWhatsAppUserId } from '../../../services/clinicSettingsService';
+import { getClinicInfo } from './clinicInfoService';
 import type { Admission } from '../types/ipd';
 
 export type IpdWhatsAppEvent = 'ipd_admission' | 'ipd_discharge' | 'ipd_bill_summary';
@@ -20,19 +21,10 @@ interface SendParams {
   metadata?: Record<string, unknown>;
 }
 
-const clinicNameCache = new Map<string, string>();
-
+/** The clinic's own name for message copy; neutral wording when unknown. */
 async function getClinicName(clinicId: string): Promise<string> {
-  const cached = clinicNameCache.get(clinicId);
-  if (cached) return cached;
-  const { data } = await supabase
-    .from('clinic_settings')
-    .select('clinic_name')
-    .eq('id', clinicId)
-    .maybeSingle();
-  const name = data?.clinic_name ?? 'our clinic';
-  clinicNameCache.set(clinicId, name);
-  return name;
+  const { name } = await getClinicInfo(clinicId);
+  return name || 'our clinic';
 }
 
 function formatDateTime(value: string | Date): string {

@@ -144,7 +144,9 @@ export class WhatsAppAutoSendService {
     });
   }
 
-  // Send queued message immediately
+  // Sends one queued row from the browser. The scheduler is the normal path;
+  // this stays for operator-initiated "send now" actions, and deliberately does
+  // NOT claim the row, so only call it for a row the scheduler cannot pick up.
   static async sendQueuedMessage(
     queueId: string,
     userId: string,
@@ -500,32 +502,8 @@ export class WhatsAppAutoSendService {
     });
   }
 
-  // Process pending messages (called by background job)
-  static async processPendingMessages(userId: string, clinicId: string): Promise<number> {
-    const now = new Date().toISOString();
-
-    const { data: pendingMessages, error } = await supabase
-      .from('whatsapp_message_queue')
-      .select('*')
-      .eq('clinic_id', clinicId)
-      .eq('status', 'pending')
-      .lte('scheduled_at', now)
-      .lt('retry_count', 3) // Max 3 retries
-      .order('scheduled_at', { ascending: true })
-      .limit(50);
-
-    if (error || !pendingMessages) return 0;
-
-    let sentCount = 0;
-    for (const message of pendingMessages) {
-      try {
-        await this.sendQueuedMessage(message.id, userId, clinicId);
-        sentCount++;
-      } catch (error) {
-        console.error(`Failed to send message ${message.id}:`, error);
-      }
-    }
-
-    return sentCount;
-  }
+  // The queue is drained server-side by the process-whatsapp-queue Netlify
+  // scheduled function, which claims rows atomically and honours the clinic's
+  // configured send gap. The old in-browser processor was removed: it only ran
+  // while a tab was open, and every open tab raced the others onto the same row.
 }

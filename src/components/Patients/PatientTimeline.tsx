@@ -5,8 +5,11 @@ import { visitService } from '../../services/visitService';
 import { format } from 'date-fns';
 import { useAuth } from '../Auth/useAuth';
 import AddVisitModal from './AddVisitModal';
+import VisitTrendChart from './VisitTrendChart';
+import VisitAttachmentsGallery from '../Visits/VisitAttachmentsGallery';
 import { toTitleCase, getInitials } from '../../utils/stringUtils';
 import { printPatientQr } from '../../utils/patientQrPrint';
+import { formatDob } from '../../utils/dateOfBirth';
 
 interface PatientTimelineProps {
   patient: Patient;
@@ -95,6 +98,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
           <p className="text-gray-600">
             {getPatientNumber(patient) && `${getPatientNumber(patient)} • `}
             {patient.phone} • {patient.age} years • {patient.gender}
+            {formatDob(patient.date_of_birth) && ` • DOB ${formatDob(patient.date_of_birth)}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -149,6 +153,9 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
           </div>
         )}
       </div>
+
+      {/* Progress trends across visits */}
+      {!loading && visits.length > 0 && <VisitTrendChart visits={visits} />}
 
       {/* Search and Filter */}
       <div className="card">
@@ -343,6 +350,15 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
                               <h5 className="text-sm font-semibold text-gray-700 mb-1">Doctor's Notes</h5>
                               <p className="text-xs text-gray-600 italic">{visit.doctorNotes}</p>
                             </div>
+                          )}
+
+                          {/* Prescriptions, reports, videos and PDFs attached to this visit */}
+                          {visit.visitImages && visit.visitImages.length > 0 && (
+                            <VisitAttachmentsGallery
+                              attachments={visit.visitImages}
+                              compact
+                              title="Attachments"
+                            />
                           )}
                         </div>
                       </div>

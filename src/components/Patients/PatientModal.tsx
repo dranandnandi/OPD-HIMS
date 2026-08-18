@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Shield, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toTitleCase } from '../../utils/stringUtils';
+import { calculateAgeFromDob, todayForDobInput } from '../../utils/dateOfBirth';
 import ABHALinkModal from './ABHALinkModal';
 import { abhaService, ABHAProfile } from '../../services/abhaService';
 import { patientService } from '../../services/patientService';
@@ -12,6 +13,7 @@ interface PatientModalProps {
     name: string;
     phone: string;
     age: number | null;
+    date_of_birth?: string | null;
     gender: 'male' | 'female' | 'other';
     address: string;
     emergency_contact?: string;
@@ -26,6 +28,7 @@ interface PatientModalProps {
     name: string;
     phone: string;
     age: number;
+    date_of_birth?: string | null;
     gender: 'male' | 'female' | 'other';
     address: string;
     emergency_contact?: string;
@@ -49,6 +52,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
     name: '',
     phone: '',
     age: '',
+    date_of_birth: '',
     gender: 'male' as 'male' | 'female' | 'other',
     address: '',
     emergency_contact: '',
@@ -63,6 +67,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
         name: toTitleCase(patient.name || ''),
         phone: patient.phone || '',
         age: patient.age?.toString() || '',
+        date_of_birth: patient.date_of_birth || '',
         gender: patient.gender || 'male',
         address: patient.address || '',
         emergency_contact: patient.emergency_contact || '',
@@ -72,6 +77,16 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
       });
     }
   }, [patient]);
+
+  // DOB is optional; when reception enters one it fills the age so both stay consistent.
+  const handleDobChange = (dateOfBirth: string) => {
+    const derivedAge = dateOfBirth ? calculateAgeFromDob(dateOfBirth) : null;
+    setFormData((current) => ({
+      ...current,
+      date_of_birth: dateOfBirth,
+      age: derivedAge !== null ? derivedAge.toString() : current.age
+    }));
+  };
 
   // Warn reception if a patient with the same phone already exists (only for new registrations).
   const checkForDuplicate = async () => {
@@ -97,6 +112,11 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (formData.date_of_birth && calculateAgeFromDob(formData.date_of_birth) === null) {
+      setFormError('Please enter a valid date of birth that is not in the future.');
+      return;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
     try {
@@ -104,6 +124,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
         name: toTitleCase(formData.name),
         phone: formData.phone,
         age: parseInt(formData.age, 10),
+        date_of_birth: formData.date_of_birth || null,
         gender: formData.gender,
         address: formData.address,
         emergency_contact: formData.emergency_contact || undefined,
@@ -177,6 +198,20 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
                   </p>
                 </div>
               )}
+            </div>
+
+            <div>
+              <label className="block mb-2">
+                Date of Birth
+              </label>
+              <input
+                type="date"
+                max={todayForDobInput()}
+                value={formData.date_of_birth}
+                onChange={(e) => handleDobChange(e.target.value)}
+                className="input-field"
+              />
+              <p className="mt-1 text-xs text-gray-500">Optional — fills the age automatically.</p>
             </div>
 
             <div>

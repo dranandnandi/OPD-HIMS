@@ -42,6 +42,15 @@ const corsHeaders = {
 const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 const DEFAULT_DURATION_MINUTES = 30;
 
+// Procedures are not self-bookable: they need clinical triage, prep instructions
+// and a room, so reception schedules them in-app. The clinic's own appointment
+// types are left untouched -- this only hides them from the public page.
+const PUBLIC_HIDDEN_TYPE_PATTERN = /procedure/i;
+
+// Every public booking takes one fixed 15-minute slot, whatever longer duration
+// the type carries in-clinic. Keeps the public grid uniform and predictable.
+const PUBLIC_SLOT_MINUTES = 15;
+
 // Statuses that occupy a slot. Cancelled / No_Show / Completed free it up.
 const BLOCKING_STATUSES = ['Scheduled', 'Confirmed', 'Arrived', 'In_Progress'];
 
@@ -53,7 +62,13 @@ const POLICY_DEFAULTS = {
   allowedTypeLabels: null as string[] | null,
   blackoutDates: [] as string[],
   noticeText: '',
+  /** Regional language shown beside English on the page; '' = English only. */
+  language: '',
 };
+
+// Kept in step with REGIONAL_LANGUAGES in the app's PublicBooking/i18n.ts. An
+// unknown code falls back to English rather than rendering half a page.
+const SUPPORTED_LANGUAGES = ['hi', 'mr', 'gu', 'bn', 'ta', 'te', 'kn', 'ml', 'pa', 'or', 'ur'];
 
 // Per-IP ceiling on booking attempts, independent of the per-phone cap.
 const IP_BOOKING_LIMIT = 12;
@@ -180,6 +195,9 @@ async function resolveClinic(
       ? (rawPolicy.blackoutDates as string[]).filter((d) => parseDateKey(d) !== null)
       : [],
     noticeText: cleanText(rawPolicy.noticeText, 400),
+    language: SUPPORTED_LANGUAGES.includes(rawPolicy.language as string)
+      ? (rawPolicy.language as string)
+      : '',
   };
 
   return {
@@ -215,9 +233,13 @@ function publicAppointmentTypes(clinic: ResolvedClinic) {
   return clinic.appointmentTypes
     .filter((type) => typeof type?.label === 'string' && type.label.trim() !== '')
     .filter((type) => !allowed || allowed.includes(type.label!))
+    .filter((type) =>
+      !PUBLIC_HIDDEN_TYPE_PATTERN.test(type.label!) &&
+      !PUBLIC_HIDDEN_TYPE_PATTERN.test(type.id ?? '')
+    )
     .map((type) => ({
       label: type.label!,
-      duration: numberOr(type.duration, clinic.defaultDuration, 5, 240),
+      duration: PUBLIC_SLOT_MINUTES,
       color: typeof type.color === 'string' ? type.color : '#3B82F6',
       fee: resolveFee(type, clinic),
     }));
@@ -407,6 +429,7 @@ async function handleClinic(supabase: SupabaseClient, clinic: ResolvedClinic) {
       timeZone: clinic.timeZone,
       currency: clinic.currency,
       notice: clinic.policy.noticeText,
+      language: clinic.policy.language,
       horizonDays: clinic.policy.horizonDays,
       today: todayInZone(clinic.timeZone),
       blackoutDates: clinic.policy.blackoutDates,
@@ -415,7 +438,7 @@ async function handleClinic(supabase: SupabaseClient, clinic: ResolvedClinic) {
       ? types
       : [{
         label: 'Consultation',
-        duration: clinic.defaultDuration,
+        duration: PUBLIC_SLOT_MINUTES,
         color: '#3B82F6',
         fee: clinic.fees.consultation,
       }],
@@ -473,7 +496,7 @@ async function handleSlots(
   const requestedType = cleanText(payload.typeLabel, 60);
   const types = publicAppointmentTypes(clinic);
   const matchedType = types.find((type) => type.label === requestedType);
-  const duration = matchedType?.duration ?? clinic.defaultDuration;
+  const duration = matchedType?.duration ?? PUBLIC_SLOT_MINUTES;
 
   const range = clinicDayRangeUtc(dateKey, clinic.timeZone);
   if (!range) return json({ status: 'ok', slots: [] });
@@ -561,7 +584,7 @@ async function handleBook(
   const types = publicAppointmentTypes(clinic);
   const matchedType = types.find((type) => type.label === requestedType) ?? types[0];
   const typeLabel = matchedType?.label ?? 'Consultation';
-  const duration = matchedType?.duration ?? clinic.defaultDuration;
+  const duration = matchedType?.duration ?? PUBLIC_SLOT_MINUTES;
 
   // Re-derive the free slots server-side and require an exact match. The client
   // is never trusted about what was available -- this rejects stale slots,
@@ -622,9 +645,11 @@ async function handleBook(
   if (insertError) {
     await rollbackNewPatient();
 
-    // 23505 on idx_appointments_no_double_book: someone took the slot between
-    // our availability check and this insert. The DB index is what actually
-    // makes concurrent booking safe; this branch just reports it politely.
+    // 23505 on idx_appointments_no_double_book_public: another patient took the
+    // slot between our availability check and this insert. That index is what
+    // actually makes concurrent public booking safe -- it is scoped to
+    // booking_source = 'public' because these clinics deliberately overbook via
+    // the front desk, so a blanket constraint would break staff workflow.
     if ((insertError as { code?: string }).code === '23505') {
       return json({ status: 'slot_taken' }, 200);
     }

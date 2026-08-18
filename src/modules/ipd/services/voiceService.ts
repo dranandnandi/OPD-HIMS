@@ -4,6 +4,7 @@ import { nursingService, VitalsInput } from './nursingService';
 import { medicationService } from './medicationService';
 import { orderService, OrderCategory } from './orderService';
 import { dietService } from './dietService';
+import { toDietType, toDietRoute } from '../utils/dietCodes';
 import type { Admission, DietRoute, DietType, ServiceMaster } from '../types/ipd';
 
 // ============================================================================
@@ -65,6 +66,11 @@ export interface DictatedIO {
   volumeMl: number;
 }
 
+export interface DictatedFinding {
+  label: string;
+  value: string;
+}
+
 export interface DictationResult {
   transcript: string;
   noteKind: 'round' | 'nursing' | 'handover' | 'procedure';
@@ -77,6 +83,12 @@ export interface DictationResult {
   diet: DictatedDiet | null;
   nursingTasks: DictatedTask[];
   intakeOutput: DictatedIO[];
+  /** Clinically relevant prose that fits none of the structured sections. */
+  additionalNotes: string | null;
+  /** Labelled leftovers — consent, counselling, code status, and the like. */
+  unmappedFindings: DictatedFinding[];
+  /** Lines the model returned but that could not be filed (e.g. I/O with no volume). */
+  droppedLines: string[];
   privacyRedactions: number;
 }
 
@@ -108,6 +120,8 @@ export interface DictationSelections {
   diet: boolean;
   tasks: boolean[];
   io: boolean[];
+  /** file the leftovers + raw transcript so nothing dictated is lost */
+  additionalNotes: boolean;
 }
 
 const num = (v: unknown): number | undefined => {
@@ -115,7 +129,38 @@ const num = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+/**
+ * Physiological ranges enforced by the ipd_vitals CHECK constraints. A single
+ * out-of-range field used to reject the whole row (losing every other vital in
+ * the same dictation), so anything outside its range is dropped here instead.
+ */
+const VITAL_RANGES: Partial<Record<keyof VitalsInput, [number, number]>> = {
+  temperature: [30, 45],
+  pulse: [0, 300],
+  resp_rate: [0, 100],
+  bp_systolic: [0, 350],
+  bp_diastolic: [0, 250],
+  spo2: [0, 100],
+  pain_score: [0, 10],
+};
+
+/**
+ * The model is asked for Celsius but sometimes echoes what was spoken, and
+ * Fahrenheit is what most Indian wards say out loud ("temp 99.4"). Anything
+ * above the human Celsius range but inside the Fahrenheit one is converted.
+ */
+const normaliseTemperature = (t: number): number | undefined => {
+  const c = t > 45 && t <= 115 ? ((t - 32) * 5) / 9 : t;
+  const rounded = Math.round(c * 10) / 10;
+  return rounded >= 30 && rounded <= 45 ? rounded : undefined;
+};
+
 const FREQUENCY_CODES = ['od', 'bd', 'tid', 'qid', 'q6h', 'q8h', 'q12h', 'hs', 'stat', 'sos'];
+
+const text = (v: unknown): string | null => {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s && s.toLowerCase() !== 'null' ? s : null;
+};
 
 export const voiceService = {
   /** Build the context block the model gets, from the live chart */
@@ -171,6 +216,21 @@ export const voiceService = {
     if (error) throw new Error(error.message);
     if (!data?.success) throw new Error(data?.error || 'Dictation failed');
 
+    // Anything the model returned but that cannot be filed is reported rather
+    // than filtered away in silence.
+    const droppedLines: string[] = [];
+    for (const io of (data.intakeOutput ?? []) as Array<Record<string, unknown>>) {
+      if (!(num(io.volumeMl) ?? 0)) {
+        droppedLines.push(`Intake/output "${io.ioType ?? '?'} ${io.route ?? ''}" — no volume dictated`);
+      }
+    }
+    for (const m of (data.medications ?? []) as Array<Record<string, unknown>>) {
+      if (!String(m.medicine ?? '').trim()) droppedLines.push('A medicine line had no drug name');
+    }
+
+    const rawDiet = data.diet as Record<string, unknown> | null;
+    const dietType = rawDiet ? toDietType(rawDiet.dietType) : null;
+
     return {
       transcript: data.transcript ?? '',
       noteKind: data.noteKind ?? 'round',
@@ -208,15 +268,18 @@ export const voiceService = {
         urgency: (['routine', 'urgent', 'stat'].includes(String(c.urgency)) ? c.urgency : 'routine') as
           DictatedConsultation['urgency'],
       })).filter((c: DictatedConsultation) => c.specialty || c.reason),
-      diet: data.diet && data.diet.dietType
+      diet: rawDiet && dietType
         ? {
-          dietType: data.diet.dietType as DietType,
-          route: (data.diet.route ?? 'oral') as DietRoute,
-          caloriesKcal: num(data.diet.caloriesKcal) ?? null,
-          proteinG: num(data.diet.proteinG) ?? null,
-          fluidRestrictionMl: num(data.diet.fluidRestrictionMl) ?? null,
-          instructions: data.diet.instructions ?? null,
-          restrictions: data.diet.restrictions ?? null,
+          dietType: dietType.type,
+          route: toDietRoute(rawDiet.route),
+          caloriesKcal: num(rawDiet.caloriesKcal) ?? null,
+          proteinG: num(rawDiet.proteinG) ?? null,
+          fluidRestrictionMl: num(rawDiet.fluidRestrictionMl) ?? null,
+          // An unrecognised diet code becomes "other" — keep what was actually
+          // said in the instructions so the intent survives.
+          instructions: [text(rawDiet.instructions), dietType.spoken ? `Diet as dictated: ${dietType.spoken}` : null]
+            .filter(Boolean).join(' | ') || null,
+          restrictions: text(rawDiet.restrictions),
         }
         : null,
       nursingTasks: (data.nursingTasks ?? []).map((t: Record<string, unknown>) => ({
@@ -229,6 +292,11 @@ export const voiceService = {
         route: String(io.route ?? 'oral'),
         volumeMl: num(io.volumeMl) ?? 0,
       })).filter((io: DictatedIO) => io.volumeMl > 0),
+      additionalNotes: text(data.additionalNotes),
+      unmappedFindings: ((data.unmappedFindings ?? []) as Array<Record<string, unknown>>)
+        .map((f) => ({ label: text(f.label) ?? 'Additional finding', value: text(f.value) ?? '' }))
+        .filter((f: DictatedFinding) => f.value),
+      droppedLines,
       privacyRedactions: data.privacyRedactions ?? 0,
     };
   },
@@ -281,6 +349,16 @@ export const voiceService = {
       }
     };
 
+    // Everything the model could not file into a structured section, plus any
+    // line that had to be dropped. Kept together so a dictation is never lost.
+    const leftoverText = [
+      data.additionalNotes,
+      ...data.unmappedFindings.map((f) => `${f.label}: ${f.value}`),
+      ...data.droppedLines.map((l) => `Not filed — ${l}`),
+    ].filter((v): v is string => !!v && !!v.trim()).join('\n') || null;
+
+    const keepLeftovers = selections.additionalNotes && !!(leftoverText || data.transcript.trim());
+
     // 1. Treatment plan entry — the anchor for everything else
     const p = data.treatmentPlan;
     const planHasContent = [p.subjective, p.objective, p.assessment, p.plan, p.advice].some(
@@ -292,10 +370,31 @@ export const voiceService = {
           clinicId,
           admissionId: admission.id,
           userId,
-          input: { ...p, voiceTranscript: data.transcript, doctorId: userId ?? null },
+          input: {
+            ...p,
+            advice: keepLeftovers && leftoverText
+              ? [p.advice, `Also noted:\n${leftoverText}`].filter(Boolean).join('\n')
+              : p.advice,
+            voiceTranscript: data.transcript,
+            doctorId: userId ?? null,
+          },
         });
         planId = created.id;
       });
+    } else if (keepLeftovers) {
+      // No plan entry was created, so the leftovers and the raw transcript would
+      // have had nowhere to live — file them as a note instead of losing them.
+      await run('Other dictated notes', () =>
+        nursingService.addNote({
+          clinicId,
+          admissionId: admission.id,
+          noteType: data.noteKind === 'handover' ? 'handover' : 'nursing',
+          note: [leftoverText, data.transcript.trim() ? `Dictation transcript:\n${data.transcript.trim()}` : null]
+            .filter(Boolean)
+            .join('\n\n'),
+          userId,
+        })
+      );
     }
 
     // 2. Nursing note — separate stream from the doctor's plan
@@ -325,10 +424,43 @@ export const voiceService = {
         ['blood_sugar', 'bloodSugar'],
         ['weight_kg', 'weightKg'],
       ];
+      const rejected: string[] = [];
       for (const [col, key] of map) {
         const n = num(data.vitals?.[key]);
-        if (n !== undefined) v[col] = n;
+        if (n === undefined) continue;
+
+        if (col === 'temperature') {
+          const t = normaliseTemperature(n);
+          if (t === undefined) {
+            rejected.push(`temperature ${n}`);
+            continue;
+          }
+          v.temperature = t;
+          continue;
+        }
+
+        const range = VITAL_RANGES[col];
+        if (range && (n < range[0] || n > range[1])) {
+          rejected.push(`${key} ${n}`);
+          continue;
+        }
+        v[col] = n;
       }
+
+      // Implausible readings are never worth blocking the plausible ones — file
+      // them as a note so the number the doctor actually said is still on record.
+      if (rejected.length > 0) {
+        await run('Out-of-range vitals note', () =>
+          nursingService.addNote({
+            clinicId,
+            admissionId: admission.id,
+            noteType: 'nursing',
+            note: `Dictated vitals outside the recordable range, not saved to the vitals chart: ${rejected.join(', ')}`,
+            userId,
+          })
+        );
+      }
+
       if (Object.keys(v).length > 0) {
         await run('Vitals', () =>
           nursingService.recordVitals({ clinicId, admissionId: admission.id, vitals: v, userId })
@@ -375,10 +507,19 @@ export const voiceService = {
       });
     }
 
-    // 5. Investigations — one order header carrying every resolved line
+    // 5. Investigations — one order header carrying every resolved line.
+    // The model often names the same test twice ("send a CBC… and repeat the
+    // CBC in the morning"), and two lines resolving to one catalog service
+    // would place — and charge — the test twice.
+    const seenServices = new Set<string>();
     const orderLines = selections.investigationServiceIds
       .map((serviceId, idx) => ({ serviceId, inv: data.investigations[idx] }))
-      .filter((l): l is { serviceId: string; inv: DictatedInvestigation } => !!l.serviceId && !!l.inv);
+      .filter((l): l is { serviceId: string; inv: DictatedInvestigation } => !!l.serviceId && !!l.inv)
+      .filter((l) => {
+        if (seenServices.has(l.serviceId)) return false;
+        seenServices.add(l.serviceId);
+        return true;
+      });
 
     if (orderLines.length > 0) {
       const urgency = orderLines.some((l) => l.inv.urgency === 'stat')

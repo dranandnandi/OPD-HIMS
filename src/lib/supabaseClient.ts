@@ -246,6 +246,7 @@ export interface DatabasePatient {
   name: string;
   phone: string;
   age: number | null;
+  date_of_birth?: string | null;
   gender: 'male' | 'female' | 'other';
   address: string | null;
   emergency_contact: string | null;
@@ -566,6 +567,7 @@ export interface DatabaseClinicSetting {
   pdf_letterhead_mode?: 'bands' | 'full';
   pdf_letterhead_url?: string;
   pdf_letterhead_spacing?: { top: number; bottom: number; left: number; right: number };
+  pdf_print_branding?: boolean;
   // Public self-booking
   public_slug?: string | null;
   public_booking_enabled?: boolean;

@@ -102,42 +102,29 @@ COMMENT ON COLUMN public.appointments.public_ref IS
 'Opaque random reference given to a self-booking patient so they can look up or cancel without logging in.';
 
 -- ---------------------------------------------------------------------------
--- 3. Double-booking guard
+-- 3. Double-booking guard (public bookings only)
 -- ---------------------------------------------------------------------------
 -- Until now conflict detection was client-side only (doctorAvailabilityService),
 -- which cannot stop two patients hitting the same free slot concurrently.
--- Slots sit on a fixed grid, so an exact (doctor, timestamp) collision is the
--- realistic race and a partial unique index closes it at the DB level. Partial
--- overlaps from mismatched durations are still re-checked in the edge function.
 --
--- Wrapped so that pre-existing duplicates in production downgrade this to a
--- loud warning instead of failing the whole migration.
-DO $$
-DECLARE
-  duplicate_count integer;
-BEGIN
-  SELECT count(*) INTO duplicate_count
-  FROM (
-    SELECT doctor_id, appointment_date
-    FROM public.appointments
-    WHERE doctor_id IS NOT NULL
-      AND status IN ('Scheduled', 'Confirmed', 'Arrived', 'In_Progress')
-    GROUP BY doctor_id, appointment_date
-    HAVING count(*) > 1
-  ) AS duplicates;
-
-  IF duplicate_count > 0 THEN
-    RAISE WARNING
-      'Skipped idx_appointments_no_double_book: % (doctor_id, appointment_date) pairs already double-booked. Resolve them, then create the index manually.',
-      duplicate_count;
-  ELSE
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_no_double_book
-      ON public.appointments (doctor_id, appointment_date)
-      WHERE doctor_id IS NOT NULL
-        AND status IN ('Scheduled', 'Confirmed', 'Arrived', 'In_Progress');
-  END IF;
-END;
-$$;
+-- The obvious fix -- a unique index on every active (doctor_id,
+-- appointment_date) -- is WRONG for this platform. Production already holds 351
+-- such pairs across 1230 rows: these clinics deliberately overbook, stacking
+-- walk-ins onto the same nominal time. A blanket constraint would break the
+-- front desk's normal workflow.
+--
+-- So the guard is scoped to `booking_source = 'public'`. Two anonymous patients
+-- can never take the same slot -- the real race, since both arrive at machine
+-- speed from a page showing identical availability -- while staff keep
+-- overbooking freely. A public-vs-staff collision stays possible in the
+-- millisecond window between the edge function's availability check and its
+-- insert; that is caught by the server-side re-derivation, and a slot lost that
+-- way surfaces to the patient as "just taken, pick another".
+CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_no_double_book_public
+  ON public.appointments (doctor_id, appointment_date)
+  WHERE doctor_id IS NOT NULL
+    AND booking_source = 'public'
+    AND status IN ('Scheduled', 'Confirmed', 'Arrived', 'In_Progress');
 
 -- Slot lookups scan one doctor's day at a time.
 CREATE INDEX IF NOT EXISTS idx_appointments_doctor_date

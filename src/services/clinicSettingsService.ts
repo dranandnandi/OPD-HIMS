@@ -49,9 +49,11 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   pdfLetterheadMode: dbSetting.pdf_letterhead_mode === 'full' ? 'full' : 'bands',
   pdfLetterheadUrl: dbSetting.pdf_letterhead_url,
   pdfLetterheadSpacing: dbSetting.pdf_letterhead_spacing,
+  pdfPrintBranding: dbSetting.pdf_print_branding ?? false,
   publicSlug: dbSetting.public_slug ?? null,
   publicBookingEnabled: dbSetting.public_booking_enabled ?? false,
   publicBookingPolicy: dbSetting.appointment_config ?? null,
+  whatsappTemplates: dbSetting.whatsapp_templates,
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -86,6 +88,7 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   lab_test_integration_enabled: setting.labTestIntegrationEnabled,
   lims_api_url: setting.limsApiUrl,
   lims_api_key: setting.limsApiKey,
+  whatsapp_templates: setting.whatsappTemplates,
 });
 
 export const clinicSettingsService = {
@@ -204,7 +207,11 @@ export const clinicSettingsService = {
     if (settings.pdfLetterheadMode !== undefined) dbSettings.pdf_letterhead_mode = settings.pdfLetterheadMode;
     if (settings.pdfLetterheadUrl !== undefined) dbSettings.pdf_letterhead_url = settings.pdfLetterheadUrl;
     if (settings.pdfLetterheadSpacing !== undefined) dbSettings.pdf_letterhead_spacing = settings.pdfLetterheadSpacing;
+    if (settings.pdfPrintBranding !== undefined) dbSettings.pdf_print_branding = settings.pdfPrintBranding;
     if (settings.whatsappSharedSessionUserId !== undefined) dbSettings.whatsapp_shared_session_user_id = settings.whatsappSharedSessionUserId;
+    // Without this the Clinic Settings template editor silently discarded every
+    // edit, and the reminder scheduler read an empty whatsapp_templates column.
+    if (settings.whatsappTemplates !== undefined) dbSettings.whatsapp_templates = settings.whatsappTemplates;
 
     const { data, error } = await supabase
       .from('clinic_settings')

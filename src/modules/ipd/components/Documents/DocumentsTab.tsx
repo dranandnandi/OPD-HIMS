@@ -9,7 +9,11 @@ import {
 } from 'ckeditor5';
 import 'ckeditor5/ckeditor5.css';
 import { useAuth } from '../../contexts/AuthContext';
-import { documentService, DocumentTemplate, IpdDocument } from '../../services/documentService';
+import {
+  documentService, docTypeLabel, hasNarrativePlaceholders,
+  DOC_TYPES, DocumentTemplate, IpdDocument,
+} from '../../services/documentService';
+import DocumentVoiceDictation from './DocumentVoiceDictation';
 import type { Admission } from '../../types/ipd';
 
 interface Props {
@@ -20,6 +24,7 @@ export default function DocumentsTab({ admission }: Props) {
   const { clinicId, profile } = useAuth();
   const [documents, setDocuments] = useState<IpdDocument[]>([]);
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
+  const [docType, setDocType] = useState<string>('discharge_summary');
   const [templateId, setTemplateId] = useState<string>('default');
   const [editing, setEditing] = useState<IpdDocument | null>(null);
   const [creating, setCreating] = useState(false);
@@ -43,6 +48,14 @@ export default function DocumentsTab({ admission }: Props) {
       .catch(() => setTemplates([]));
   }, [clinicId]);
 
+  // Templates the clinic has authored for the chosen document type
+  const docTypeTemplates = templates.filter((t) => t.doc_type === docType);
+  const selectedTemplate = docTypeTemplates.find((t) => t.id === templateId) ?? null;
+  // The AI writer only has something to do when the template has narrative slots
+  const aiSupported = templateId === 'default'
+    ? docType === 'discharge_summary'
+    : hasNarrativePlaceholders(selectedTemplate?.html_template ?? '');
+
   const createSummary = async (useAi = false) => {
     if (!clinicId) return;
     const setBusy = useAi ? setAiCreating : setCreating;
@@ -51,7 +64,7 @@ export default function DocumentsTab({ admission }: Props) {
       const doc = await documentService.createFromTemplate({
         clinicId,
         admission,
-        docType: 'discharge_summary',
+        docType,
         templateId: templateId === 'default' ? undefined : templateId,
         useAi,
         userId: profile?.id,
@@ -102,18 +115,26 @@ export default function DocumentsTab({ admission }: Props) {
     <div>
       <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 flex flex-wrap items-center gap-2">
         <select
+          value={docType}
+          onChange={(e) => { setDocType(e.target.value); setTemplateId('default'); }}
+          className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+          title="Document type"
+        >
+          {DOC_TYPES.map((d) => (
+            <option key={d.key} value={d.key}>{d.label}</option>
+          ))}
+        </select>
+        <select
           value={templateId}
           onChange={(e) => setTemplateId(e.target.value)}
           className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm max-w-[280px]"
           title="Template"
         >
-          <option value="default">Default Discharge Summary</option>
-          {templates
-            .filter((t) => !(t.doc_type === 'discharge_summary' && t.name === 'Default Discharge Summary'))
+          <option value="default">Default {docTypeLabel(docType)}</option>
+          {docTypeTemplates
+            .filter((t) => t.name !== `Default ${docTypeLabel(docType)}`)
             .map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} — {t.doc_type.replace(/_/g, ' ')}
-              </option>
+              <option key={t.id} value={t.id}>{t.name}</option>
             ))}
         </select>
         <button
@@ -126,9 +147,13 @@ export default function DocumentsTab({ admission }: Props) {
         </button>
         <button
           onClick={() => createSummary(true)}
-          disabled={creating || aiCreating}
+          disabled={creating || aiCreating || !aiSupported}
           className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg"
-          title="AI writes the hospital course, advice & follow-up, and condition from the chart"
+          title={
+            aiSupported
+              ? 'AI writes the hospital course, advice & follow-up, and condition from the chart'
+              : `This template has no AI narrative sections — create the ${docTypeLabel(docType).toLowerCase()} and dictate into it instead`
+          }
         >
           <Sparkles className="w-4 h-4" />
           {aiCreating ? 'Generating…' : 'AI draft'}
@@ -136,7 +161,8 @@ export default function DocumentsTab({ admission }: Props) {
         <span className="text-xs text-slate-400">
           Auto-fills patient, diagnosis, vitals, medications, investigations and round notes
           from the chart. <b>AI draft</b> also writes the hospital-course narrative, advice and
-          condition — always review before signing. Manage templates in Masters → Document Templates.
+          condition. Open any draft and use <b>Dictate</b> to speak content straight into its
+          sections — always review before signing. Manage templates in Masters → Document Templates.
         </span>
       </div>
 
@@ -146,7 +172,7 @@ export default function DocumentsTab({ admission }: Props) {
             <FileText className="w-5 h-5 text-navy-600 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-slate-800">
-                {d.doc_type.replace(/_/g, ' ')}
+                {docTypeLabel(d.doc_type)}
                 <span className="ml-2 text-xs text-slate-400">{d.document_number}</span>
               </p>
               <p className="text-xs text-slate-400">
@@ -180,7 +206,7 @@ export default function DocumentsTab({ admission }: Props) {
             </button>
             <button
               onClick={() =>
-                documentService.printDocument({ doc: d, admission, clinicName: 'MediTrust Clinics' })
+                documentService.printDocument({ doc: d, admission, clinicId: clinicId! })
               }
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
               title="Quick browser print"
@@ -225,6 +251,12 @@ function DocumentEditor({
     }
   };
 
+  /** Dictation writes into the editor and persists the draft in one step */
+  const applyDictation = async (html: string) => {
+    setContent(html);
+    await documentService.saveContent(doc.id, html);
+  };
+
   const sign = async () => {
     setSigning(true);
     try {
@@ -265,7 +297,7 @@ function DocumentEditor({
           ← Back
         </button>
         <span className="text-sm font-medium text-slate-700 flex-1">
-          {doc.doc_type.replace(/_/g, ' ')} {doc.document_number} — {readOnly ? 'signed (read-only)' : 'draft'}
+          {docTypeLabel(doc.doc_type)} {doc.document_number} — {readOnly ? 'signed (read-only)' : 'draft'}
         </span>
         {!readOnly && (
           <>
@@ -298,7 +330,7 @@ function DocumentEditor({
             documentService.printDocument({
               doc: { ...doc, content_html: content },
               admission,
-              clinicName: 'MediTrust Clinics',
+              clinicId: clinicId!,
             })
           }
           className="flex items-center gap-1.5 text-sm border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50"
@@ -306,6 +338,15 @@ function DocumentEditor({
           <Printer className="w-4 h-4" /> Print
         </button>
       </div>
+
+      {!readOnly && (
+        <DocumentVoiceDictation
+          doc={doc}
+          admission={admission}
+          contentHtml={content}
+          onApply={applyDictation}
+        />
+      )}
 
       <div className="max-w-3xl mx-auto ipd-document-editor">
         {readOnly ? (

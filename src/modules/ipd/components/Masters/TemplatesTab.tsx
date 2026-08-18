@@ -10,14 +10,9 @@ import {
 import 'ckeditor5/ckeditor5.css';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  documentService, DocumentTemplate, PLACEHOLDER_CATALOG,
+  documentService, DOC_TYPES, DocumentTemplate, PLACEHOLDER_CATALOG,
 } from '../../services/documentService';
 import { aiAssistantService } from '../../services/aiAssistantService';
-
-const DOC_TYPES = [
-  'discharge_summary', 'discharge_medication', 'admission_sheet', 'consent', 'ot_note',
-  'death_summary', 'dama_form', 'referral_letter', 'estimate',
-] as const;
 
 interface Props {
   clinicId: string;
@@ -210,7 +205,7 @@ export default function TemplatesTab({ clinicId }: Props) {
               title={selectedId !== 'new' ? 'Document type is fixed after creation' : 'Document type'}
             >
               {DOC_TYPES.map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+                <option key={t.key} value={t.key}>{t.label}</option>
               ))}
             </select>
             <button

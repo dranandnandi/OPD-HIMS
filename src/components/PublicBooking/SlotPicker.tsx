@@ -8,6 +8,7 @@ import {
   type PublicDoctor,
   type PublicSlot,
 } from '../../services/publicBookingService';
+import { englishOnly, type BookingTranslator } from './i18n';
 
 interface SlotPickerProps {
   doctor: PublicDoctor;
@@ -19,6 +20,8 @@ interface SlotPickerProps {
   selectedSlot: string;
   slots: PublicSlot[];
   loading: boolean;
+  /** Bilingual label helper; defaults to English-only. */
+  t?: BookingTranslator;
   onSelectDate: (dateKey: string) => void;
   onSelectSlot: (startIso: string) => void;
 }
@@ -32,6 +35,7 @@ const SlotPicker: React.FC<SlotPickerProps> = ({
   selectedSlot,
   slots,
   loading,
+  t = englishOnly,
   onSelectDate,
   onSelectSlot,
 }) => {
@@ -45,7 +49,7 @@ const SlotPicker: React.FC<SlotPickerProps> = ({
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Pick a date</h2>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">{t('pickDate')}</h2>
 
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
           {dates.map((dateKey) => {
@@ -78,18 +82,18 @@ const SlotPicker: React.FC<SlotPickerProps> = ({
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Available times</h2>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">{t('availableTimes')}</h2>
 
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Checking availability...
+            {t('checkingAvailability')}
           </div>
         ) : slots.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 py-8 text-center">
             <CalendarX className="h-6 w-6 text-gray-400" />
-            <p className="text-sm text-gray-600">No free slots on this day.</p>
-            <p className="text-xs text-gray-500">Try another date.</p>
+            <p className="text-sm text-gray-600">{t('noSlots')}</p>
+            <p className="text-xs text-gray-500">{t('tryAnotherDate')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

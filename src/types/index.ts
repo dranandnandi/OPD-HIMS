@@ -18,6 +18,12 @@ export interface PublicBookingPolicy {
   blackoutDates?: string[];
   /** Free text shown at the top of the public page. */
   noticeText?: string;
+  /**
+   * Regional language shown alongside English on the public page, e.g. 'hi'.
+   * '' / absent = English only. Codes come from REGIONAL_LANGUAGES in
+   * components/PublicBooking/i18n.ts.
+   */
+  language?: string;
 }
 
 export interface Patient {
@@ -27,6 +33,7 @@ export interface Patient {
   name: string;
   phone: string;
   age: number | null;
+  date_of_birth?: string | null;
   gender: 'male' | 'female' | 'other';
   address: string | null;
   emergency_contact?: string;
@@ -245,10 +252,13 @@ export interface VoiceTranscript {
 export interface VisitImage {
   id: string;
   url: string;
-  imageType: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'other';
+  /** Clinical category. 'video' and 'document' cover non-image attachments. */
+  imageType: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'video' | 'document' | 'other';
   label?: string;
   context?: string;       // Doctor's specific focus for AI e.g. "Check for cartilage destruction"
   aiAnalysis?: string;
+  mimeType?: string;      // Recorded on upload so videos/PDFs render with the right player
+  fileSize?: number;      // Bytes, for display only
   uploadedAt: string;
 }
 
@@ -616,6 +626,9 @@ export interface ClinicSetting {
   pdfLetterheadMode?: PdfLetterheadMode;
   pdfLetterheadUrl?: string;
   pdfLetterheadSpacing?: PdfLetterheadSpacing;
+  // Print / compact-print copies carry no branding by default (they target
+  // pre-printed letterhead paper). Opt in to get it in black and white.
+  pdfPrintBranding?: boolean;
   // WhatsApp and AI Review Settings
   enableManualWhatsappSend?: boolean;
   enableBlueticksApiSend?: boolean;
@@ -647,6 +660,7 @@ export interface ClinicSetting {
     visit_prescription?: string;
     invoice_generated?: string;
     appointment_reminder?: string;
+    follow_up_reminder?: string;
     appointment_confirmation?: string;
     thank_you?: string;
   };

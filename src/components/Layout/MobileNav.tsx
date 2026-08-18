@@ -27,6 +27,8 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
+import { hasReceptionAccess } from '../../utils/roleAccess';
+import { hasModuleAccess } from '../../utils/modulePermissions';
 import InstallPWA from '../PWA/InstallPWA';
 import { brand } from '../../config/branding';
 
@@ -38,75 +40,66 @@ const MobileNav: React.FC = () => {
   const clinicTier = user?.clinic?.clinicTier ?? 'silver';
   const isBasic = clinicTier === 'basic';
   const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
-  const roleName = user?.roleName?.toLowerCase();
-  const permissions = user?.permissions ?? [];
-  const isAdmin = Boolean(
-    user && (
-      roleName === 'admin' ||
-      roleName === 'super_admin' ||
-      permissions.includes('admin') ||
-      permissions.includes('all')
-    )
-  );
-  const hasIpdPermission = (perm: string) =>
-    isAdmin || permissions.includes(perm) || permissions.includes('all');
 
   // Mirrors AdminOrReceptionRoute in App.tsx, which guards /settings/whatsapp-ai.
-  const isAdminOrReception = Boolean(
-    isAdmin || roleName === 'receptionist' || roleName === 'reception'
-  );
+  const isAdminOrReception = hasReceptionAccess(user);
 
-  // Same grouped structure as the desktop sidebar (Navigation.tsx). Items
-  // moved off the menu (Waiting Sequences, Doctor Availability, AI Master
-  // Data, User Management, IPD Masters) live in Settings.
-  const ipdItems = ipdEnabled
-    ? [
-      { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', perm: 'ipd_census' },
-      { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', perm: 'ipd_census' },
-      { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', perm: 'ipd_admissions' },
-      { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', perm: 'ipd_billing' },
-      { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', perm: 'ipd_billing' },
-      { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', perm: 'ipd_billing' },
-      { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', perm: 'ipd_billing' },
-      { path: '/ipd/stores', icon: Warehouse, label: 'Stores', perm: 'ipd_stores' },
-    ].filter(({ perm }) => hasIpdPermission(perm))
-    : [];
-
-  const navGroups = [
+  // Same grouped structure and the same module gating as the desktop sidebar
+  // (Navigation.tsx) — keep the two in step. Items moved off the menu (Waiting
+  // Sequences, Doctor Availability, AI Master Data, User Management, IPD
+  // Masters) live in Settings. Items without a `perm` carry their own gate.
+  const gatedGroups: Array<{
+    label: string;
+    items: Array<{ path: string; icon: typeof Users; label: string; perm?: string }>;
+  }> = [
     {
       label: 'Front Desk',
       items: [
-        { path: '/', icon: CalendarDays, label: 'Appointments' },
-        { path: '/patients', icon: Users, label: 'Patients' },
+        { path: '/', icon: CalendarDays, label: 'Appointments', perm: 'opd_appointments' },
+        { path: '/patients', icon: Users, label: 'Patients', perm: 'opd_patients' },
       ],
     },
     {
       label: 'OPD',
       items: [
-        { path: '/visits', icon: Activity, label: 'Visits' },
-        ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups' }] : []),
+        { path: '/visits', icon: Activity, label: 'Visits', perm: 'opd_visits' },
+        ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups', perm: 'opd_followups' }] : []),
       ],
     },
-    ...(ipdItems.length > 0 ? [{ label: 'IPD', items: ipdItems }] : []),
+    ...(ipdEnabled
+      ? [{
+        label: 'IPD',
+        items: [
+          { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', perm: 'ipd_census' },
+          { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', perm: 'ipd_census' },
+          { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', perm: 'ipd_admissions' },
+          { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', perm: 'ipd_billing' },
+          { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', perm: 'ipd_billing' },
+          { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', perm: 'ipd_billing' },
+          { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', perm: 'ipd_billing' },
+          { path: '/ipd/stores', icon: Warehouse, label: 'Stores', perm: 'ipd_stores' },
+        ],
+      }]
+      : []),
     {
       label: 'Billing',
       items: [
-        { path: '/billing', icon: CreditCard, label: 'OPD Billing' },
-        { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection' },
+        { path: '/billing', icon: CreditCard, label: 'OPD Billing', perm: 'opd_billing' },
+        { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', perm: 'opd_collections' },
       ],
     },
     {
       label: 'Pharmacy',
       items: [
-        { path: '/pharmacy', icon: Pill, label: 'Pharmacy' },
-        { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload' },
+        { path: '/pharmacy', icon: Pill, label: 'Pharmacy', perm: 'pharmacy' },
+        { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', perm: 'pharmacy' },
       ],
     },
     ...(!isBasic
       ? [{
         label: 'Growth & AI',
         items: [
-          { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests' },
+          { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', perm: 'gmb_reviews' },
           ...(isAdminOrReception
             ? [{ path: '/settings/whatsapp-ai', icon: MessageCircle, label: 'WhatsApp & AI' }]
             : []),
@@ -116,11 +109,19 @@ const MobileNav: React.FC = () => {
     {
       label: 'General',
       items: [
-        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics', perm: 'analytics' },
+        // Settings is never gated — it hosts every user's own profile page.
         { path: '/settings', icon: Settings, label: 'Settings' },
       ],
     },
   ];
+
+  const navGroups = gatedGroups
+    .map(({ label, items }) => ({
+      label,
+      items: items.filter(({ perm }) => !perm || hasModuleAccess(user, perm)),
+    }))
+    .filter((group) => group.items.length > 0);
 
   const handleSignOut = async () => {
     try {

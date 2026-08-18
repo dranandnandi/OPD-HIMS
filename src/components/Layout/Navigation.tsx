@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
+import { hasReceptionAccess } from '../../utils/roleAccess';
+import { hasModuleAccess } from '../../utils/modulePermissions';
 import InstallPWA from '../PWA/InstallPWA';
 import { brand } from '../../config/branding';
 
@@ -35,6 +37,13 @@ interface NavItem {
   label: string;
   description: string;
 }
+
+/**
+ * A nav item before permission filtering. `perm` is the module the item belongs
+ * to; omit it for items that carry their own gate (e.g. WhatsApp & AI, which is
+ * admin-or-reception rather than a module).
+ */
+type GatedNavItem = NavItem & { perm?: string };
 
 interface NavGroup {
   id: string;
@@ -51,73 +60,61 @@ const Navigation: React.FC = () => {
   const clinicTier = user?.clinic?.clinicTier ?? 'silver';
   const isBasic = clinicTier === 'basic';
   const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
-  const roleName = user?.roleName?.toLowerCase();
-  const permissions = user?.permissions ?? [];
-  const isAdmin = Boolean(
-    user && (
-      roleName === 'admin' ||
-      roleName === 'super_admin' ||
-      permissions.includes('admin') ||
-      permissions.includes('all')
-    )
-  );
-  const hasIpdPermission = (perm: string) =>
-    isAdmin || permissions.includes(perm) || permissions.includes('all');
 
   // Mirrors AdminOrReceptionRoute in App.tsx, which guards /settings/whatsapp-ai.
-  const isAdminOrReception = Boolean(
-    isAdmin || roleName === 'receptionist' || roleName === 'reception'
-  );
+  const isAdminOrReception = hasReceptionAccess(user);
 
-  // IPD items are permission-filtered per user; the whole group hides when the
-  // clinic's ipd_enabled flag is off or the user holds no ipd_* permission.
-  const ipdItems: NavItem[] = ipdEnabled
-    ? ([
-      { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', description: 'Ward census & occupancy', perm: 'ipd_census' },
-      { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', description: 'Live bed status', perm: 'ipd_census' },
-      { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', description: 'Admit a patient', perm: 'ipd_admissions' },
-      { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', description: 'Deposits, interim & final bills', perm: 'ipd_billing' },
-      { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', description: 'Discharge worklist & clearance', perm: 'ipd_billing' },
-      { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', description: 'Pre-auth & claim worklist', perm: 'ipd_billing' },
-      { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', description: 'Share rules & settlements', perm: 'ipd_billing' },
-      { path: '/ipd/stores', icon: Warehouse, label: 'Stores', description: 'Ward stores & indents', perm: 'ipd_stores' },
-    ] as Array<NavItem & { perm: string }>)
-      .filter(({ perm }) => hasIpdPermission(perm))
-      .map(({ perm: _perm, ...item }) => item)
-    : [];
-
-  const groups: NavGroup[] = [
+  // Every tab is a module the role must hold — mirrors ModuleRoute in App.tsx so
+  // a hidden tab is unreachable, not merely unlisted. Roles that predate module
+  // permissions still see the whole OPD sidebar (see hasModuleAccess).
+  const gatedGroups: Array<{ id: string; label: string; items: GatedNavItem[] }> = [
     {
       id: 'front-desk',
       label: 'Front Desk',
       items: [
-        { path: '/', icon: CalendarDays, label: 'Appointments', description: 'Schedule & manage appointments' },
-        { path: '/patients', icon: Users, label: 'Patients', description: 'Manage patient records' },
+        { path: '/', icon: CalendarDays, label: 'Appointments', description: 'Schedule & manage appointments', perm: 'opd_appointments' },
+        { path: '/patients', icon: Users, label: 'Patients', description: 'Manage patient records', perm: 'opd_patients' },
       ],
     },
     {
       id: 'opd',
       label: 'OPD',
       items: [
-        { path: '/visits', icon: Activity, label: 'Visits', description: 'View all patient visits' },
-        ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups', description: 'Track patient follow-ups' }] : []),
+        { path: '/visits', icon: Activity, label: 'Visits', description: 'View all patient visits', perm: 'opd_visits' },
+        ...(!isBasic ? [{ path: '/follow-ups', icon: Calendar, label: 'Follow-ups', description: 'Track patient follow-ups', perm: 'opd_followups' }] : []),
       ],
     },
-    ...(ipdItems.length > 0 ? [{ id: 'ipd', label: 'IPD', items: ipdItems }] : []),
+    // The IPD group additionally requires the clinic's ipd_enabled platform flag.
+    ...(ipdEnabled
+      ? [{
+        id: 'ipd',
+        label: 'IPD',
+        items: [
+          { path: '/ipd/census', icon: LayoutDashboard, label: 'Census', description: 'Ward census & occupancy', perm: 'ipd_census' },
+          { path: '/ipd/bed-board', icon: BedDouble, label: 'Bed Board', description: 'Live bed status', perm: 'ipd_census' },
+          { path: '/ipd/admissions/new', icon: UserPlus, label: 'New Admission', description: 'Admit a patient', perm: 'ipd_admissions' },
+          { path: '/ipd/billing', icon: Receipt, label: 'IPD Billing', description: 'Deposits, interim & final bills', perm: 'ipd_billing' },
+          { path: '/ipd/discharges', icon: LogOut, label: 'Discharges', description: 'Discharge worklist & clearance', perm: 'ipd_billing' },
+          { path: '/ipd/tpa', icon: ShieldCheck, label: 'TPA / Insurance', description: 'Pre-auth & claim worklist', perm: 'ipd_billing' },
+          { path: '/ipd/doctor-share', icon: Percent, label: 'Doctor Share', description: 'Share rules & settlements', perm: 'ipd_billing' },
+          { path: '/ipd/stores', icon: Warehouse, label: 'Stores', description: 'Ward stores & indents', perm: 'ipd_stores' },
+        ],
+      }]
+      : []),
     {
       id: 'billing',
       label: 'Billing',
       items: [
-        { path: '/billing', icon: CreditCard, label: 'OPD Billing', description: 'Manage bills & payments' },
-        { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', description: 'Daily payment reconciliation' },
+        { path: '/billing', icon: CreditCard, label: 'OPD Billing', description: 'Manage bills & payments', perm: 'opd_billing' },
+        { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', description: 'Daily payment reconciliation', perm: 'opd_collections' },
       ],
     },
     {
       id: 'pharmacy',
       label: 'Pharmacy',
       items: [
-        { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory' },
-        { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing' },
+        { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory', perm: 'pharmacy' },
+        { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing', perm: 'pharmacy' },
       ],
     },
     ...(!isBasic
@@ -125,7 +122,7 @@ const Navigation: React.FC = () => {
         id: 'growth',
         label: 'Growth & AI',
         items: [
-          { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients' },
+          { path: '/gmb-review-requests', icon: Star, label: 'GMB Review Requests', description: 'Send review requests to patients', perm: 'gmb_reviews' },
           ...(isAdminOrReception
             ? [{ path: '/settings/whatsapp-ai', icon: MessageCircle, label: 'WhatsApp & AI', description: 'Scan QR to link WhatsApp' }]
             : []),
@@ -134,13 +131,27 @@ const Navigation: React.FC = () => {
       : []),
   ];
 
+  // Drop items the role cannot open, then drop groups left empty.
+  const groups: NavGroup[] = gatedGroups
+    .map(({ id, label, items }) => ({
+      id,
+      label,
+      items: items
+        .filter(({ perm }) => !perm || hasModuleAccess(user, perm))
+        .map(({ path, icon, label, description }) => ({ path, icon, label, description })),
+    }))
+    .filter((group) => group.items.length > 0);
+
   // Analytics & Settings stay pinned at the bottom of the list, outside groups.
   // Waiting Sequences, Doctor Availability, AI Master Data, User Management
   // and IPD Masters are reachable from the Settings page instead of crowding
   // the sidebar. WhatsApp & AI is surfaced under Growth & AI because linking
   // the WhatsApp QR is a routine task, not one-time configuration.
+  // Settings is never gated — it hosts every user's own profile page.
   const bottomItems: NavItem[] = [
-    { path: '/analytics', icon: BarChart3, label: 'Analytics', description: 'Reports & insights' },
+    ...(hasModuleAccess(user, 'analytics')
+      ? [{ path: '/analytics', icon: BarChart3, label: 'Analytics', description: 'Reports & insights' }]
+      : []),
     { path: '/settings', icon: Settings, label: 'Settings', description: 'System configuration' },
   ];
 

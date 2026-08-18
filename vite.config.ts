@@ -9,13 +9,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       injectRegister: 'auto',
-      includeAssets: ['favicon.ico', 'pwa-192x192.svg', 'pwa-512x512.svg'],
+      includeAssets: ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'pwa-192x192.svg', 'pwa-512x512.svg'],
       manifest: {
-        version: '2.0.1',
+        version: '2.1.0',
         // Brand-neutral: one build serves multiple branded domains (see src/config/branding.ts)
-        name: 'OPD Management System',
-        short_name: 'OPD Manager',
-        description: 'Complete OPD Management System for Clinics - Appointments, Billing, Pharmacy, EMR',
+        name: 'Clinic Management System',
+        short_name: 'Clinic Manager',
+        description: 'Clinic Management System for Clinics & Hospitals - Appointments, OPD, IPD, Billing, Pharmacy, EMR',
         theme_color: '#2563eb',
         background_color: '#ffffff',
         display: 'standalone',
@@ -24,20 +24,28 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.svg',
+            src: 'pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml'
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           },
           {
             src: 'pwa-512x512.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml'
-          },
-          {
-            src: 'pwa-512x512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
+            purpose: 'any'
           }
         ]
       },
@@ -45,6 +53,8 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
+        // Main bundle exceeds the 2 MiB default; raise so it still gets precached
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {

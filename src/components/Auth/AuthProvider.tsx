@@ -380,7 +380,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const hasPermission = (permission: string): boolean => {
-    if (!user?.permissions) return false;
+    if (!user) return false;
+    // Admin roles bypass. Without this a role literally named "admin" whose
+    // permissions array lacks 'all' passes AdminRoute and then fails the
+    // in-component check (user_management / master_data_management /
+    // system_settings), landing on an access-denied screen inside a page it
+    // was just allowed into.
+    const role = user.roleName?.toLowerCase();
+    if (role === 'admin' || role === 'super_admin') return true;
+    if (!user.permissions) return false;
     return user.permissions.includes(permission) || user.permissions.includes('all');
   };
 

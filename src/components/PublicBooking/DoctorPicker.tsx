@@ -1,6 +1,7 @@
 import React from 'react';
 import { Stethoscope, Check } from 'lucide-react';
 import type { PublicAppointmentType, PublicDoctor } from '../../services/publicBookingService';
+import { englishOnly, type BookingTranslator } from './i18n';
 
 interface DoctorPickerProps {
   doctors: PublicDoctor[];
@@ -8,6 +9,8 @@ interface DoctorPickerProps {
   selectedDoctorId: string;
   selectedTypeLabel: string;
   currency: string;
+  /** Bilingual label helper; defaults to English-only. */
+  t?: BookingTranslator;
   onSelectDoctor: (doctorId: string) => void;
   onSelectType: (label: string) => void;
 }
@@ -32,14 +35,15 @@ const DoctorPicker: React.FC<DoctorPickerProps> = ({
   selectedDoctorId,
   selectedTypeLabel,
   currency,
+  t = englishOnly,
   onSelectDoctor,
   onSelectType,
 }) => {
   if (doctors.length === 0) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        No doctors are currently accepting online appointments at this clinic.
-        Please call the clinic to book.
+        <p>{t.en('noDoctors')}</p>
+        {t.bilingual && <p className="mt-1">{t.regional('noDoctors')}</p>}
       </div>
     );
   }
@@ -48,7 +52,9 @@ const DoctorPicker: React.FC<DoctorPickerProps> = ({
     <div className="space-y-6">
       {appointmentTypes.length > 1 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-gray-900">Reason for visit</h2>
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">
+            {t('reasonForVisit')}
+          </h2>
           <div className="flex flex-wrap gap-2">
             {appointmentTypes.map((type) => {
               const isSelected = type.label === selectedTypeLabel;
@@ -76,7 +82,8 @@ const DoctorPicker: React.FC<DoctorPickerProps> = ({
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Choose a doctor</h2>
+        {/* Doctor names, degrees and specialisations below stay in English. */}
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">{t('chooseDoctor')}</h2>
         <div className="space-y-3">
           {doctors.map((doctor) => {
             const isSelected = doctor.id === selectedDoctorId;

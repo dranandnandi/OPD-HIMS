@@ -69,6 +69,7 @@ const ClinicSettings: React.FC = () => {
   const [whatsappTemplates, setWhatsappTemplates] = useState({
     appointment_confirmation: 'Dear {{patientName}},\n\n✅ **APPOINTMENT CONFIRMED**\n\n📅 Date & Time: {{appointmentDate}}\n👨‍⚕️ Doctor: Dr. {{doctorName}}\n🏥 Clinic: {{clinicName}}\n\n⏰ Please arrive 10 minutes early.\n\nIf you need to reschedule, please call us in advance.\n\nSee you soon! 😊',
     appointment_reminder: 'Dear {{patientName}},\n\n⏰ **APPOINTMENT REMINDER**\n\nYou have an appointment tomorrow:\n📅 {{appointmentDate}}\n👨‍⚕️ With Dr. {{doctorName}}\n🏥 At {{clinicName}}\n\nPlease confirm your attendance by replying to this message.\n\nSee you tomorrow! 👋',
+    follow_up_reminder: 'Dear {{patientName}},\n\n🩺 **FOLLOW-UP REMINDER**\n\nDr. {{doctorName}} advised a follow-up visit on {{followUpDate}}.\n\nPlease call {{clinicPhone}} to book a convenient slot.\n\n- {{clinicName}}',
     visit_prescription: 'Dear {{patientName}},\n\n💊 Your prescription from {{clinicName}} is ready!\n\nThe prescription has been attached to this message for your reference.\n\n📋 Please follow the prescribed medication as discussed during your consultation.\n\nFeel better soon! 🌟\n\n- {{clinicName}}',
     invoice_generated: 'Dear {{patientName}},\n\n🧾 **INVOICE DETAILS**\n\nBill Number: #{{billNumber}}\n💰 Total Amount: ₹{{totalAmount}}\n\nYour invoice has been attached to this message.\n\nThank you for visiting {{clinicName}}! 🙏\n\nFor any queries, feel free to contact us.\n\n- {{clinicName}}',
     thank_you: 'Dear {{patientName}},\n\n🙏 Thank you for visiting {{clinicName}} today!\n\nWe hope you feel better soon. 💚\n\n⭐ We would greatly appreciate if you could share your feedback:\n{{reviewLink}}\n\nYour review helps us serve you better!\n\nWarm regards,\n{{clinicName}} Team'
@@ -757,6 +758,21 @@ const ClinicSettings: React.FC = () => {
               rows={2}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Follow-Up Reminder
+            </label>
+            <textarea
+              value={whatsappTemplates.follow_up_reminder}
+              onChange={(e) => setWhatsappTemplates(prev => ({ ...prev, follow_up_reminder: e.target.value }))}
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Variables: {`{{patientName}}, {{doctorName}}, {{followUpDate}}, {{clinicName}}, {{clinicPhone}}`}
+            </p>
           </div>
 
           <div>

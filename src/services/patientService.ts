@@ -103,7 +103,7 @@ export const patientService = {
     try {
       const { data, error } = await supabase!
         .from('patients')
-        .select('id, patient_number, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
+        .select('id, patient_number, name, phone, age, date_of_birth, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('id', id)
         .eq('clinic_id', profile.clinicId)
         .eq('is_hidden', false)
@@ -268,7 +268,7 @@ export const patientService = {
     try {
       const { data, error } = await supabase!
         .from('patients')
-        .select('id, patient_number, name, phone, age, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
+        .select('id, patient_number, name, phone, age, date_of_birth, gender, address, emergency_contact, blood_group, allergies, referred_by, created_at, last_visit')
         .eq('clinic_id', profile.clinicId)
         .eq('is_hidden', false)
         .or(`patient_number.ilike.%${query}%,name.ilike.%${query}%,phone.ilike.%${query}%`)

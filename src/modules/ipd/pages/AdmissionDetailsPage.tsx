@@ -1607,7 +1607,7 @@ function DepositsTab({
                     <button
                       onClick={() =>
                         documentService.printDepositReceipt({
-                          deposit: d, admission, clinicName: 'MediTrust Clinics',
+                          deposit: d, admission, clinicId,
                         })
                       }
                       title="Print receipt"
@@ -1685,7 +1685,7 @@ function BillingTab({
       const bill = bills.find((b) => b.id === payBillId);
       if (bill) {
         documentService.printPaymentReceipt({
-          payment, bill, admission, clinicName: 'MediTrust Clinics',
+          payment, bill, admission, clinicId,
         });
       }
       setPayAmount('');
@@ -1801,7 +1801,7 @@ function BillingTab({
                 </button>
                 <button
                   onClick={() =>
-                    documentService.printBill({ bill: b, admission, clinicName: 'MediTrust Clinics' })
+                    documentService.printBill({ bill: b, admission, clinicId })
                   }
                   title="Quick browser print"
                   className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -1810,13 +1810,79 @@ function BillingTab({
                 </button>
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs text-slate-500">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs text-slate-500">
               <span>Gross <b className="block text-sm text-slate-800">₹{b.gross_total.toFixed(2)}</b></span>
               <span>Discount <b className="block text-sm text-slate-800">₹{b.discount_total.toFixed(2)}</b></span>
               <span>Net <b className="block text-sm text-slate-800">₹{b.net_total.toFixed(2)}</b></span>
               <span>Deposits applied <b className="block text-sm text-emerald-700">₹{b.deposits_applied.toFixed(2)}</b></span>
-              <span>Balance <b className="block text-sm text-red-600">₹{b.balance_amount.toFixed(2)}</b></span>
+              <span>Payments received <b className="block text-sm text-emerald-700">₹{b.paid_amount.toFixed(2)}</b></span>
+              <span>
+                Balance
+                <b className={`block text-sm ${b.balance_amount > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                  ₹{b.balance_amount.toFixed(2)}
+                </b>
+              </span>
             </div>
+            {b.payer_expected > 0 && (
+              <p className="mt-2 text-xs text-slate-500">
+                Payer / insurance share ₹{b.payer_expected.toFixed(2)} — patient payable ₹{b.patient_payable.toFixed(2)}
+              </p>
+            )}
+            {b.balance_amount <= 0 && b.status !== 'cancelled' && (
+              <p className="mt-1 text-xs text-emerald-700">
+                Nothing outstanding — {[
+                  b.deposits_applied > 0 ? `₹${b.deposits_applied.toFixed(2)} adjusted from deposits` : null,
+                  b.paid_amount > 0 ? `₹${b.paid_amount.toFixed(2)} received against this bill` : null,
+                ].filter(Boolean).join(' + ') || 'no patient payable on this bill'}
+              </p>
+            )}
+            {b.payments && b.payments.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs text-emerald-700 cursor-pointer">
+                  {b.payments.length} receipt(s)
+                </summary>
+                <table className="w-full text-xs mt-2">
+                  <tbody>
+                    {(() => {
+                      // running balance so a reprint shows what was owed right after that receipt
+                      let paidSoFar = 0;
+                      return b.payments!
+                        .slice()
+                        .sort((p, q) => p.received_at.localeCompare(q.received_at))
+                        .map((p) => {
+                          paidSoFar += p.record_type === 'refund' ? -p.amount : p.amount;
+                          const balanceAfter = b.patient_payable - b.deposits_applied - paidSoFar;
+                          return (
+                            <tr key={p.id} className="border-b border-slate-100">
+                              <td className="py-1">{p.receipt_number}</td>
+                              <td className="capitalize">{p.payment_method.replace('_', ' ')}</td>
+                              <td>{format(new Date(p.received_at), 'dd MMM, HH:mm')}</td>
+                              <td className={`text-right font-medium ${
+                                p.record_type === 'refund' ? 'text-red-600' : 'text-emerald-700'
+                              }`}>
+                                {p.record_type === 'refund' ? '− ' : ''}₹{p.amount.toFixed(2)}
+                              </td>
+                              <td className="text-right w-8">
+                                <button
+                                  onClick={() =>
+                                    documentService.printPaymentReceipt({
+                                      payment: p, bill: b, admission, clinicId, balanceAfter,
+                                    })
+                                  }
+                                  title="Reprint receipt"
+                                  className="p-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                    })()}
+                  </tbody>
+                </table>
+              </details>
+            )}
             {b.lines && b.lines.length > 0 && (
               <details className="mt-2">
                 <summary className="text-xs text-blue-600 cursor-pointer">{b.lines.length} line(s)</summary>

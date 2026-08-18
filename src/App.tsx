@@ -55,7 +55,6 @@ import WhatsappAndAIReviewSettings from './components/Settings/WhatsappAndAIRevi
 import WhatsAppAutoSendSettings from './components/Settings/WhatsAppAutoSendSettings';
 import WaitingSequenceSettings from './components/Settings/WaitingSequenceSettings';
 import ChatbotUtility from './components/Chatbots/ChatbotUtility';
-import { MessageQueueProcessor } from './components/WhatsApp/MessageQueueProcessor';
 
 // GMB Review Requests
 import GMBReviewRequests from './components/GMBReviewRequests/GMBReviewRequests';
@@ -68,6 +67,8 @@ import PatientUpload from './pages/PatientUpload';
 
 // Patient self-booking (public page — no auth required)
 import PublicBooking from './pages/PublicBooking';
+import { hasReceptionAccess } from './utils/roleAccess';
+import { hasModuleAccess, resolveLandingPath } from './utils/modulePermissions';
 
 // IPD module — lazy-loaded so OPD-only users never download it (CKEditor/xlsx are heavy)
 const IpdCensusPage = React.lazy(() => import('./modules/ipd/pages/CensusPage'));
@@ -157,6 +158,21 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Module Route - role-wise tab access. The user's role must be granted the
+// module, otherwise they are sent to the first module they *can* open (not to
+// "/", which is itself a gated module now). Roles that predate module
+// permissions fall through open — see hasModuleAccess.
+const ModuleRoute: React.FC<{ perm: string; children: React.ReactNode }> = ({ perm, children }) => {
+  const { user } = useAuth();
+
+  if (!hasModuleAccess(user, perm)) {
+    const landing = resolveLandingPath(user);
+    return <Navigate to={landing} replace />;
   }
 
   return <>{children}</>;
@@ -263,7 +279,7 @@ const IpdRoute: React.FC<{ perm: string; children: React.ReactNode }> = ({ perm,
   }
 
   if (!isAdmin && !hasPermission(perm)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={resolveLandingPath(user)} replace />;
   }
 
   return <>{children}</>;
@@ -284,7 +300,7 @@ const IpdHome: React.FC = () => {
     ['/ipd/masters', 'ipd_masters'],
   ];
   const target = order.find(([, perm]) => isAdmin || hasPermission(perm));
-  return <Navigate to={target ? target[0] : '/'} replace />;
+  return <Navigate to={target ? target[0] : resolveLandingPath(user)} replace />;
 };
 
 // Suspense fallback for lazy-loaded IPD pages
@@ -294,18 +310,11 @@ const IpdPageLoader: React.FC = () => (
   </div>
 );
 
-// Admin-or-Reception Route Component - Requires admin/super_admin OR receptionist role
+// Admin-or-Reception Route Component - admin/super_admin OR the `reception` permission
 const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, hasPermission } = useAuth();
+  const { user } = useAuth();
 
-  const isAllowed = user && (
-    user.roleName?.toLowerCase() === 'admin' ||
-    user.roleName?.toLowerCase() === 'super_admin' ||
-    user.roleName?.toLowerCase() === 'receptionist' ||
-    user.roleName?.toLowerCase() === 'reception' ||
-    hasPermission('admin') ||
-    hasPermission('all')
-  );
+  const isAllowed = hasReceptionAccess(user);
 
   if (!isAllowed) {
     return <Navigate to="/" replace />;
@@ -319,7 +328,6 @@ const AdminOrReceptionRoute: React.FC<{ children: React.ReactNode }> = ({ childr
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="min-h-screen bg-soft-gray">
-      <MessageQueueProcessor />
       {/* Desktop Navigation */}
       <div className="hidden lg:block">
         <Navigation />
@@ -369,7 +377,9 @@ const AppContent: React.FC = () => {
       <Route path="/" element={
         <ProtectedRoute>
           <AppLayout>
-            <AppointmentCalendar />
+            <ModuleRoute perm="opd_appointments">
+              <AppointmentCalendar />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -378,7 +388,9 @@ const AppContent: React.FC = () => {
       <Route path="/appointments" element={
         <ProtectedRoute>
           <AppLayout>
-            <AppointmentCalendar />
+            <ModuleRoute perm="opd_appointments">
+              <AppointmentCalendar />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -397,7 +409,9 @@ const AppContent: React.FC = () => {
       <Route path="/visits" element={
         <ProtectedRoute>
           <AppLayout>
-            <VisitList />
+            <ModuleRoute perm="opd_visits">
+              <VisitList />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -405,7 +419,9 @@ const AppContent: React.FC = () => {
       <Route path="/visits/:visitId" element={
         <ProtectedRoute>
           <AppLayout>
-            <VisitDetails />
+            <ModuleRoute perm="opd_visits">
+              <VisitDetails />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -414,7 +430,9 @@ const AppContent: React.FC = () => {
       <Route path="/patients" element={
         <ProtectedRoute>
           <AppLayout>
-            <PatientListWithTimeline />
+            <ModuleRoute perm="opd_patients">
+              <PatientListWithTimeline />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -423,7 +441,9 @@ const AppContent: React.FC = () => {
       <Route path="/case-upload" element={
         <ProtectedRoute>
           <AppLayout>
-            <EnhancedCaseUpload />
+            <ModuleRoute perm="opd_patients">
+              <EnhancedCaseUpload />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -432,9 +452,11 @@ const AppContent: React.FC = () => {
       <Route path="/follow-ups" element={
         <ProtectedRoute>
           <AppLayout>
-            <TierRoute>
-              <FollowUps />
-            </TierRoute>
+            <ModuleRoute perm="opd_followups">
+              <TierRoute>
+                <FollowUps />
+              </TierRoute>
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -443,9 +465,11 @@ const AppContent: React.FC = () => {
       <Route path="/gmb-review-requests" element={
         <ProtectedRoute>
           <AppLayout>
-            <TierRoute>
-              <GMBReviewRequests />
-            </TierRoute>
+            <ModuleRoute perm="gmb_reviews">
+              <TierRoute>
+                <GMBReviewRequests />
+              </TierRoute>
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -454,7 +478,9 @@ const AppContent: React.FC = () => {
       <Route path="/billing" element={
         <ProtectedRoute>
           <AppLayout>
-            <BillingDashboard />
+            <ModuleRoute perm="opd_billing">
+              <BillingDashboard />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -463,7 +489,9 @@ const AppContent: React.FC = () => {
       <Route path="/billing/reconciliation" element={
         <ProtectedRoute>
           <AppLayout>
-            <DailyReconciliation />
+            <ModuleRoute perm="opd_collections">
+              <DailyReconciliation />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -472,7 +500,9 @@ const AppContent: React.FC = () => {
       <Route path="/pharmacy" element={
         <ProtectedRoute>
           <AppLayout>
-            <PharmacyDashboard />
+            <ModuleRoute perm="pharmacy">
+              <PharmacyDashboard />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -480,7 +510,9 @@ const AppContent: React.FC = () => {
       <Route path="/pharmacy/inward" element={
         <ProtectedRoute>
           <AppLayout>
-            <InwardStock />
+            <ModuleRoute perm="pharmacy">
+              <InwardStock />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -488,7 +520,9 @@ const AppContent: React.FC = () => {
       <Route path="/pharmacy/reports" element={
         <ProtectedRoute>
           <AppLayout>
-            <StockReport />
+            <ModuleRoute perm="pharmacy">
+              <StockReport />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -496,7 +530,9 @@ const AppContent: React.FC = () => {
       <Route path="/pharmacy/suppliers" element={
         <ProtectedRoute>
           <AppLayout>
-            <SupplierManagement />
+            <ModuleRoute perm="pharmacy">
+              <SupplierManagement />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -504,7 +540,9 @@ const AppContent: React.FC = () => {
       <Route path="/pharmacy/invoice-upload" element={
         <ProtectedRoute>
           <AppLayout>
-            <InvoiceUpload />
+            <ModuleRoute perm="pharmacy">
+              <InvoiceUpload />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -514,7 +552,9 @@ const AppContent: React.FC = () => {
       <Route path="/analytics" element={
         <ProtectedRoute>
           <AppLayout>
-            <Analytics />
+            <ModuleRoute perm="analytics">
+              <Analytics />
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
@@ -631,9 +671,11 @@ const AppContent: React.FC = () => {
       <Route path="/chatbots" element={
         <ProtectedRoute>
           <AppLayout>
-            <TierRoute>
-              <ChatbotUtility />
-            </TierRoute>
+            <ModuleRoute perm="chatbots">
+              <TierRoute>
+                <ChatbotUtility />
+              </TierRoute>
+            </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>
       } />
