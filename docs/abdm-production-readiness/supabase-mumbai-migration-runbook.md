@@ -263,16 +263,25 @@ policy with the right name and the wrong predicate is worse than a missing one.
 
 ## 4d. Hardcoded project refs outside the codebase
 
-`public/_redirects` contained the project ref in a literal URL:
+The `/r/*` rule that serves every stable PDF link already sent over WhatsApp
+contains the project ref in a literal URL:
 
 ```
-/r/*  https://<project>.supabase.co/functions/v1/doc-link/:splat  302!
+/r/*  ->  https://<project>.supabase.co/functions/v1/doc-link/:splat  (302)
 ```
 
-Netlify does **not** process that file through Vite, so no environment variable
-can fix it — it must be edited by hand, and nothing type-checks or build-fails
-if you forget. That route serves every stable PDF link already sent over
-WhatsApp.
+Netlify processes neither `netlify.toml` nor `public/_redirects` through Vite,
+so no environment variable can fix it — it must be edited by hand, and nothing
+type-checks or build-fails if you forget.
+
+**Corrected 2026-08-25.** This section originally named `public/_redirects` as
+the only home for the rule. It was not: a duplicate lived in `netlify.toml`, and
+**netlify.toml redirects are applied before `_redirects`**, so that copy wins.
+The two drifted — `_redirects` was repointed to Mumbai on 2026-08-21 while
+`netlify.toml` still said Sydney — and the next git-based deploy would have sent
+every stable PDF link back to the old project with no error anywhere to explain
+it. The rule now lives **only in `netlify.toml`**; `_redirects` carries a comment
+saying so. Check that one file, not two.
 
 Also grep the source for `import.meta.env.VITE_SUPABASE_URL`. Eighteen call
 sites were hand-building edge-function URLs from the raw env var, which bypassed
