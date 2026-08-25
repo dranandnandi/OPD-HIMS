@@ -42,3 +42,9 @@ firebase-adminsdk-*.json
 .env.local
 .env.production
 .env.development
+
+# Local scratch / debug artifacts
+b_src.txt
+b_tgt.txt
+body.json
+sign.png

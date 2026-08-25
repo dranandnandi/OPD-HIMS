@@ -6,11 +6,12 @@ import { Printer, FilePlus, ReceiptText, ArrowRightLeft, LogOut, FileDown, Spark
 import { useAuth } from '../contexts/AuthContext';
 import { admissionService, MlcDetails } from '../services/admissionService';
 import { chargeService } from '../services/chargeService';
-import { billingService, BillAudit } from '../services/billingService';
+import { billingService, BillAudit, NoteAuditRun } from '../services/billingService';
 import { patientService } from '../services/patientService';
 import { printAdmissionLabels } from '../utils/labelGenerator';
-import { documentService } from '../services/documentService';
+import { documentService, documentErrorMessage } from '../services/documentService';
 import PatientDocumentsPanel from '../../../components/Patients/PatientDocumentsPanel';
+import { claimTab, openDocument } from '../../../services/documentOpener';
 import TransferBedModal from '../components/ADT/TransferBedModal';
 import DischargeModal from '../components/ADT/DischargeModal';
 import CancelAdmissionModal from '../components/ADT/CancelAdmissionModal';
@@ -44,7 +45,9 @@ type OpdVisit = Awaited<ReturnType<typeof patientService.listVisits>>[number];
 
 // chart tabs beyond overview/history are permission-gated (shared OPD RBAC)
 const TAB_PERMISSIONS: Partial<Record<Tab, string>> = {
-  plan: 'ipd_clinical',
+  // Plan of care is the doctor's, split off from ipd_clinical so nursing staff
+  // keep Nursing/Meds without seeing (or editing) the treatment plan.
+  plan: 'ipd_treatment_plan',
   orders: 'ipd_clinical',
   nursing: 'ipd_clinical',
   meds: 'ipd_clinical',
@@ -211,7 +214,7 @@ export default function AdmissionDetailsPage() {
                   </button>
                 ) : (
                   <span
-                    title="Only admins can discharge (managed in OPD User Management)"
+                    title="Only admins can discharge (managed in Settings → User Management)"
                     className="flex items-center gap-1.5 bg-slate-200 text-slate-400 rounded-lg px-3 py-2 text-sm cursor-not-allowed"
                   >
                     <LogOut className="w-4 h-4" /> Discharge
@@ -383,7 +386,10 @@ function OverviewTab({ admission }: { admission: Admission }) {
 // ---------------------------------------------------------------------------
 
 function BillAuditTab({ admission }: { admission: Admission }) {
+  const { clinicId, profile } = useAuth();
   const [audit, setAudit] = useState<BillAudit | null>(null);
+  const [noteRuns, setNoteRuns] = useState<NoteAuditRun[]>([]);
+  const [runningNotes, setRunningNotes] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -393,6 +399,7 @@ function BillAuditTab({ admission }: { admission: Admission }) {
       .then(setAudit)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    billingService.listNoteAudits(admission.id).then(setNoteRuns).catch(() => setNoteRuns([]));
   }, [admission.id]);
 
   if (loading) return <p className="text-sm text-slate-500">Auditing bill…</p>;
@@ -412,13 +419,43 @@ function BillAuditTab({ admission }: { admission: Admission }) {
     audit.ordersNotCharged.length +
     audit.consumablesNotCharged.length +
     audit.doctorWorkMissingDoctor.length +
+    (audit.pendingCount > 0 ? 1 : 0) +
     (roomShort > 0 ? 1 : 0);
+
+  const runNotes = async () => {
+    if (!clinicId) return;
+    setRunningNotes(true);
+    try {
+      const run = await billingService.runNoteAudit({ clinicId, admissionId: admission.id, runType: 'manual', userId: profile?.id });
+      setNoteRuns((old) => [run, ...old]);
+      toast.success(run.findings_count ? `${run.findings_count} possible uncharged item(s) found` : 'Daily and nursing notes matched the bill');
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setRunningNotes(false); }
+  };
+  const latestNoteRun = noteRuns.find((r) => r.status === 'completed');
 
   const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
   return (
     <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium text-slate-800">Daily & nursing-note charge check</p>
+          <p className="text-xs text-slate-500">
+            {latestNoteRun ? `Last run ${new Date(latestNoteRun.created_at).toLocaleString('en-IN')} · ${latestNoteRun.findings_count} finding(s)` : 'Not run yet · maximum 2 manual runs per admission per IST day'}
+          </p>
+        </div>
+        <button onClick={runNotes} disabled={runningNotes}
+          className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm disabled:opacity-50 flex items-center gap-1.5">
+          {runningNotes ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          {runningNotes ? 'Checking notes…' : 'Run note audit'}
+        </button>
+      </div>
+      {latestNoteRun?.findings && latestNoteRun.findings.length > 0 && (
+        <NoteAuditSection run={latestNoteRun} userId={profile?.id} onChanged={() =>
+          billingService.listNoteAudits(admission.id).then(setNoteRuns)} />
+      )}
       <div className="bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex items-center gap-2">
           {issues === 0 ? (
@@ -468,6 +505,33 @@ function BillAuditTab({ admission }: { admission: Admission }) {
       )}
     </div>
   );
+}
+
+function NoteAuditSection({ run, userId, onChanged }: { run: NoteAuditRun; userId?: string; onChanged: () => void }) {
+  const resolve = async (id: string | undefined, status: string) => {
+    if (!id) return;
+    const needsReason = ['non_chargeable','not_performed','duplicate','ignored'].includes(status);
+    const reason = needsReason ? window.prompt('Reason (required):') : null;
+    if (needsReason && !reason?.trim()) return;
+    try {
+      await billingService.resolveNoteFinding(id, status, reason, userId);
+      toast.success('Audit finding resolved'); onChanged();
+    } catch (e) { toast.error((e as Error).message); }
+  };
+  return <div className="bg-white rounded-xl border border-amber-200 p-4">
+    <p className="font-medium text-amber-800 text-sm mb-2">Possible charges documented in daily/nursing notes</p>
+    <div className="space-y-3">{(run.findings ?? []).map((f) =>
+      <div key={f.id ?? `${f.source_id}-${f.service_id}`} className="border-b border-slate-100 pb-2 last:border-0">
+        <p className="text-sm text-slate-700"><b>{f.service_name}</b> · {f.source_date} · documented {f.documented_quantity}, charged {f.charged_quantity}</p>
+        {f.source_excerpt && <p className="text-xs text-slate-500 mt-0.5">“{f.source_excerpt}”</p>}
+        {f.status === 'unresolved' ? <div className="flex flex-wrap gap-1 mt-2">
+          {([['matched','Already matched'],['package','In package'],['non_chargeable','Non-chargeable'],['not_performed','Not performed'],['duplicate','Duplicate'],['ignored','Ignore']] as const).map(([value,label]) =>
+            <button key={value} onClick={() => resolve(f.id,value)} className="text-xs border border-slate-300 rounded px-2 py-1 hover:bg-slate-50">{label}</button>)}
+        </div> : <p className="text-xs text-emerald-700 mt-1">Resolved: {String(f.status).replaceAll('_',' ')}</p>}
+      </div>)}
+    </div>
+    <p className="text-xs text-slate-400 mt-2">Add missing charges in Charges, then run the audit again. Justified classifications are retained for the same note and service.</p>
+  </div>;
 }
 
 function AuditSection({ title, rows, hint }: { title: string; rows: string[]; hint: string }) {
@@ -1133,7 +1197,7 @@ function ChargesTab({
             });
             toast.success(`Draft ${doc.doc_type.replace(/_/g, ' ')} created — open the Documents tab to complete and sign it.`, { duration: 6000 });
           } catch (e) {
-            toast.error((e as Error).message);
+            toast.error(documentErrorMessage(e));
           }
         }}
         onDiscount={async (posting) => {
@@ -1778,17 +1842,21 @@ function BillingTab({
                 )}
                 <button
                   onClick={async () => {
-                    if (b.pdf_url) { window.open(b.pdf_url, '_blank', 'noopener'); return; }
+                    const tab = claimTab();
                     setPdfBusyId(b.id);
                     try {
-                      const url = await documentService.generateBillPdf({
-                        bill: b, admission, clinicId,
+                      await openDocument(tab, {
+                        entityType: 'ipd_bill',
+                        entityId: b.id,
+                        variant: 'final',
+                        generate: () => documentService.generateBillPdf({
+                          bill: b, admission, clinicId,
+                        }),
+                        onComplete: () => onChange(),
+                        onError: (e) => toast.error((e as Error).message),
                       });
-                      window.open(url, '_blank', 'noopener');
-                      toast.success('Bill PDF generated — permanent copy saving');
-                      setTimeout(onChange, 8000);
-                    } catch (e) {
-                      toast.error((e as Error).message);
+                    } catch {
+                      // openDocument closes the claimed tab and reports fallback errors.
                     } finally {
                       setPdfBusyId(null);
                     }

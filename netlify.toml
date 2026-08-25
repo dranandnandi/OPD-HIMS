@@ -52,6 +52,36 @@
   status = 200
   force = true
 
+# Short branded path for stable PDF links: /r/<token>.pdf
+#
+# Every domain served by this site gets this rule, so a token resolves through
+# whichever branded domain it was issued on (opdapp.anprohealthtech.com,
+# docpreneur.academy, …). Which domain a clinic's links carry is chosen per
+# clinic in clinic_settings.document_link_base, not by the browser origin.
+#
+# MUST stay above the SPA catch-all below. If the catch-all matches first the
+# resolver never runs, index.html is served with a 200, and the link silently
+# opens the app instead of the document — with no error anywhere to explain it.
+#
+# 302, not a 200 proxy: the resolver's own response is a redirect, and proxying
+# a redirect is ill-defined. A proxy would also burn egress on every open.
+#
+# THIS FILE IS THE ONLY PLACE THIS RULE MAY LIVE. Netlify applies netlify.toml
+# redirects BEFORE public/_redirects, so a copy of this rule there is dead
+# config that looks live — edit it, deploy, and nothing changes, because the
+# rule below still wins. The project ref is hardcoded (netlify.toml is not
+# processed by Vite, so import.meta.env / ${VAR} do not work here), and nothing
+# type-checks or build-fails if it goes stale. If old WhatsApp links stop
+# resolving after a project migration, look here FIRST.
+#
+# 2026-08-25: repointed from nxbzrpmlnlvknmutyher (Sydney) to
+# kiezgfhonvwryxpubfvl (Mumbai), matching VITE_SUPABASE_URL.
+[[redirects]]
+  from = "/r/*"
+  to = "https://kiezgfhonvwryxpubfvl.supabase.co/functions/v1/doc-link/:splat"
+  status = 302
+  force = true
+
 # SPA fallback - only for HTML navigation.
 # Public booking URLs (/book/:slug, /opd/:slug/appointment, /:slug/appointment)
 # need no redirect rules of their own: this rule serves index.html and React

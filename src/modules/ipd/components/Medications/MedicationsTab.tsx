@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format, isToday, isPast } from 'date-fns';
 import toast from 'react-hot-toast';
-import { Pill, Plus, Square, Check, Ban, HandMetal, CalendarClock } from 'lucide-react';
+import { Pill, Plus, Square, Check, Ban, HandMetal, CalendarClock, Clock, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   medicationService, MedicineOption, FREQUENCY_OPTIONS, ROUTE_OPTIONS,
   medicineLabel, doseSuggestions, defaultRouteFor,
+  defaultTimesFor, isScheduledFrequency, normaliseTimes, formatDoseTime, orderDoseTimes,
 } from '../../services/medicationService';
 import { storeService, Store } from '../../services/storeService';
 import MedicinePicker from './MedicinePicker';
+import DoseTimesEditor from './DoseTimesEditor';
+import { notifyAlertsChanged } from '../../services/alertBus';
 import type { MedicationOrder, MedicationScheduleSlot } from '../../types/ipd';
 
 interface Props {
@@ -32,6 +35,7 @@ export default function MedicationsTab({ admissionId, readOnly }: Props) {
       .then(([o, s]) => {
         setOrders(o);
         setSchedule(s);
+        notifyAlertsChanged();
       })
       .catch((e) => toast.error(e.message));
   }, [admissionId]);
@@ -108,6 +112,19 @@ function OrdersSection({
   /** once the dose/route is typed by hand, picking a medicine stops overwriting it */
   const [doseTouched, setDoseTouched] = useState(false);
   const [routeTouched, setRouteTouched] = useState(false);
+  /** the clock times this order will actually run on — seeded from the
+      frequency, then owned by the user ("8 PM and 8 AM") */
+  const [times, setTimes] = useState<string[]>(() => defaultTimesFor('bd'));
+  const [startAt, setStartAt] = useState(() => localInputValue(new Date()));
+  const [retimingId, setRetimingId] = useState<string | null>(null);
+
+  const scheduled = isScheduledFrequency(frequency);
+
+  /** changing the frequency re-seeds the suggested times; they stay editable */
+  const pickFrequency = (code: string) => {
+    setFrequency(code);
+    if (isScheduledFrequency(code)) setTimes(defaultTimesFor(code));
+  };
 
   /** picking from the formulary fills the dose from the strength and the route
       from the dosage form — both stay editable */
@@ -130,6 +147,10 @@ function OrdersSection({
       toast.error('Pick a medicine or type a name');
       return;
     }
+    if (scheduled && normaliseTimes(times).length === 0) {
+      toast.error('Set at least one dose time');
+      return;
+    }
     setSaving(true);
     try {
       await medicationService.createOrder({
@@ -141,9 +162,15 @@ function OrdersSection({
         route,
         frequencyCode: frequency,
         days: Number(days) || 3,
+        doseTimes: scheduled ? times : undefined,
+        startAt: startAt ? new Date(startAt) : undefined,
         userId,
       });
-      toast.success('Medication ordered — schedule generated');
+      toast.success(
+        scheduled
+          ? `Ordered — doses scheduled at ${normaliseTimes(times).map(formatDoseTime).join(', ')}`
+          : 'Medication ordered'
+      );
       setSearch(''); setSelected(null); setDose('');
       setDoseTouched(false); setRouteTouched(false);
       onChange();
@@ -192,7 +219,7 @@ function OrdersSection({
               className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
               {ROUTE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <select value={frequency} onChange={(e) => setFrequency(e.target.value)}
+            <select value={frequency} onChange={(e) => pickFrequency(e.target.value)}
               className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
               {FREQUENCY_OPTIONS.map((f) => <option key={f.code} value={f.code}>{f.label}</option>)}
             </select>
@@ -206,38 +233,134 @@ function OrdersSection({
               <Plus className="w-4 h-4" /> Order
             </button>
           </div>
+
+          {/* The frequency only suggests the clock — the ward order decides it.
+              "12 hourly at 8 PM and 8 AM" is set here, not inferred. */}
+          {scheduled && (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-start gap-x-6 gap-y-2">
+              <DoseTimesEditor times={times} onChange={setTimes} />
+              <label className="text-xs text-slate-500">
+                Start from
+                <input
+                  type="datetime-local"
+                  value={startAt}
+                  onChange={(e) => setStartAt(e.target.value)}
+                  className="block mt-0.5 border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+                />
+                <span className="block text-slate-400 mt-0.5">First dose is the next listed time from here.</span>
+              </label>
+            </div>
+          )}
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
         {orders.map((o) => (
-          <div key={o.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <Pill className={`w-4 h-4 shrink-0 ${o.status === 'active' ? 'text-blue-600' : 'text-slate-300'}`} />
-            <div className="flex-1 min-w-0">
-              <p className={`font-medium ${o.status === 'active' ? 'text-slate-800' : 'text-slate-400 line-through'}`}>
-                {o.medicine_name} {o.dose ?? ''}
-              </p>
-              <p className="text-xs text-slate-400">
-                {o.route ?? ''} · {o.frequency_code.toUpperCase()} · from {format(new Date(o.start_at), 'dd MMM')}
-                {o.end_at ? ` to ${format(new Date(o.end_at), 'dd MMM')}` : ''}
-                {o.stopped_reason ? ` — stopped: ${o.stopped_reason}` : ''}
-              </p>
+          <div key={o.id}>
+            <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <Pill className={`w-4 h-4 shrink-0 ${o.status === 'active' ? 'text-blue-600' : 'text-slate-300'}`} />
+              <div className="flex-1 min-w-0">
+                <p className={`font-medium ${o.status === 'active' ? 'text-slate-800' : 'text-slate-400 line-through'}`}>
+                  {o.medicine_name} {o.dose ?? ''}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {o.route ?? ''} · {o.frequency_code.toUpperCase()}
+                  {isScheduledFrequency(o.frequency_code) &&
+                    ` at ${orderDoseTimes(o).map(formatDoseTime).join(', ')}`}
+                  {' · from '}{format(new Date(o.start_at), 'dd MMM')}
+                  {o.end_at ? ` to ${format(new Date(o.end_at), 'dd MMM')}` : ''}
+                  {o.stopped_reason ? ` — stopped: ${o.stopped_reason}` : ''}
+                </p>
+              </div>
+              <span className="text-xs uppercase text-slate-400">{o.status}</span>
+              {o.status === 'active' && !readOnly && isScheduledFrequency(o.frequency_code) && (
+                <button
+                  onClick={() => setRetimingId(retimingId === o.id ? null : o.id)}
+                  title="Change dose times"
+                  className="p-1.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100"
+                >
+                  {retimingId === o.id ? <X className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                </button>
+              )}
+              {o.status === 'active' && !readOnly && (
+                <button
+                  onClick={() => stop(o.id)}
+                  title="Stop order"
+                  className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+              )}
             </div>
-            <span className="text-xs uppercase text-slate-400">{o.status}</span>
-            {o.status === 'active' && !readOnly && (
-              <button
-                onClick={() => stop(o.id)}
-                title="Stop order"
-                className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
-              >
-                <Square className="w-4 h-4" />
-              </button>
+            {retimingId === o.id && !readOnly && (
+              <RetimeRow
+                clinicId={clinicId}
+                order={o}
+                onClose={() => setRetimingId(null)}
+                onSaved={() => { setRetimingId(null); onChange(); }}
+              />
             )}
           </div>
         ))}
         {orders.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-slate-400">No medication orders yet</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** <input type="datetime-local"> wants local wall-clock, not an ISO string. */
+function localInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Re-time a running order.
+ *
+ * Ward reality: an 8 AM / 8 PM antibiotic gets shifted to fit the round, or a
+ * course started at the wrong hour. Doses already signed for stay exactly as
+ * charted; only the slots still ahead are rebuilt on the new times.
+ */
+function RetimeRow({
+  clinicId, order, onClose, onSaved,
+}: {
+  clinicId: string; order: MedicationOrder; onClose: () => void; onSaved: () => void;
+}) {
+  const [times, setTimes] = useState<string[]>(() => orderDoseTimes(order));
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (normaliseTimes(times).length === 0) {
+      toast.error('Set at least one dose time');
+      return;
+    }
+    setSaving(true);
+    try {
+      await medicationService.retimeOrder({ clinicId, order, doseTimes: times });
+      toast.success('Dose times updated — upcoming doses rescheduled');
+      onSaved();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 border-t border-slate-200 px-4 py-3">
+      <DoseTimesEditor times={times} onChange={setTimes} />
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg"
+        >
+          {saving ? 'Rescheduling…' : 'Save times'}
+        </button>
+        <button onClick={onClose} className="text-sm text-slate-500 px-2 py-1.5">Cancel</button>
+        <span className="text-xs text-slate-400">Doses already signed for are not touched.</span>
       </div>
     </div>
   );

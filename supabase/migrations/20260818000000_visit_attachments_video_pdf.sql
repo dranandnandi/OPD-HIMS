@@ -25,6 +25,7 @@ SET
         allowed_mime_types || ARRAY[
           'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
           'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp',
+          'audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav',
           'application/pdf'
         ]
       )

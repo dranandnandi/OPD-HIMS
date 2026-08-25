@@ -76,6 +76,56 @@ export const treatmentPlanService = {
     return data as TreatmentPlan;
   },
 
+  /**
+   * A second dictation on the same round is an addendum, not a rival entry —
+   * merge what was just said into the entry already documented so the day keeps
+   * one note, and everything raised from either dictation hangs off it.
+   */
+  async appendDictation(params: {
+    planId: string;
+    input: TreatmentPlanInput;
+    transcript?: string | null;
+  }): Promise<TreatmentPlan> {
+    const { input, transcript } = params;
+    if (!hasContent(input) && !transcript?.trim()) throw new Error('Nothing new to add to this entry');
+
+    const { data: current, error: readError } = await supabase
+      .from('ipd_treatment_plans')
+      .select('*')
+      .eq('id', params.planId)
+      .single();
+    if (readError) throw readError;
+    const cur = current as TreatmentPlan;
+
+    // Additions are time-stamped so the round and its addendum stay tellable
+    // apart when the entry is read back days later.
+    const stamp = new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const merge = (existing: string | null, addition?: string | null) => {
+      const add = addition?.trim();
+      if (!add) return existing;
+      return existing?.trim() ? `${existing.trim()}\n[${stamp}] ${add}` : add;
+    };
+
+    const { data, error } = await supabase
+      .from('ipd_treatment_plans')
+      .update({
+        subjective: merge(cur.subjective, input.subjective),
+        objective: merge(cur.objective, input.objective),
+        assessment: merge(cur.assessment, input.assessment),
+        plan: merge(cur.plan, input.plan),
+        advice: merge(cur.advice, input.advice),
+        voice_transcript: merge(cur.voice_transcript, transcript),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', params.planId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as TreatmentPlan;
+  },
+
   async update(planId: string, input: TreatmentPlanInput): Promise<void> {
     const { error } = await supabase
       .from('ipd_treatment_plans')

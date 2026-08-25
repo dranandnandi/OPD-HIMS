@@ -1,2 +1,5 @@
 [functions.verify-prescription]
 verify_jwt = false
+
+[functions.doc-link]
+verify_jwt = false

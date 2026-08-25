@@ -145,7 +145,7 @@ const InstallPWA: React.FC<InstallPWAProps> = ({ variant = 'button', className =
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end justify-center" onClick={() => setShowIOSInstructions(false)}>
           <div className="bg-white rounded-t-2xl w-full max-w-md p-6 animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Install OPD Manager</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Install Clinic Suite</h3>
               <button onClick={() => setShowIOSInstructions(false)} className="p-1 text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
@@ -230,7 +230,7 @@ const InstallPWA: React.FC<InstallPWAProps> = ({ variant = 'button', className =
             <Smartphone className="w-6 h-6 text-blue-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-800">Install OPD Manager</h3>
+            <h3 className="font-semibold text-gray-800">Install Clinic Suite</h3>
             <p className="text-sm text-gray-600">Add to home screen for quick access</p>
           </div>
           <div className="flex items-center gap-2">

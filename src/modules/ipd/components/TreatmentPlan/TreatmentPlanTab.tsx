@@ -3,7 +3,7 @@ import { format, differenceInCalendarDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import {
   Stethoscope, Plus, FlaskConical, Pill, Users, CopyPlus, ChevronDown, ChevronRight,
-  CalendarDays, Trash2, X, Printer, Truck, Check, Ban, Loader2,
+  CalendarDays, Trash2, X, Printer, Truck, Check, Ban, Loader2, Mic,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { treatmentPlanService, TreatmentPlanInput } from '../../services/treatmentPlanService';
@@ -56,6 +56,11 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [action, setAction] = useState<{ planId: string; kind: 'tests' | 'medicine' | 'consult' } | null>(null);
+  const [dictationOpen, setDictationOpen] = useState(false);
+  /** entry a dictation is filed into — null means it opens a new one */
+  const [dictateInto, setDictateInto] = useState<string | null>(null);
+  /** false until the user picks a target themselves, so the default can follow the chart */
+  const [targetChosen, setTargetChosen] = useState(false);
 
   const reload = useCallback(() => {
     Promise.all([
@@ -84,7 +89,27 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
     return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
   }, [plans]);
 
-  const hasToday = plans.some((p) => p.plan_date === new Date().toISOString().slice(0, 10));
+  const todayPlans = useMemo(
+    () => plans.filter((p) => p.plan_date === new Date().toISOString().slice(0, 10)),
+    [plans]
+  );
+  const hasToday = todayPlans.length > 0;
+
+  /**
+   * Dictating again on the same round should extend the entry already written
+   * rather than open a rival one, so today's latest entry is the default target
+   * until the doctor picks otherwise.
+   */
+  useEffect(() => {
+    if (targetChosen) return;
+    setDictateInto(todayPlans[0]?.id ?? null);
+  }, [todayPlans, targetChosen]);
+
+  const dictateOn = (planId: string | null) => {
+    setDictateInto(planId);
+    setTargetChosen(true);
+    setDictationOpen(true);
+  };
 
   const startNew = (copyLast = false) => {
     const last = plans[0];
@@ -193,7 +218,19 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
               <CopyPlus className="w-4 h-4" /> Continue previous plan
             </button>
           )}
-          <VoiceDictation admission={admission} onApplied={reload} />
+          {/* full width once expanded so the review panel is not squeezed
+              between the buttons on either side of it */}
+          <div className={dictationOpen ? 'w-full order-last' : ''}>
+            <VoiceDictation
+              admission={admission}
+              todayPlans={todayPlans}
+              open={dictationOpen}
+              onOpenChange={setDictationOpen}
+              targetPlanId={dictateInto}
+              onTargetPlanIdChange={(id) => { setDictateInto(id); setTargetChosen(true); }}
+              onApplied={() => { setTargetChosen(false); reload(); }}
+            />
+          </div>
           {!hasToday && (
             <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
               No plan documented for today yet
@@ -294,6 +331,8 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
                   onDone={() => { setAction(null); reload(); }}
                   onEdit={() => startEdit(p)}
                   onDelete={() => remove(p)}
+                  onDictate={() => dictateOn(p.id)}
+                  dictating={dictationOpen && dictateInto === p.id}
                 />
               ))}
             </div>
@@ -324,7 +363,7 @@ export default function TreatmentPlanTab({ admission, readOnly }: Props) {
 
 function PlanEntryCard({
   plan, admission, readOnly, orderItems, allOrderItems, medOrders, consultations,
-  activeAction, onAction, onDone, onEdit, onDelete,
+  activeAction, onAction, onDone, onEdit, onDelete, onDictate, dictating,
 }: {
   plan: TreatmentPlan;
   admission: Admission;
@@ -339,6 +378,9 @@ function PlanEntryCard({
   onDone: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** point the dictation panel at this entry so what is said is added to it */
+  onDictate: () => void;
+  dictating: boolean;
 }) {
   const { clinicId, profile } = useAuth();
   const [open, setOpen] = useState(true);
@@ -376,7 +418,7 @@ function PlanEntryCard({
         <>
           <div className="mt-2 space-y-1 text-sm">
             {rows.filter(([, v]) => v && v.trim()).map(([label, v]) => (
-              <p key={label} className="text-slate-700">
+              <p key={label} className="text-slate-700 whitespace-pre-wrap">
                 <span className={`text-slate-400 ${label === 'Plan' ? 'font-medium text-slate-500' : ''}`}>
                   {label}:
                 </span>{' '}
@@ -384,6 +426,17 @@ function PlanEntryCard({
               </p>
             ))}
           </div>
+
+          {/* What was actually said — kept with the entry so a dictated round
+              can be checked against the fields it filled */}
+          {plan.voice_transcript && (
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer text-violet-600">Dictation transcript</summary>
+              <p className="mt-1 p-2 bg-violet-50 border border-violet-100 rounded text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                {plan.voice_transcript}
+              </p>
+            </details>
+          )}
 
           {/* What this entry raised */}
           {(orderItems.length > 0 || medOrders.length > 0 || consultations.length > 0) && (
@@ -416,6 +469,11 @@ function PlanEntryCard({
               <ActionButton active={activeAction === 'consult'} onClick={() => onAction('consult')} icon={Users}>
                 Cross consultation
               </ActionButton>
+              {plan.plan_date === new Date().toISOString().slice(0, 10) && (
+                <ActionButton active={dictating} onClick={onDictate} icon={Mic}>
+                  Add by dictation
+                </ActionButton>
+              )}
             </div>
           )}
 

@@ -26,7 +26,7 @@ SET permissions = ARRAY(SELECT DISTINCT unnest(
     'modules_assigned',
     'opd_appointments','opd_patients','opd_visits','opd_followups',
     'opd_billing','opd_collections','pharmacy','gmb_reviews','chatbots','analytics',
-    'ipd_census','ipd_admissions','ipd_clinical','ipd_charges','ipd_billing',
+    'ipd_census','ipd_admissions','ipd_clinical','ipd_treatment_plan','ipd_charges','ipd_billing',
     'ipd_collections','ipd_documents','ipd_stores','ipd_masters'
   ]))
 WHERE lower(name) IN ('admin', 'super_admin');
@@ -63,6 +63,26 @@ SET permissions = ARRAY(SELECT DISTINCT unnest(
 WHERE lower(name) IN ('nurse', 'nursing', 'staff_nurse');
 
 -- ---------------------------------------------------------------------------
+-- 3b. Combined nurse + front desk roles.
+--     A profile holds exactly one role_id, so staff who do both jobs are given
+--     one merged role (see the template in 20260818100000_reception_permission).
+--     Real clinics name these freely — "Nurse Receptionist", "nurse_reception",
+--     "Nurse cum Receptionist" — so match on shape rather than an exact list,
+--     otherwise precisely the staff this change is meant to fix get skipped.
+--     Grants the union of the nurse and receptionist sets.
+-- ---------------------------------------------------------------------------
+UPDATE roles
+SET permissions = ARRAY(SELECT DISTINCT unnest(
+  COALESCE(permissions, '{}') || ARRAY[
+    'modules_assigned',
+    'opd_appointments','opd_patients','opd_visits','opd_followups',
+    'opd_billing','opd_collections','gmb_reviews',
+    'ipd_census','ipd_admissions','ipd_clinical','ipd_documents'
+  ]))
+WHERE lower(name) ~ '(nurse|nursing)'
+  AND lower(name) ~ '(recept|front.?(desk|office))';
+
+-- ---------------------------------------------------------------------------
 -- 4. Doctor — clinical + their own analytics. No pharmacy stock, no
 --    reconciliation. 'doctor' still drives behaviour by role name elsewhere
 --    (consultation fees, doctor pickers), so keep it a standalone role.
@@ -72,7 +92,7 @@ SET permissions = ARRAY(SELECT DISTINCT unnest(
   COALESCE(permissions, '{}') || ARRAY[
     'modules_assigned',
     'opd_appointments','opd_patients','opd_visits','opd_followups','analytics',
-    'ipd_census','ipd_admissions','ipd_clinical','ipd_charges','ipd_documents'
+    'ipd_census','ipd_admissions','ipd_clinical','ipd_treatment_plan','ipd_charges','ipd_documents'
   ]))
 WHERE lower(name) IN ('doctor', 'consultant');
 

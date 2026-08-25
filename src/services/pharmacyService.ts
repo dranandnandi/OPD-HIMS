@@ -10,8 +10,9 @@ import {
   StockAlert
 } from '../types';
 import { getCurrentProfile } from './profileService';
-import type { 
-  DatabaseSupplier, 
+import { supabaseUrl } from '../lib/supabaseClient';
+import type {
+  DatabaseSupplier,
   DatabasePharmacyInwardReceipt, 
   DatabasePharmacyInwardItem, 
   DatabasePharmacyDispensedItem, 
@@ -740,7 +741,7 @@ export const pharmacyService = {
       if (sessionError || !session) throw new Error('Not authenticated');
       const token = session.access_token;
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/predict-stock-alerts`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/predict-stock-alerts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

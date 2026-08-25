@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabase';
 import type { Deposit, IpdBill, IpdPayment } from '../types/ipd';
+import { chargeService } from './chargeService';
 
 export interface BillingOverviewRow {
   admissionId: string;
@@ -27,7 +28,103 @@ export interface BillAudit {
   roomRentPostings: number;
 }
 
+export interface NoteAuditFinding {
+  id?: string;
+  source_table: 'ipd_treatment_plans' | 'ipd_nursing_notes';
+  source_id: string;
+  source_date: string;
+  source_excerpt: string;
+  service_id: string;
+  service_name: string;
+  documented_quantity: number;
+  charged_quantity: number;
+  status?: string;
+}
+
+export interface NoteAuditRun {
+  id: string; run_type: 'manual' | 'discharge'; status: string;
+  findings_count: number; created_at: string; completed_at: string | null;
+  findings?: NoteAuditFinding[];
+}
+
 export const billingService = {
+  /** User-driven (max twice/day, DB enforced) or mandatory discharge note audit. */
+  async runNoteAudit(params: {
+    clinicId: string; admissionId: string; runType: 'manual' | 'discharge'; userId?: string;
+  }): Promise<NoteAuditRun> {
+    const { data: runId, error: beginError } = await supabase.rpc('begin_ipd_billing_audit', {
+      p_admission_id: params.admissionId, p_run_type: params.runType, p_created_by: params.userId ?? null,
+    });
+    if (beginError) throw beginError;
+    try {
+      const [{ data: plans, error: planErr }, { data: notes, error: noteErr }, { data: postings, error: postingErr }] = await Promise.all([
+        supabase.from('ipd_treatment_plans')
+          .select('id,plan_date,subjective,objective,assessment,plan,advice,voice_transcript')
+          .eq('admission_id', params.admissionId).eq('status', 'active'),
+        supabase.from('ipd_nursing_notes').select('id,note,created_at,note_type')
+          .eq('admission_id', params.admissionId),
+        supabase.from('charge_postings').select('service_id,service_date,quantity,status')
+          .eq('admission_id', params.admissionId).neq('status', 'cancelled'),
+      ]);
+      if (planErr) throw planErr; if (noteErr) throw noteErr; if (postingErr) throw postingErr;
+
+      const sources = [
+        ...(plans ?? []).map((p: any) => ({
+          source_table: 'ipd_treatment_plans' as const, source_id: p.id, source_date: p.plan_date,
+          // The transcript and structured fields describe the same round. Prefer the
+          // transcript to avoid counting one dictated activity twice.
+          text: p.voice_transcript || [p.subjective,p.objective,p.assessment,p.plan,p.advice].filter(Boolean).join('\n'),
+          note_type: 'doctor_daily_note',
+        })),
+        ...(notes ?? []).map((n: any) => ({
+          source_table: 'ipd_nursing_notes' as const, source_id: n.id,
+          source_date: String(n.created_at).slice(0,10), text: n.note,
+          note_type: n.note_type,
+        })),
+      ].filter((s) => s.text?.trim());
+
+      const findings: NoteAuditFinding[] = [];
+      for (const source of sources) {
+        const captured = await chargeService.auditClinicalNote(params.clinicId, source.text, source.note_type);
+        for (const match of captured.matches) {
+          const charged = (postings ?? [])
+            .filter((p: any) => p.service_id === match.service.id && p.service_date === source.source_date)
+            .reduce((sum: number, p: any) => sum + Number(p.quantity), 0);
+          if (charged < match.quantity) findings.push({
+            source_table: source.source_table, source_id: source.source_id, source_date: source.source_date,
+            source_excerpt: (match.phrase || source.text).slice(0, 300), service_id: match.service.id,
+            service_name: match.service.name, documented_quantity: match.quantity, charged_quantity: charged,
+          });
+        }
+      }
+      const { error: completeError } = await supabase.rpc('complete_ipd_billing_audit', {
+        p_run_id: runId, p_findings: findings,
+      });
+      if (completeError) throw completeError;
+      const { data: saved, error: savedError } = await supabase.from('ipd_billing_audit_runs')
+        .select('*, findings:ipd_billing_audit_findings(*)').eq('id', runId).single();
+      if (savedError) throw savedError;
+      return saved as unknown as NoteAuditRun;
+    } catch (e) {
+      await supabase.rpc('fail_ipd_billing_audit', { p_run_id: runId, p_error: (e as Error).message });
+      throw e;
+    }
+  },
+
+  async listNoteAudits(admissionId: string): Promise<NoteAuditRun[]> {
+    const { data, error } = await supabase.from('ipd_billing_audit_runs')
+      .select('*, findings:ipd_billing_audit_findings(*)').eq('admission_id', admissionId)
+      .order('created_at', { ascending: false }).limit(10);
+    if (error) throw error;
+    return data as unknown as NoteAuditRun[];
+  },
+
+  async resolveNoteFinding(findingId: string, status: string, reason: string | null, userId?: string): Promise<void> {
+    const { error } = await supabase.rpc('resolve_ipd_billing_audit_finding', {
+      p_finding_id: findingId, p_status: status, p_reason: reason, p_user_id: userId ?? null,
+    });
+    if (error) throw error;
+  },
   /**
    * Pre-final-bill audit for one admission — reconciles the chart against the
    * running bill to catch revenue leakage before discharge:
@@ -59,9 +156,10 @@ export const billingService = {
         .eq('status', 'pending'),
       supabase
         .from('charge_postings')
-        .select('id', { count: 'exact', head: true })
+        .select('service_date, service:services_master!inner(service_type)')
         .eq('admission_id', admissionId)
         .eq('source', 'room_rent_job')
+        .eq('service.service_type', 'bed')
         .neq('status', 'cancelled'),
     ]);
     if (ordersRes.error) throw ordersRes.error;
@@ -87,7 +185,7 @@ export const billingService = {
         .map((p) => ({ id: p.id, serviceName: p.service?.name ?? 'Service', amount: Number(p.net_amount) })),
       pendingCount: postings.length,
       pendingAmount: postings.reduce((s, p) => s + Number(p.net_amount), 0),
-      roomRentPostings: roomRes.count ?? 0,
+      roomRentPostings: new Set((roomRes.data ?? []).map((r: any) => r.service_date)).size,
     };
   },
 

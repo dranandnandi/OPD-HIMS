@@ -1,216 +1,125 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.111.0";
+// ABHA creation, step 2 — verify the Aadhaar OTP and enrol.
+// Spec section 3, Step 3. POST {abhaBase}/v3/enrollment/enrol/byAadhaar
+//
+// G-02 lived here: the previous version returned `_raw: abdmData` to the
+// browser, handing the patient's ABHA X-token, full KYC profile and base64
+// photo to the client — where the modal then console.log'd the lot. The X-token
+// is a bearer credential for that patient's ABHA profile; it now stays on the
+// server and only a normalised profile crosses the wire.
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
-
-function jsonResponse(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}
-
-function parseJsonSafely(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-async function getAccessToken(clientId: string, clientSecret: string): Promise<string> {
-  const res = await fetch('https://dev.abdm.gov.in/api/hiecm/gateway/v3/sessions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'REQUEST-ID': crypto.randomUUID(),
-      'TIMESTAMP': new Date().toISOString(),
-      'X-CM-ID': 'sbx'
-    },
-    body: JSON.stringify({ clientId, clientSecret, grantType: 'client_credentials' })
-  });
-  if (!res.ok) throw new Error(`Session failed (${res.status}): ${await res.text()}`);
-  const body = await res.json();
-  const token = body.accessToken || body.token || body.access_token;
-  if (!token) throw new Error(`No token in response: ${JSON.stringify(body)}`);
-  return token;
-}
-
-
-async function getPublicKeyPem(accessToken: string, xCmId: string): Promise<string> {
-  const res = await fetch('https://abhasbx.abdm.gov.in/abha/api/v3/profile/public/certificate', {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'REQUEST-ID': crypto.randomUUID(),
-      'TIMESTAMP': new Date().toISOString(),
-      'X-CM-ID': xCmId
-    }
-  });
-  if (!res.ok) throw new Error(`Public key failed (${res.status}): ${await res.text()}`);
-  const data = await res.json();
-  const pem: string = data.publicKey || data.certificate || data.PublicKey || data.Certificate;
-  if (!pem) throw new Error(`Public key not found in response: ${JSON.stringify(data)}`);
-  return pem;
-}
-
-async function rsaEncrypt(plaintext: string, pem: string, hash: 'SHA-1' | 'SHA-256'): Promise<string> {
-  const b64 = pem
-    .replace(/-----BEGIN PUBLIC KEY-----/g, '')
-    .replace(/-----END PUBLIC KEY-----/g, '')
-    .replace(/-----BEGIN CERTIFICATE-----/g, '')
-    .replace(/-----END CERTIFICATE-----/g, '')
-    .replace(/\s+/g, '');
-  const binaryDer = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    'spki', binaryDer.buffer, { name: 'RSA-OAEP', hash }, false, ['encrypt']
-  );
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'RSA-OAEP' }, cryptoKey, new TextEncoder().encode(plaintext)
-  );
-  return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
-}
-
-function formatAbdmTimestamp(date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return [
-    date.getUTCFullYear(),
-    pad(date.getUTCMonth() + 1),
-    pad(date.getUTCDate())
-  ].join('-') + ' ' + [
-    pad(date.getUTCHours()),
-    pad(date.getUTCMinutes()),
-    pad(date.getUTCSeconds())
-  ].join(':');
-}
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { getAbdmConfig, abdmHeaders } from '../_shared/abdmConfig.ts';
+import { abdmEncrypt, abdmBodyTimestamp, normaliseMobile } from '../_shared/abdmCrypto.ts';
+import { getAbdmCredentials, AbdmUpstreamError } from '../_shared/abdmSession.ts';
+import { authenticateCaller, assertPatientInCallerClinic } from '../_shared/abdmAuthz.ts';
+import { jsonResponse, preflight, errorResponse, writeAudit, auditReason } from '../_shared/abdmHttp.ts';
+import { normaliseAbhaProfile, fetchAbhaProfile } from '../_shared/abhaProfile.ts';
+import { createFlowSession } from '../_shared/abdmFlowSession.ts';
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return preflight(req);
+
+  const requestId = crypto.randomUUID();
+  let caller;
+  let patientId: string | null = null;
 
   try {
-    const { txnId, otp, patientId, clinicId, mobile } = await req.json();
+    caller = await authenticateCaller(req);
 
-    if (!txnId || !otp) {
-      return jsonResponse({ error: 'txnId and otp are required' }, 400);
+    const body = await req.json();
+    const txnId: string = String(body?.txnId ?? '');
+    const otp: string = String(body?.otp ?? '');
+    patientId = body?.patientId ? String(body.patientId) : null;
+    const mobile = normaliseMobile(body?.mobile);
+
+    if (!txnId || !/^\d{4,8}$/.test(otp)) {
+      return jsonResponse(req, { error: 'A transaction id and OTP are required', requestId }, 400);
     }
 
-    const X_CM_ID = Deno.env.get('ABDM_X_CM_ID') || 'sbx';
-    const CLIENT_ID = Deno.env.get('ABDM_CLIENT_ID');
-    const CLIENT_SECRET = Deno.env.get('ABDM_CLIENT_SECRET');
+    if (patientId) await assertPatientInCallerClinic(caller, patientId);
 
-    if (!CLIENT_ID || !CLIENT_SECRET) {
-      return jsonResponse({ error: 'ABDM credentials not configured' }, 500);
-    }
+    const cfg = getAbdmConfig();
+    const { accessToken, certificate } = await getAbdmCredentials(caller.admin, cfg);
 
-    const accessToken = await getAccessToken(CLIENT_ID, CLIENT_SECRET);
-
-    const publicKeyPem = await getPublicKeyPem(accessToken, X_CM_ID);
-
-    // ABDM spec: RSA/ECB/OAEPWithSHA-1AndMGF1Padding — encrypt raw OTP string, no pre-hashing
-    const normalizedMobile = typeof mobile === 'string' ? mobile.trim() : '';
-    const encryptedOtp = await rsaEncrypt(otp, publicKeyPem, 'SHA-1');
-
-    const requestId = crypto.randomUUID();
-    const timestamp = new Date().toISOString();
-    const currentTimestamp = formatAbdmTimestamp();
+    // Spec: RSA/ECB/OAEPWithSHA-1AndMGF1Padding over the raw OTP — no pre-hashing.
+    const encryptedOtp = await abdmEncrypt(otp, certificate);
 
     const otpPayload: Record<string, string> = {
-      timeStamp: currentTimestamp,
+      timeStamp: abdmBodyTimestamp(),
       txnId,
-      otpValue: encryptedOtp
+      otpValue: encryptedOtp,
     };
+    if (mobile) otpPayload.mobile = mobile;
 
-    if (normalizedMobile) {
-      otpPayload.mobile = normalizedMobile;
-    }
-
-    const requestBody = {
-      authData: {
-        authMethods: ['otp'],
-        otp: otpPayload
-      },
-      consent: {
-        code: 'abha-enrollment',
-        version: '1.4'
-      }
-    };
-    const abdmRes = await fetch('https://abhasbx.abdm.gov.in/abha/api/v3/enrollment/enrol/byAadhaar', {
+    const res = await fetch(`${cfg.abhaBase}/v3/enrollment/enrol/byAadhaar`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'REQUEST-ID': requestId,
-        'TIMESTAMP': timestamp,
-        'X-CM-ID': X_CM_ID
-      },
-      body: JSON.stringify(requestBody)
+      headers: abdmHeaders(cfg, accessToken, requestId),
+      body: JSON.stringify({
+        authData: { authMethods: ['otp'], otp: otpPayload },
+        consent: { code: 'abha-enrollment', version: '1.4' },
+      }),
     });
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    if (!abdmRes.ok) {
-      const errText = await abdmRes.text();
-      const errDetail = parseJsonSafely(errText);
-      console.error('[abdm-verify-otp] ABDM error:', abdmRes.status, errText);
-      await supabase.from('abdm_audit_log').insert({
-        patient_id: patientId || null,
-        clinic_id: clinicId || null,
-        action: 'otp_verify',
-        request_id: requestId,
-        status: 'failure',
-        error_message: errText
-      }).then(() => {}).catch(() => {});
-      return jsonResponse({
-        error: 'OTP verification failed',
-        detail: errDetail,
-        abdmStatus: abdmRes.status,
-        requestMeta: {
-          endpoint: '/v3/enrollment/enrol/byAadhaar',
-          authMethods: requestBody.authData.authMethods,
-          consent: requestBody.consent,
-          mobileIncluded: Boolean(normalizedMobile),
-          otpMode: 'raw-rsa-oaep'
-        }
-      }, abdmRes.status);
+    if (!res.ok) {
+      throw new AbdmUpstreamError('OTP verification rejected', res.status, await res.text());
     }
 
-    const abdmData = await abdmRes.json();
+    const data = await res.json();
 
-    await supabase.from('abdm_audit_log').insert({
-      patient_id: patientId || null,
-      clinic_id: clinicId || null,
-      action: 'otp_verify',
-      request_id: requestId,
-      status: 'success'
-    }).then(() => {}).catch(() => {});
+    // ABDM has used several names for the user token across environments.
+    const xToken: string | null =
+      data.tokens?.token ?? data.token ?? data.xToken ?? data['X-token'] ??
+      data.jwtResponse?.token ?? null;
 
-    // X-token (user JWT) needed for profile fetch — capture all possible field names
-    const xToken =
-      abdmData.tokens?.token ||
-      abdmData.token ||
-      abdmData.xToken ||
-      abdmData['X-token'] ||
-      abdmData.jwtResponse?.token ||
-      null;
+    const succeeded =
+      data.authResult === 'success' || Boolean(xToken) || Boolean(data.ABHAProfile);
+    if (!succeeded) {
+      throw new AbdmUpstreamError('OTP verification did not succeed', 400, JSON.stringify(data));
+    }
 
-    return jsonResponse({
-      txnId: abdmData.txnId,
-      authResult: abdmData.authResult,
-      message: abdmData.message,
+    // Prefer the profile ABDM already returned; only spend a second round-trip
+    // when the enrol response did not carry one.
+    let profile = normaliseAbhaProfile(data.ABHAProfile ?? data);
+    if (!profile.abhaNumber && xToken) {
+      profile = await fetchAbhaProfile(cfg, accessToken, xToken, requestId);
+    }
+    if (!profile.abhaNumber) {
+      throw new AbdmUpstreamError('ABDM returned no ABHA number', 502, '<profile absent>');
+    }
+
+    await writeAudit(caller, { action: 'otp_verify', requestId, status: 'success', patientId });
+
+    // The enrolment does not end here. Two steps still chain off this txnId:
+    // mobile verification (3.4) when the Aadhaar-linked number is not the one
+    // the clinic has, and ABHA address creation (3.6) — without which the new
+    // account has no handle for M2/M3 linking. Both are identified upstream by
+    // the txnId, so it is held server-side and the client gets a handle.
+    const sessionId = await createFlowSession(caller, 'enrolment', {
+      txnId: data.txnId ?? txnId,
+      tToken: null,
       xToken,
-      // Return full data so frontend can log and we can see all fields
-      _raw: abdmData
+      patientId,
+    });
+
+    // No `_raw`, no X-token. The client gets what it needs to render the
+    // consent screen and nothing that could be replayed against ABDM.
+    return jsonResponse(req, {
+      sessionId,
+      profile,
+      // Drives the follow-up steps in the UI rather than making it guess.
+      needsAbhaAddress: !profile.abhaAddress,
+      requestId,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[abdm-verify-otp] Error:', msg);
-    return jsonResponse({ error: msg }, 500);
+    if (caller) {
+      await writeAudit(caller, {
+        action: 'otp_verify',
+        requestId,
+        status: 'failure',
+        patientId,
+        errorMessage: auditReason(err),
+      });
+    }
+    return errorResponse(req, err, requestId);
   }
 });

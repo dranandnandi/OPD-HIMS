@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { whatsappApi } from './whatsappApi';
 import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
 import { resolveWhatsAppUserId } from './clinicSettingsService';
+import { documentLinkService } from './documentLinkService';
 import type { WhatsAppEventType, WhatsAppMessageQueue } from '../types/whatsapp';
 import type { Appointment, Bill, Patient, Review } from '../types';
 
@@ -386,11 +387,22 @@ export class WhatsAppAutoSendService {
     // Fallback message if no template found (though getTemplate handles default)
     const baseMessage = template || this.defaultTemplates['visit_prescription'];
 
+    // Prefer the stable share link over the raw URL.
+    //
+    // This message is *queued*, and process-whatsapp-queue drains it on a 5
+    // minute cron with a further 5-10 minute anti-ban gap per clinic. Whatever
+    // URL is baked into the text here is frozen until then — so if generation
+    // fell back to a PDF.co URL (signed for 3600s), the patient can receive a
+    // link that is already dead. The token resolves at open time instead, and
+    // keeps working across regenerations.
+    const shareUrl = await documentLinkService.ensureShareUrl('visit', visitId, 'display');
+    const linkUrl = shareUrl?.url ?? pdfUrl;
+
     const message = replaceTemplateVariables(baseMessage, {
       patientName: visit.patient.name,
       clinicName: 'our clinic', // TODO: Fetch actual clinic name if available in context or pass it in
-      pdfUrl: pdfUrl,
-      pdfLink: pdfUrl, // Support both variable names
+      pdfUrl: linkUrl,
+      pdfLink: linkUrl, // Support both variable names
       doctorName: visit.doctor?.name || 'Doctor'
     });
 
@@ -435,13 +447,18 @@ export class WhatsAppAutoSendService {
     const template = await this.getTemplate(clinicId, 'invoice_generated');
     const baseMessage = template || this.defaultTemplates['invoice_generated'];
 
+    // Same reasoning as sendPrescriptionPdf: the queued text freezes whatever
+    // URL it carries, so send a token that resolves at open time.
+    const shareUrl = await documentLinkService.ensureShareUrl('bill', billId, 'display');
+    const linkUrl = shareUrl?.url ?? pdfUrl;
+
     const message = replaceTemplateVariables(baseMessage, {
       patientName: bill.patient.name,
       clinicName: 'our clinic',
       billNumber: bill.bill_number || bill.billNumber, // handle both casing if needed
       totalAmount: formatCurrency(bill.total_amount || bill.totalAmount),
-      pdfUrl: pdfUrl,
-      pdfLink: pdfUrl
+      pdfUrl: linkUrl,
+      pdfLink: linkUrl
     });
 
     await this.queueMessage({

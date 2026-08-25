@@ -3,6 +3,7 @@ import { Review, ClinicSetting, ReviewRequestTemplate, SentMessageLog } from '..
 import { defaultReviewRequestTemplates } from '../utils/reviewTemplates';
 import { getCurrentProfile } from './profileService';
 import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
+import { supabaseUrl } from '../lib/supabaseClient';
 
 export interface AIReviewParams {
   clinicName: string;
@@ -101,7 +102,7 @@ export const reviewService = {
       if (sessionError || !session) throw new Error('Not authenticated');
       const token = session.access_token;
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-review-generator`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/gemini-review-generator`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

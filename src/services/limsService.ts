@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { Patient, TestOrdered } from '../types';
 import { clinicSettingsService } from './clinicSettingsService';
 import { getCurrentProfile } from './profileService';
+import { supabaseUrl } from '../lib/supabaseClient';
 
 export interface LimsOrderPayload {
   external_order_id: string;
@@ -129,7 +130,7 @@ export const limsService = {
       },
       tests: tests.map(t => ({ name: t.testName })),
       referring_doctor: referringDoctor,
-      pdf_callback_url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/lims-receive-result`,
+      pdf_callback_url: `${supabaseUrl}/functions/v1/lims-receive-result`,
     };
 
     const { data: orderRecord, error: insertError } = await supabase
@@ -319,7 +320,7 @@ export const limsService = {
         phone: patient?.phone,
       },
       tests: order.tests_sent || [],
-      pdf_callback_url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/lims-receive-result`,
+      pdf_callback_url: `${supabaseUrl}/functions/v1/lims-receive-result`,
     };
 
     try {

@@ -222,9 +222,10 @@ const AppointmentCalendar: React.FC = () => {
     }
   };
 
-  const loadData = async () => {
+  const loadData = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
 
       const [appointmentsData, patientsData] = await Promise.all([
@@ -247,7 +248,7 @@ const AppointmentCalendar: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to load appointments');
       console.error('Error loading appointments:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -380,7 +381,7 @@ const AppointmentCalendar: React.FC = () => {
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">{error}</div>
         <button
-          onClick={loadData}
+          onClick={() => loadData()}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
           Retry
@@ -614,7 +615,7 @@ const AppointmentCalendar: React.FC = () => {
             }
             loadData();
           }}
-          onPatientAdded={loadData}
+          onPatientAdded={() => loadData({ silent: true })}
           onClose={() => setShowModal(false)}
         />
       )}
@@ -997,9 +998,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     try {
       const newPatient = await patientService.addPatient(patientData);
       setSelectedPatient(newPatient);
-      setFormData({ ...formData, patientId: newPatient.id });
+      setFormData((prev) => ({ ...prev, patientId: newPatient.id }));
+      setPatientSearchTerm('');
+      setShowPatientSearchResults(false);
       setShowNewPatientModal(false);
-      onPatientAdded(); // Refresh patient list in parent component
+      onPatientAdded(); // Refresh patient list in parent component (silent: keeps this modal mounted)
     } catch (error) {
       console.error('Error adding patient:', error);
       throw error; // Re-throw to let PatientModal handle it

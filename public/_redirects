@@ -1,1 +1,11 @@
+# The /r/<token>.pdf rule for stable PDF links deliberately does NOT live here.
+#
+# Netlify applies netlify.toml redirects BEFORE this file, so a /r/* rule here
+# is silently overridden by the one in netlify.toml — two hardcoded project
+# refs that must stay in sync, where the losing copy still looks authoritative.
+# On 2026-08-21 they drifted: this file was repointed to Mumbai while
+# netlify.toml still said Sydney, and netlify.toml would have won.
+#
+# Keep it in netlify.toml. Do not re-add it here.
+
 /*    /index.html   200

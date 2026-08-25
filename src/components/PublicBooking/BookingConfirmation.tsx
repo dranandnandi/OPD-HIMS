@@ -28,7 +28,7 @@ const buildCalendarFile = (booking: BookingSuccess, clinic: PublicClinic): strin
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//OPD//Public Booking//EN',
+    'PRODID:-//Clinic Suite//Public Booking//EN',
     'BEGIN:VEVENT',
     `UID:${booking.ref}@opd`,
     `DTSTAMP:${stamp(new Date())}`,

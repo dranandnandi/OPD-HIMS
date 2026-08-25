@@ -8,7 +8,7 @@ import {
   voiceService, DictationResult, DictationSelections, AdmissionVoiceContext,
 } from '../../services/voiceService';
 import { DIET_TYPES } from '../../services/dietService';
-import type { Admission, ServiceMaster } from '../../types/ipd';
+import type { Admission, ServiceMaster, TreatmentPlan } from '../../types/ipd';
 
 interface Props {
   admission: Admission;
@@ -16,6 +16,14 @@ interface Props {
   onApplied?: () => void;
   /** collapsed by default when embedded in a busy tab */
   defaultOpen?: boolean;
+  /** entries already documented today — dictating again adds to one of these */
+  todayPlans?: TreatmentPlan[];
+  /** open state, when the parent drives it (e.g. an entry's "Add by dictation") */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** entry the dictation is filed into; null starts a new entry */
+  targetPlanId?: string | null;
+  onTargetPlanIdChange?: (planId: string | null) => void;
 }
 
 /**
@@ -23,9 +31,22 @@ interface Props {
  * add this medicine …, nursing note …, send for cardiology opinion …" and the
  * transcript is split into the chart's own fields for review before saving.
  */
-export default function VoiceDictation({ admission, onApplied, defaultOpen = false }: Props) {
+export default function VoiceDictation({
+  admission, onApplied, defaultOpen = false, todayPlans = [],
+  open: openProp, onOpenChange, targetPlanId: targetProp, onTargetPlanIdChange,
+}: Props) {
   const { clinicId, profile } = useAuth();
-  const [open, setOpen] = useState(defaultOpen);
+  const [openState, setOpenState] = useState(defaultOpen);
+  const [targetState, setTargetState] = useState<string | null>(null);
+
+  // Controlled when the parent supplies the props (treatment plan tab), self
+  // managed otherwise (nursing tab).
+  const open = openProp ?? openState;
+  const setOpen = (o: boolean) => { setOpenState(o); onOpenChange?.(o); };
+  const targetPlanId = targetProp !== undefined ? targetProp : targetState;
+  const setTargetPlanId = (id: string | null) => { setTargetState(id); onTargetPlanIdChange?.(id); };
+  const targetPlan = todayPlans.find((p) => p.id === targetPlanId) ?? null;
+
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -153,6 +174,7 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
         userId: profile?.id,
         data: result,
         selections,
+        targetPlanId,
       });
       if (applied.length) toast.success(`Saved: ${applied.join(', ')}`, { duration: 5000 });
       if (failed.length) toast.error(`Not saved: ${failed.join(' · ')}`, { duration: 8000 });
@@ -202,9 +224,18 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
       <div className="bg-gradient-to-r from-violet-50 to-blue-50 px-4 py-2.5 border-b border-violet-100 flex flex-wrap items-center gap-2">
         <Sparkles className="w-4 h-4 text-violet-600" />
         <span className="text-sm font-semibold text-slate-800">Ward-round dictation</span>
-        <span className="text-xs text-slate-500 hidden sm:inline">
-          say the progress note, medicines, tests, consults, diet — each goes to its own field
-        </span>
+        {targetPlan ? (
+          <span className="text-xs text-violet-700 bg-white border border-violet-200 rounded-full px-2 py-0.5">
+            adding to today's entry ·{' '}
+            {new Date(targetPlan.recorded_at).toLocaleTimeString('en-IN', {
+              hour: '2-digit', minute: '2-digit', hour12: false,
+            })}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500 hidden sm:inline">
+            say the progress note, medicines, tests, consults, diet — each goes to its own field
+          </span>
+        )}
         <button
           onClick={() => { setOpen(false); if (isRecording) stopRecording(); }}
           className="ml-auto p-1 rounded text-slate-400 hover:text-slate-700"
@@ -294,15 +325,37 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
               </p>
             </details>
 
-            {/* Treatment plan */}
-            {planHasContent && (
-              <Section
-                title="Treatment plan (today)"
-                checked={selections.plan}
-                onToggle={() => upd({ plan: !selections.plan })}
-                tone="violet"
-              >
-                {([
+            {/* Treatment plan — always filed, so the round is on the plan
+                timeline even when only orders were dictated */}
+            <Section
+              title={targetPlan ? "Add to today's plan entry" : "Treatment plan (today)"}
+              checked={selections.plan}
+              onToggle={() => upd({ plan: !selections.plan })}
+              tone="violet"
+            >
+              {todayPlans.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-1.5 -ml-6">
+                  <span className="text-xs text-slate-500">File this dictation into:</span>
+                  <select
+                    value={targetPlanId ?? ''}
+                    onChange={(e) => setTargetPlanId(e.target.value || null)}
+                    className="border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white max-w-72"
+                  >
+                    {todayPlans.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        Today's entry — {new Date(p.recorded_at).toLocaleTimeString('en-IN', {
+                          hour: '2-digit', minute: '2-digit', hour12: false,
+                        })}
+                        {p.doctor?.name ? ` · Dr. ${p.doctor.name.replace(/^dr\.?\s*/i, '')}` : ''}
+                      </option>
+                    ))}
+                    <option value="">A new entry for today</option>
+                  </select>
+                </div>
+              )}
+
+              {planHasContent ? (
+                ([
                   ['Subjective', result.treatmentPlan.subjective],
                   ['Objective', result.treatmentPlan.objective],
                   ['Assessment', result.treatmentPlan.assessment],
@@ -314,9 +367,15 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
                     <p key={label} className="text-slate-700">
                       <span className="text-slate-400">{label}:</span> {v}
                     </p>
-                  ))}
-              </Section>
-            )}
+                  ))
+              ) : (
+                <p className="text-slate-500">
+                  No progress note was dictated — what you ticked below (medicines, tests,
+                  consults, diet) is written into the {targetPlan ? 'entry' : "day's entry"} as
+                  the plan, so today does not read as undocumented.
+                </p>
+              )}
+            </Section>
 
             {/* Nursing note */}
             {result.nursingNote && (
@@ -536,9 +595,11 @@ export default function VoiceDictation({ admission, onApplied, defaultOpen = fal
                   <p key={`d${i}`} className="text-amber-700">⚠ {l}</p>
                 ))}
                 <p className="text-xs text-slate-400">
-                  {planHasContent
-                    ? 'Added to the treatment plan advice.'
-                    : 'Filed as a ward note together with the full transcript.'}
+                  {!selections.plan
+                    ? 'Filed as a ward note together with the full transcript.'
+                    : planHasContent
+                      ? 'Added to the treatment plan advice.'
+                      : `Filed in ${targetPlan ? "today's entry" : "the day's plan entry"} with the full transcript.`}
                 </p>
               </Section>
             )}

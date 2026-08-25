@@ -252,13 +252,14 @@ export interface VoiceTranscript {
 export interface VisitImage {
   id: string;
   url: string;
-  /** Clinical category. 'video' and 'document' cover non-image attachments. */
-  imageType: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'video' | 'document' | 'other';
+  /** Clinical category. 'video', 'voice_note' and 'document' cover non-image attachments. */
+  imageType: 'case_paper' | 'lab_report' | 'clinical_photo' | 'xray' | 'video' | 'voice_note' | 'document' | 'other';
   label?: string;
   context?: string;       // Doctor's specific focus for AI e.g. "Check for cartilage destruction"
   aiAnalysis?: string;
   mimeType?: string;      // Recorded on upload so videos/PDFs render with the right player
   fileSize?: number;      // Bytes, for display only
+  durationSeconds?: number; // Audio/video length, for display only
   uploadedAt: string;
 }
 
@@ -569,6 +570,13 @@ export interface OcrResult {
   processingTime: number;
   createdAt: Date;
   validationReport?: OCRValidationReport;
+  /** The stored case-paper file the extraction came from, so it can be attached to the visit. */
+  sourceFile?: {
+    url: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+  };
 }
 
 // How generated PDFs are branded.
@@ -643,6 +651,9 @@ export interface ClinicSetting {
   clinicTier?: 'basic' | 'silver' | 'gold';
   // IPD module access (platform-managed, like clinicTier)
   ipdEnabled?: boolean;
+  // Keep the dictation audio as a visit attachment. Off by default: the
+  // transcript is saved either way, only the recording itself is discarded.
+  saveVoiceRecordings?: boolean;
   // Waiting Sequence
   waitingSequenceEnabled?: boolean;
   // Public self-booking: /book/<publicSlug> serves an unauthenticated

@@ -50,16 +50,22 @@ export interface MedicineOption {
   selling_price: number | null;
 }
 
-// Dose times per frequency code (hospital defaults; editable later per clinic)
+// Suggested dose times per frequency code. These are only a STARTING POINT the
+// prescriber edits — a ward order reads "Inj. Monosef 1 g IV 12 hourly at 8 PM
+// and 8 AM", so the clock times belong to the order, not to the frequency code.
+// What the user settles on is stored in ipd_medication_orders.dose_times and is
+// what the schedule is expanded from.
 const FREQUENCY_TIMES: Record<string, string[]> = {
   od: ['09:00'],
   bd: ['09:00', '21:00'],
   tid: ['09:00', '14:00', '21:00'],
   qid: ['06:00', '12:00', '18:00', '22:00'],
+  q4h: ['06:00', '10:00', '14:00', '18:00', '22:00', '02:00'],
   q6h: ['00:00', '06:00', '12:00', '18:00'],
   q8h: ['06:00', '14:00', '22:00'],
   q12h: ['09:00', '21:00'],
   hs: ['21:00'],
+  custom: ['09:00'],
   stat: [], // one immediate slot
   sos: [],  // PRN — no schedule; given ad hoc
 };
@@ -69,13 +75,51 @@ export const FREQUENCY_OPTIONS = [
   { code: 'bd', label: 'BD — twice daily' },
   { code: 'tid', label: 'TID — three times daily' },
   { code: 'qid', label: 'QID — four times daily' },
+  { code: 'q4h', label: 'Q4H — every 4 hours' },
   { code: 'q6h', label: 'Q6H — every 6 hours' },
   { code: 'q8h', label: 'Q8H — every 8 hours' },
   { code: 'q12h', label: 'Q12H — every 12 hours' },
   { code: 'hs', label: 'HS — at bedtime' },
+  { code: 'custom', label: 'Custom — my own times' },
   { code: 'stat', label: 'STAT — immediately, once' },
   { code: 'sos', label: 'SOS — as needed (PRN)' },
 ];
+
+/** Frequencies that run on a clock: their times are editable per order. */
+export function isScheduledFrequency(code: string): boolean {
+  return code !== 'stat' && code !== 'sos';
+}
+
+/** Suggested clock times to seed the editor with when a frequency is picked. */
+export function defaultTimesFor(code: string): string[] {
+  return [...(FREQUENCY_TIMES[code] ?? FREQUENCY_TIMES.od)];
+}
+
+/** 'HH:MM' — anything else is rejected before it can poison the schedule. */
+export function isValidTime(t: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(t.trim());
+}
+
+/** De-duplicated, validated, chronologically sorted clock times. */
+export function normaliseTimes(times: string[]): string[] {
+  return [...new Set(times.map((t) => t.trim()).filter(isValidTime))].sort();
+}
+
+/** '20:00' → '8:00 PM' — how the ward reads a drug chart. */
+export function formatDoseTime(t: string): string {
+  const [h, m] = t.split(':').map(Number);
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+/** The times an existing order actually runs on (falls back to the defaults
+    for orders written before dose times were user-editable). */
+export function orderDoseTimes(order: MedicationOrder): string[] {
+  const stored = order.dose_times;
+  if (stored && stored.length > 0) return normaliseTimes(stored);
+  return defaultTimesFor(order.frequency_code);
+}
 
 export const ROUTE_OPTIONS = ['oral', 'iv', 'im', 'sc', 'topical', 'inhalation', 'per_rectal', 'sublingual'];
 
@@ -116,21 +160,40 @@ export function defaultRouteFor(m: MedicineOption | null): string | null {
   return null;
 }
 
-function expandSchedule(frequencyCode: string, startAt: Date, days: number): Date[] {
-  if (frequencyCode === 'stat') return [new Date()];
+/**
+ * Expand the order into dose slots on the given clock times.
+ *
+ * `from` is where expansion starts (first dose no earlier than this) and
+ * `until` is the hard stop — so an order can be re-timed mid-course and only
+ * its future slots regenerated.
+ */
+function expandSchedule(params: {
+  frequencyCode: string;
+  times: string[];
+  from: Date;
+  until: Date | null;
+  days: number;
+}): Date[] {
+  const { frequencyCode, times, from, until, days } = params;
+  if (frequencyCode === 'stat') return [from];
   if (frequencyCode === 'sos') return [];
-  const times = FREQUENCY_TIMES[frequencyCode] ?? FREQUENCY_TIMES.od;
+  if (times.length === 0) return [];
+
   const slots: Date[] = [];
-  for (let d = 0; d < days; d++) {
+  // walk one extra day so a course that starts late in the evening still gets
+  // its full run of doses
+  for (let d = 0; d <= days; d++) {
     for (const t of times) {
       const [h, m] = t.split(':').map(Number);
-      const slot = new Date(startAt);
+      const slot = new Date(from);
       slot.setDate(slot.getDate() + d);
       slot.setHours(h, m, 0, 0);
-      if (slot >= startAt) slots.push(slot);
+      if (slot < from) continue;
+      if (until && slot > until) continue;
+      slots.push(slot);
     }
   }
-  return slots;
+  return slots.sort((a, b) => a.getTime() - b.getTime());
 }
 
 export const medicationService = {
@@ -176,7 +239,15 @@ export const medicationService = {
     return data as MedicationOrder[];
   },
 
-  /** Create the order and expand its dose schedule */
+  /**
+   * Create the order and expand its dose schedule.
+   *
+   * `doseTimes` are the clock times the prescriber actually wants ("8 PM and
+   * 8 AM"); leaving it out falls back to the suggested times for the frequency
+   * code, which is what dictation and treatment-plan-driven orders do.
+   * `startAt` sets when the course begins — an order written at 11 AM can still
+   * have its first dose at 8 PM.
+   */
   async createOrder(params: {
     clinicId: string;
     admissionId: string;
@@ -187,11 +258,23 @@ export const medicationService = {
     frequencyCode: string;
     days: number;
     instructions?: string;
+    /** user-chosen HH:MM slots; defaults to the frequency's suggested times */
+    doseTimes?: string[];
+    /** when the course begins (default: now) */
+    startAt?: Date;
+    /** minutes a dose may run late before it is flagged as missed */
+    graceMinutes?: number;
     /** set when the order came out of a treatment-plan entry / dictation */
     treatmentPlanId?: string | null;
     userId?: string;
   }): Promise<MedicationOrder> {
-    const startAt = new Date();
+    const startAt = params.startAt ?? new Date();
+    const times = normaliseTimes(
+      params.doseTimes?.length ? params.doseTimes : defaultTimesFor(params.frequencyCode)
+    );
+    if (isScheduledFrequency(params.frequencyCode) && times.length === 0) {
+      throw new Error('Set at least one dose time for this order');
+    }
     const endAt =
       params.frequencyCode === 'stat'
         ? null
@@ -207,6 +290,8 @@ export const medicationService = {
         dose: params.dose ?? null,
         route: params.route ?? null,
         frequency_code: params.frequencyCode,
+        dose_times: isScheduledFrequency(params.frequencyCode) ? times : null,
+        grace_minutes: params.graceMinutes ?? 30,
         start_at: startAt.toISOString(),
         end_at: endAt?.toISOString() ?? null,
         instructions: params.instructions ?? null,
@@ -217,7 +302,13 @@ export const medicationService = {
       .single();
     if (error) throw error;
 
-    const slots = expandSchedule(params.frequencyCode, startAt, params.days);
+    const slots = expandSchedule({
+      frequencyCode: params.frequencyCode,
+      times,
+      from: startAt,
+      until: endAt,
+      days: params.days,
+    });
     if (slots.length > 0) {
       const { error: schedErr } = await supabase.from('ipd_medication_schedule').insert(
         slots.map((s) => ({
@@ -230,6 +321,75 @@ export const medicationService = {
       if (schedErr) throw schedErr;
     }
     return order as MedicationOrder;
+  },
+
+  /**
+   * Re-time a running order. Doses already signed for are untouched; only
+   * future 'due' slots are dropped and rebuilt on the new times, so shifting
+   * "8 AM / 8 PM" to "6 AM / 6 PM" mid-course does not rewrite history.
+   */
+  async retimeOrder(params: {
+    clinicId: string;
+    order: MedicationOrder;
+    doseTimes: string[];
+    /** extend/shorten the course; omit to keep the existing end date */
+    days?: number;
+    userId?: string;
+  }): Promise<void> {
+    const { order } = params;
+    if (!isScheduledFrequency(order.frequency_code)) {
+      throw new Error('STAT and SOS orders have no fixed schedule to re-time');
+    }
+    const times = normaliseTimes(params.doseTimes);
+    if (times.length === 0) throw new Error('Set at least one dose time');
+
+    const now = new Date();
+    const endAt = params.days != null
+      ? new Date(now.getTime() + params.days * 24 * 60 * 60 * 1000)
+      : order.end_at ? new Date(order.end_at) : null;
+
+    const { error: updErr } = await supabase
+      .from('ipd_medication_orders')
+      .update({
+        dose_times: times,
+        end_at: endAt?.toISOString() ?? null,
+        updated_at: now.toISOString(),
+      })
+      .eq('id', order.id);
+    if (updErr) throw updErr;
+
+    // future untouched slots only — a dose already given/held/refused stays
+    const { error: delErr } = await supabase
+      .from('ipd_medication_schedule')
+      .delete()
+      .eq('medication_order_id', order.id)
+      .eq('status', 'due')
+      .gt('scheduled_at', now.toISOString());
+    if (delErr) throw delErr;
+
+    const days = params.days
+      ?? (endAt ? Math.ceil((endAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)) : 3);
+    const slots = expandSchedule({
+      frequencyCode: order.frequency_code,
+      times,
+      from: now,
+      until: endAt,
+      days: Math.max(days, 1),
+    });
+    if (slots.length > 0) {
+      const { error: schedErr } = await supabase
+        .from('ipd_medication_schedule')
+        .upsert(
+          slots.map((s) => ({
+            clinic_id: params.clinicId,
+            medication_order_id: order.id,
+            admission_id: order.admission_id,
+            scheduled_at: s.toISOString(),
+          })),
+          { onConflict: 'medication_order_id,scheduled_at', ignoreDuplicates: true }
+        );
+      if (schedErr) throw schedErr;
+    }
   },
 
   /** Stop an order and remove its future due slots */

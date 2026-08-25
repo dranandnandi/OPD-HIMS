@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, UploadCloud, CheckCircle, XCircle, FileText, ShieldCheck } from 'lucide-react';
 import { brand } from '../config/branding';
+import { supabaseUrl } from '../lib/supabaseClient';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL = supabaseUrl;
 
 const DOC_TYPES = [
   { value: 'id_card', label: 'ID card (Aadhaar / PAN / etc.)' },

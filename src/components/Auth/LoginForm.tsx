@@ -92,7 +92,7 @@ const LoginForm: React.FC = () => {
             {brand.productName}
           </h3>
           <p className="text-center text-sm text-gray-600 mb-8">
-            Sign in to manage your clinic's OPD
+            Sign in to manage your clinic — OPD, IPD and more
           </p>
         </div>
         

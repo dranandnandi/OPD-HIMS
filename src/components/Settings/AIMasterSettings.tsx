@@ -4,6 +4,7 @@ import { useAuth } from '../Auth/useAuth';
 import { masterDataService } from '../../services/masterDataService';
 import { supabase } from '../../lib/supabase';
 import { getCurrentProfile } from '../../services/profileService';
+import { supabaseUrl } from '../../lib/supabaseClient';
 
 interface AISuggestion {
   itemType: 'medicine' | 'test' | 'unknown';
@@ -69,7 +70,7 @@ const AIMasterSettings: React.FC = () => {
       const token = session.access_token;
 
       // Call the Gemini master data parser edge function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-master-data-parser`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/gemini-master-data-parser`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

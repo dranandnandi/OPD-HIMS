@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Paperclip, Play, FileText, File as FileIcon, ExternalLink, X, Sparkles, Download } from 'lucide-react';
+import { Paperclip, Play, FileText, File as FileIcon, ExternalLink, X, Sparkles, Download, Mic } from 'lucide-react';
 import { VisitImage } from '../../types';
 import {
   getAttachmentKind,
   attachmentTypeLabel,
   formatFileSize,
+  formatDuration,
   FALLBACK_THUMB,
   AttachmentKind
 } from '../../utils/visitAttachments';
@@ -20,6 +21,14 @@ interface VisitAttachmentsGalleryProps {
 /** Non-image tiles get an icon plate instead of a thumbnail. */
 const IconPlate: React.FC<{ kind: AttachmentKind; compact?: boolean }> = ({ kind, compact }) => {
   const iconClass = compact ? 'w-6 h-6' : 'w-8 h-8';
+  if (kind === 'audio') {
+    return (
+      <div className="w-full h-full bg-indigo-50 flex flex-col items-center justify-center gap-1">
+        <Mic className={`${iconClass} text-indigo-500`} />
+        <span className="text-[10px] font-medium text-indigo-600">VOICE</span>
+      </div>
+    );
+  }
   if (kind === 'pdf') {
     return (
       <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center gap-1">
@@ -122,7 +131,11 @@ const VisitAttachmentsGallery: React.FC<VisitAttachmentsGalleryProps> = ({
                 {!compact && attachment.label && (
                   <p className="text-xs text-gray-500 truncate" title={attachment.label}>{attachment.label}</p>
                 )}
-                {!compact && attachment.fileSize ? (
+                {formatDuration(attachment.durationSeconds) ? (
+                  <p className={`${compact ? 'text-[10px]' : 'text-xs'} text-gray-400`}>
+                    {formatDuration(attachment.durationSeconds)}
+                  </p>
+                ) : !compact && attachment.fileSize ? (
                   <p className="text-xs text-gray-400">{formatFileSize(attachment.fileSize)}</p>
                 ) : null}
                 {attachment.aiAnalysis && (
@@ -202,6 +215,18 @@ const VisitAttachmentsGallery: React.FC<VisitAttachmentsGalleryProps> = ({
                 playsInline
                 className="max-w-full max-h-[80vh] mx-auto rounded bg-black"
               />
+            )}
+            {previewKind === 'audio' && (
+              <div className="bg-white rounded-lg p-6">
+                <div className="flex items-center gap-2 mb-3 text-gray-700">
+                  <Mic className="w-5 h-5 text-indigo-500" />
+                  <span className="text-sm font-medium">Dictation recording</span>
+                  {formatDuration(preview.durationSeconds) && (
+                    <span className="text-sm text-gray-400">{formatDuration(preview.durationSeconds)}</span>
+                  )}
+                </div>
+                <audio src={preview.url} controls autoPlay className="w-full" />
+              </div>
             )}
             {previewKind === 'pdf' && (
               <iframe

@@ -3,6 +3,7 @@ import { X, Shield, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toTitleCase } from '../../utils/stringUtils';
 import { calculateAgeFromDob, todayForDobInput } from '../../utils/dateOfBirth';
 import ABHALinkModal from './ABHALinkModal';
+import ABHAVerifyModal from './ABHAVerifyModal';
 import { abhaService, ABHAProfile } from '../../services/abhaService';
 import { patientService } from '../../services/patientService';
 import PatientDocumentsPanel from './PatientDocumentsPanel';
@@ -39,10 +40,19 @@ interface PatientModalProps {
   onClose: () => void;
 }
 
-const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, onClose }) => {
+// `clinicId` stays in the props for existing call sites but is no longer read:
+// the ABDM functions derive the clinic from the caller's JWT, because a
+// client-supplied clinic id is forgeable (G-05).
+const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose }) => {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showABHAModal, setShowABHAModal] = useState(false);
+  // Two ABHA paths: 'verify' (mobile OTP, spec 7.4) is the primary one — most
+  // walk-ins already have an ABHA. 'create' (Aadhaar OTP, spec 3) is the
+  // fallback for patients who do not, and the verify flow hands off to it.
+  const [abhaFlow, setAbhaFlow] = useState<'none' | 'verify' | 'create'>('none');
+  const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const [unlinkError, setUnlinkError] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [linkedABHA, setLinkedABHA] = useState<{ number: string; address?: string } | null>(
@@ -137,6 +147,28 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'An error occurred while saving the patient');
       setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * Withdraw ABHA consent (G-13).
+   *
+   * The server revokes every live consent artefact and clears the patient's
+   * ABHA columns. Only the local view is reset here — the patient's ABHA
+   * account itself is untouched and can be linked again later.
+   */
+  const handleUnlinkABHA = async () => {
+    if (!patient) return;
+    setUnlinkError('');
+    setUnlinking(true);
+    try {
+      await abhaService.unlinkABHA(patient.id);
+      setLinkedABHA(null);
+      setConfirmUnlink(false);
+    } catch (err) {
+      setUnlinkError(err instanceof Error ? err.message : 'Could not withdraw consent.');
+    } finally {
+      setUnlinking(false);
     }
   };
 
@@ -328,28 +360,85 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
                 <span className="font-medium text-sm">ABHA ID (Ayushman Bharat)</span>
               </div>
               {linkedABHA ? (
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-green-700">ABHA Linked</p>
-                    <p className="text-xs font-mono text-gray-600">
-                      {abhaService.formatAbhaNumber(linkedABHA.number)}
-                    </p>
-                    {linkedABHA.address && (
-                      <p className="text-xs text-gray-500">{linkedABHA.address}</p>
-                    )}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-700">ABHA Linked</p>
+                      <p className="text-xs font-mono text-gray-600">
+                        {abhaService.formatAbhaNumber(linkedABHA.number)}
+                      </p>
+                      {linkedABHA.address && (
+                        <p className="text-xs text-gray-500">{linkedABHA.address}</p>
+                      )}
+                    </div>
                   </div>
+
+                  {/*
+                    Consent withdrawal (G-13). The patient must be able to take
+                    it back, or the clinic can record consent but never honour
+                    its withdrawal — a data-principal rights failure under DPDP.
+                    Local only: the patient's ABHA itself is untouched.
+                  */}
+                  {unlinkError && <p className="text-xs text-red-600">{unlinkError}</p>}
+                  {confirmUnlink ? (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-red-800">
+                        Withdraw consent and remove this ABHA from {patient.name}'s record? Their
+                        ABHA account is not affected and can be linked again later.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleUnlinkABHA}
+                          disabled={unlinking}
+                          className="text-xs text-white bg-red-600 hover:bg-red-700 rounded-lg px-3 py-1.5 disabled:opacity-60"
+                        >
+                          {unlinking ? 'Removing...' : 'Yes, withdraw consent'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmUnlink(false)}
+                          disabled={unlinking}
+                          className="text-xs text-gray-600 hover:text-gray-800 px-3 py-1.5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnlinkError('');
+                        setConfirmUnlink(true);
+                      }}
+                      className="text-xs text-red-600 hover:text-red-800 hover:underline"
+                    >
+                      Withdraw consent & unlink ABHA
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
+                <div className="space-y-2">
                   <p className="text-sm text-gray-500">Not linked yet</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowABHAModal(true)}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium border border-blue-600 hover:border-blue-800 rounded-lg px-3 py-1.5 transition-colors"
-                  >
-                    Link ABHA ID
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Verify first: it is the faster path and needs no Aadhaar. */}
+                    <button
+                      type="button"
+                      onClick={() => setAbhaFlow('verify')}
+                      className="text-sm text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      Verify existing ABHA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAbhaFlow('create')}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium border border-blue-600 hover:border-blue-800 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      Create with Aadhaar
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -383,17 +472,30 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, clinicId, onSave, 
         </form>
       </div>
 
-      {showABHAModal && patient && (
+      {abhaFlow === 'verify' && patient && (
+        <ABHAVerifyModal
+          patientId={patient.id}
+          patientName={patient.name}
+          patientMobile={patient.phone}
+          onLinked={(profile: ABHAProfile) => {
+            setLinkedABHA({ number: profile.abhaNumber, address: profile.abhaAddress });
+          }}
+          // The mobile has no ABHA — switch straight to creation rather than
+          // making reception close one dialog and hunt for another button.
+          onNoAbhaFound={() => setAbhaFlow('create')}
+          onClose={() => setAbhaFlow('none')}
+        />
+      )}
+
+      {abhaFlow === 'create' && patient && (
         <ABHALinkModal
           patientId={patient.id}
           patientName={patient.name}
           patientMobile={patient.phone}
-          clinicId={clinicId}
           onLinked={(profile: ABHAProfile) => {
             setLinkedABHA({ number: profile.abhaNumber, address: profile.abhaAddress });
-            setShowABHAModal(false);
           }}
-          onClose={() => setShowABHAModal(false)}
+          onClose={() => setAbhaFlow('none')}
         />
       )}
     </div>

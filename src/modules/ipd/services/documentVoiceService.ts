@@ -1,6 +1,6 @@
 import { supabase } from '../utils/supabase';
-import { docTypeLabel, IpdDocument } from './documentService';
-import type { Admission } from '../types/ipd';
+import { docTypeLabel } from './documentService';
+import type { ComposeSubject } from './documentSubject';
 
 // ---------------------------------------------------------------------------
 // Voice dictation for IPD documents.
@@ -30,6 +30,12 @@ export interface DictatedSection {
   heading: string;
   text: string;
   mode: 'replace' | 'append';
+  /**
+   * Ready-made block HTML to write instead of `text` — used for generated
+   * tables (the estimate's cost breakup) that must not be escaped. `text`
+   * still carries a plain-text version for the review panel.
+   */
+  html?: string;
 }
 
 export interface DocumentDictationResult {
@@ -67,9 +73,6 @@ const slug = (s: string) =>
 
 const parseDoc = (html: string): Document =>
   new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
-
-const fmtDate = (d: string | null | undefined): string =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
 
 /**
  * Read a document's headings back out as writable fields. The leading title
@@ -112,27 +115,25 @@ export function extractDocumentFields(html: string, docType?: string): DocumentF
 
 /** Everything the model needs to route a dictation into this document */
 export function buildDocumentContext(
-  admission: Admission,
-  doc: IpdDocument,
+  subject: ComposeSubject,
+  doc: { doc_type: string; document_number: string | null },
   fields: DocumentField[]
 ): DocumentVoiceContext {
   return {
     docType: doc.doc_type,
     docTypeLabel: docTypeLabel(doc.doc_type),
     documentNumber: doc.document_number,
-    patientName: admission.patient?.name ?? '',
-    age: admission.patient?.age ?? null,
-    gender: admission.patient?.gender ?? null,
-    admissionNumber: admission.admission_number,
-    wardBed: admission.current_bed
-      ? `${admission.current_bed.ward?.name ?? ''} / ${admission.current_bed.bed_number}`
-      : '',
-    admittedOn: fmtDate(admission.admission_datetime),
-    dischargedOn: admission.discharge_datetime ? fmtDate(admission.discharge_datetime) : null,
-    doctorName: admission.admitting_doctor?.name?.replace(/^dr\.?\s*/i, '') ?? '',
-    diagnosis: admission.provisional_diagnosis ?? '',
-    reasonForAdmission: admission.reason_for_admission ?? '',
-    allergies: admission.patient?.allergies ?? [],
+    patientName: subject.patientName,
+    age: subject.age,
+    gender: subject.gender,
+    admissionNumber: subject.admissionNumber ?? '',
+    wardBed: subject.wardBed,
+    admittedOn: subject.admittedOn ?? '',
+    dischargedOn: subject.dischargedOn,
+    doctorName: subject.doctorName,
+    diagnosis: subject.diagnosis,
+    reasonForAdmission: subject.reasonForAdmission,
+    allergies: subject.allergies,
     fields: fields.map((f) => ({ id: f.id, label: f.label, currentText: f.currentText })),
   };
 }
@@ -175,6 +176,13 @@ function textToNodes(doc: Document, text: string): Element[] {
   });
 
   return nodes;
+}
+
+/** Generated block HTML → nodes, kept as-is (no escaping) */
+function htmlToNodes(doc: Document, html: string): Element[] {
+  const holder = doc.createElement('div');
+  holder.innerHTML = html;
+  return Array.from(holder.children);
 }
 
 /** The nodes belonging to a heading — everything up to the next heading */
@@ -246,8 +254,10 @@ export function applyDictationToHtml(
 
   sections.forEach((section) => {
     const text = section.text.trim();
-    if (!text) return;
-    const nodes = textToNodes(doc, text);
+    if (!text && !section.html) return;
+    const nodes = section.html
+      ? htmlToNodes(doc, section.html)
+      : textToNodes(doc, text);
     if (nodes.length === 0) return;
 
     const heading = headings.get(section.fieldId);
@@ -290,12 +300,55 @@ export function applyDictationToHtml(
   return { html: doc.body.innerHTML, applied };
 }
 
+/**
+ * Delete whole sections — heading and body — from the document. Used when a
+ * generated draft decides a head does not apply to this case (OT charges and
+ * implants on a purely medical admission) so they don't print as empty rows.
+ * The trailing signature block is never touched, even though the DOM counts
+ * it as part of the last heading's section.
+ */
+export function removeSectionsFromHtml(
+  html: string,
+  fieldIds: string[],
+  docType?: string
+): { html: string; removed: string[] } {
+  if (fieldIds.length === 0) return { html, removed: [] };
+
+  const doc = parseDoc(html);
+  const furniture = new Set<Element>(trailingFurniture(doc.body));
+  const wanted = new Set(fieldIds);
+  const removed: string[] = [];
+
+  const used = new Map<string, number>();
+  const title = docType ? docTypeLabel(docType).toLowerCase() : null;
+
+  Array.from(doc.body.children).forEach((el) => {
+    if (!HEADING_TAGS.has(el.tagName)) return;
+    const label = (el.textContent ?? '').trim();
+    if (!label || (title && label.toLowerCase() === title)) return;
+    const base = slug(label);
+    const seen = (used.get(base) ?? 0) + 1;
+    used.set(base, seen);
+    const id = seen === 1 ? base : `${base}-${seen}`;
+    if (!wanted.has(id)) return;
+
+    sectionBody(el).forEach((node) => {
+      if (!furniture.has(node)) node.remove();
+    });
+    el.remove();
+    removed.push(label);
+  });
+
+  return { html: doc.body.innerHTML, removed };
+}
+
 // ---------------------------------------------------------------------------
 
 export const documentVoiceService = {
   extractDocumentFields,
   buildDocumentContext,
   applyDictationToHtml,
+  removeSectionsFromHtml,
 
   /** Send audio (or typed text) + the document's field list to the scribe */
   async dictate(params: {

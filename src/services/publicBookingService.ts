@@ -1,3 +1,4 @@
+import { supabaseUrl } from '../lib/supabaseClient';
 // Client for the public self-booking endpoint.
 //
 // Deliberately does NOT import the Supabase client. The booking page is served
@@ -5,7 +6,7 @@
 // `public-booking` edge function. Same plain-fetch approach as the other public
 // pages (VerifyPrescription, PatientUpload).
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL = supabaseUrl;
 const ENDPOINT = `${SUPABASE_URL}/functions/v1/public-booking`;
 
 export interface PublicClinic {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Upload, Camera, FileText, Loader2, CheckCircle, Save, Search, User, Plus, Calendar, Clock, Phone, Stethoscope } from 'lucide-react';
-import { Patient, Visit, OcrResult, Profile, ExaminationTemplate } from '../../types';
+import { Patient, Visit, OcrResult, Profile, ExaminationTemplate, VisitImage } from '../../types';
 import { processCasePaperWithAI } from '../../services/ocrService';
 import { examinationTemplateService } from '../../services/examinationTemplateService';
 import { patientService } from '../../services/patientService';
@@ -305,6 +305,23 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
       setIsProcessing(false);
     }
   };
+
+  /**
+   * The case paper the visit was scanned from. `processCasePaperWithAI` already
+   * stored the file, so this just points the visit at it — without this the
+   * scan is invisible once the EMR is saved.
+   */
+  const casePaperAttachment: VisitImage | null = ocrResult?.sourceFile
+    ? {
+      id: `case_${ocrResult.ocrUploadId || Date.now()}`,
+      url: ocrResult.sourceFile.url,
+      imageType: 'case_paper',
+      label: ocrResult.sourceFile.name || 'Case paper',
+      mimeType: ocrResult.sourceFile.mimeType,
+      fileSize: ocrResult.sourceFile.size,
+      uploadedAt: new Date().toISOString()
+    }
+    : null;
 
   const handleVisitSaved = () => {
     onSave();
@@ -746,6 +763,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
                 patient={selectedPatient}
                 existingVisit={existingVisit}
                 ocrData={ocrResult?.extractedData || getEmptyOCRData()}
+                initialAttachments={casePaperAttachment ? [casePaperAttachment] : undefined}
                 initialExamination={buildInitialExamination()}
                 initialVisitDate={visitDate}
                 initialVisitTime={selectedAppointmentTime}

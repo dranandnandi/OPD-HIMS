@@ -425,6 +425,37 @@ export interface NursingTask {
   status: 'pending' | 'done' | 'skipped';
   done_by: string | null;
   done_at: string | null;
+  /** set when this row is one occurrence of a standing monitoring order */
+  monitoring_order_id?: string | null;
+  category?: 'general' | 'monitoring' | 'observation' | 'intake_output' | 'procedure';
+  /** how late it may run before the alert bar calls it missed */
+  grace_minutes?: number;
+  // joined
+  monitoring_order?: MonitoringOrder;
+}
+
+/**
+ * A standing observation order — "TPR, BP every 30 min", "watch for abdominal
+ * distension", "chart urine output hourly". Expanded into NursingTask
+ * occurrences the way a MedicationOrder expands into schedule slots.
+ */
+export interface MonitoringOrder {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  title: string;
+  kind: 'vitals' | 'observation' | 'intake_output' | 'custom';
+  /** vitals columns this order expects charted (kind = 'vitals') */
+  fields: string[];
+  interval_minutes: number;
+  start_at: string;
+  end_at: string | null;
+  instructions: string | null;
+  grace_minutes: number;
+  status: 'active' | 'stopped' | 'completed';
+  stopped_reason: string | null;
+  ordered_by: string | null;
+  created_at: string;
 }
 
 export interface IntakeOutput {
@@ -456,6 +487,11 @@ export interface MedicationOrder {
   status: 'active' | 'held' | 'stopped' | 'completed';
   stopped_reason: string | null;
   treatment_plan_id?: string | null;
+  /** HH:MM clock times this order is actually given at, as the doctor wrote it
+      ("8 PM and 8 AM"). Null on legacy orders expanded from frequency defaults. */
+  dose_times?: string[] | null;
+  /** how late a due dose may run before the alert bar calls it missed */
+  grace_minutes?: number;
 }
 
 export interface MedicationScheduleSlot {

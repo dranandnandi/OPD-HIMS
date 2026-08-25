@@ -13,6 +13,7 @@ import DispenseModal from '../Pharmacy/DispenseModal';
 import AddVisitModal from '../Patients/AddVisitModal';
 import { toTitleCase } from '../../utils/stringUtils';
 import { pdfService } from '../../services/pdfService';
+import { claimTab, openDocument } from '../../services/documentOpener';
 import { WhatsAppAutoSendService } from '../../services/whatsappAutoSendService';
 import { extractImpressionDetails } from '../../utils/emrDetailFormatting';
 import VisitAttachmentsGallery from './VisitAttachmentsGallery';
@@ -415,6 +416,9 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   const handleExportPDF = async () => {
     if (!visit) return;
 
+    // Claimed before any await — see claimTab().
+    const pdfTab = claimTab();
+
     try {
       setExportingPDF(true);
 
@@ -454,34 +458,35 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
         throw new Error('Clinic settings not found');
       }
 
-      const pdfUrl = await pdfService.generatePdfFromData('visit', {
-        visit: currentVisit,
-        patient: currentVisit.patient,
-        doctor: doctor,
-        clinicSettings: user.clinic
+      // Open now, generate in the background.
+      await openDocument(pdfTab, {
+        entityType: 'visit',
+        entityId: currentVisit.id,
+        variant: 'display',
+        generate: () => pdfService.generateWithLink('visit', {
+          visit: currentVisit,
+          patient: currentVisit.patient!,
+          doctor: doctor,
+          clinicSettings: user.clinic!
+        }, 'display'),
+        onComplete: (result) => {
+          // The edge function already wrote pdf_url in the same request.
+          setVisit(prev => prev ? { ...prev, pdf_url: result.url } : null);
+          console.log('PDF generated:', result.url);
+
+          // Queued on completion, not on open: the WhatsApp message must not go
+          // out before the document behind the link actually exists.
+          if (user?.clinic?.id && user?.id) {
+            WhatsAppAutoSendService.sendPrescriptionPdf(
+              currentVisit.id,
+              result.url,
+              user.id,
+              user.clinic.id
+            ).catch(err => console.error('Failed to auto-send WhatsApp:', err));
+          }
+        },
+        onError: () => alert('Failed to export PDF. Please try again.'),
       });
-
-      // Artificial delay to show "Processing" state to user
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Save PDF URL and trigger WhatsApp
-      if (currentVisit.id) {
-        await pdfService.savePdfUrlToDatabase('visit', currentVisit.id, pdfUrl);
-        // Update local state
-        setVisit(prev => prev ? { ...prev, pdf_url: pdfUrl } : null);
-        console.log('PDF generated and saved:', pdfUrl);
-
-        if (user?.clinic?.id && user?.id) {
-          WhatsAppAutoSendService.sendPrescriptionPdf(
-            currentVisit.id,
-            pdfUrl,
-            user.id,
-            user.clinic.id
-          ).catch(err => console.error('Failed to auto-send WhatsApp:', err));
-        }
-      }
-
-      window.open(pdfUrl, '_blank'); // Open the generated PDF in a new tab
 
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -494,6 +499,10 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   // Handle generating print version PDF (for letterhead printing)
   const handleGeneratePrintPdf = async () => {
     if (!visit) return;
+
+    // Claimed before any await — popup blockers only permit window.open while
+    // the click is still being handled.
+    const pdfTab = claimTab();
 
     try {
       setGeneratingPrintPdf(true);
@@ -525,27 +534,28 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       }
 
       // Generate print PDF
-      const printPdfUrl = await pdfService.generatePrintPdf('visit', {
-        visit: currentVisit,
-        patient: currentVisit.patient,
-        doctor: doctor,
-        clinicSettings: user.clinic
-      }, {
-        forceRegenerate: true
+      // Open now, generate in the background. The share link resolves to the
+      // PDF.co copy within a couple of seconds and swaps to the permanent one
+      // when the upload lands — all without the URL changing.
+      await openDocument(pdfTab, {
+        entityType: 'visit',
+        entityId: currentVisit.id,
+        variant: 'print',
+        forceRegenerate: true,
+        generate: () => pdfService.generateWithLink('visit', {
+          visit: currentVisit,
+          patient: currentVisit.patient!,
+          doctor: doctor,
+          clinicSettings: user.clinic!
+        }, 'print', { forceRegenerate: true }),
+        onComplete: (result) => {
+          // No savePrintPdfUrl here: the edge function already wrote
+          // print_pdf_url inside the same request.
+          setVisit(prev => prev ? { ...prev, print_pdf_url: result.url } : null);
+          console.log('Print PDF generated:', result.url);
+        },
+        onError: () => alert('Failed to generate print PDF. Please try again.'),
       });
-
-      // Artificial delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Save print PDF URL to database
-      if (currentVisit.id) {
-        await pdfService.savePrintPdfUrl('visit', currentVisit.id, printPdfUrl);
-        // Update local state
-        setVisit(prev => prev ? { ...prev, print_pdf_url: printPdfUrl } : null);
-        console.log('Print PDF generated and saved:', printPdfUrl);
-      }
-
-      window.open(printPdfUrl, '_blank');
 
     } catch (error) {
       console.error('Error generating print PDF:', error);
@@ -820,6 +830,9 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   const handleGenerateCompactPrintPdf = async () => {
     if (!visit) return;
 
+    // Claimed before any await — see claimTab().
+    const pdfTab = claimTab();
+
     try {
       setGeneratingCompactPdf(true);
 
@@ -830,7 +843,8 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       // Use cached compact PDF if available
       if (currentVisit.compact_print_pdf_url) {
         console.log('Using cached compact PDF:', currentVisit.compact_print_pdf_url);
-        window.open(currentVisit.compact_print_pdf_url, '_blank');
+        if (pdfTab && !pdfTab.closed) pdfTab.location.replace(currentVisit.compact_print_pdf_url);
+        else window.open(currentVisit.compact_print_pdf_url, '_blank');
         return;
       }
 
@@ -844,21 +858,22 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       if (!currentVisit.patient) throw new Error('Patient data not found');
       if (!user?.clinic) throw new Error('Clinic settings not found');
 
-      const compactPdfUrl = await pdfService.generateCompactPrintPdf('visit', {
-        visit: currentVisit,
-        patient: currentVisit.patient,
-        doctor,
-        clinicSettings: user.clinic
+      await openDocument(pdfTab, {
+        entityType: 'visit',
+        entityId: currentVisit.id,
+        variant: 'compact',
+        generate: () => pdfService.generateWithLink('visit', {
+          visit: currentVisit,
+          patient: currentVisit.patient!,
+          doctor,
+          clinicSettings: user.clinic!
+        }, 'compact'),
+        onComplete: (result) => {
+          // compact_print_pdf_url is written by the edge function already.
+          setVisit(prev => prev ? { ...prev, compact_print_pdf_url: result.url } : null);
+        },
+        onError: () => alert('Failed to generate compact PDF. Please try again.'),
       });
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      if (currentVisit.id) {
-        await pdfService.saveCompactPrintPdfUrl(currentVisit.id, compactPdfUrl);
-        setVisit(prev => prev ? { ...prev, compact_print_pdf_url: compactPdfUrl } : null);
-      }
-
-      window.open(compactPdfUrl, '_blank');
     } catch (error) {
       console.error('Error generating compact PDF:', error);
       alert('Failed to generate compact PDF. Please try again.');

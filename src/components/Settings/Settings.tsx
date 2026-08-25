@@ -67,9 +67,9 @@ const Settings: React.FC = () => {
   const isReception = hasReceptionAccess(user);
   const ipdEnabled = user?.clinic?.ipdEnabled ?? false;
 
-  const tabs = user && (user.roleName?.toLowerCase() === 'admin' || user.roleName?.toLowerCase() === 'super_admin')
-    ? [...baseTabs, ...adminTabs]
-    : baseTabs;
+  // Use the shared helper (same one gating linkTabs below) so a user who holds
+  // the admin permission under a different role name still sees these tabs.
+  const tabs = isAdmin ? [...baseTabs, ...adminTabs] : baseTabs;
 
   // These live on their own routes (removed from the main sidebar to keep it
   // compact) and are surfaced here as direct links.

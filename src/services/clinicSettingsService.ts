@@ -37,6 +37,7 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   clinicTier: (dbSetting.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'silver',
   ipdEnabled: dbSetting.ipd_enabled ?? false,
   waitingSequenceEnabled: dbSetting.waiting_sequence_enabled ?? false,
+  saveVoiceRecordings: dbSetting.save_voice_recordings ?? false,
   labTestIntegrationEnabled: dbSetting.lab_test_integration_enabled ?? false,
   limsApiUrl: dbSetting.lims_api_url,
   limsApiKey: dbSetting.lims_api_key,
@@ -196,6 +197,7 @@ export const clinicSettingsService = {
     if (settings.prescriptionFrequencies !== undefined) dbSettings.prescription_frequencies = settings.prescriptionFrequencies;
     if (settings.appointmentTypes !== undefined) dbSettings.appointment_types = settings.appointmentTypes;
     if (settings.waitingSequenceEnabled !== undefined) dbSettings.waiting_sequence_enabled = settings.waitingSequenceEnabled;
+    if (settings.saveVoiceRecordings !== undefined) dbSettings.save_voice_recordings = settings.saveVoiceRecordings;
     if (settings.labTestIntegrationEnabled !== undefined) dbSettings.lab_test_integration_enabled = settings.labTestIntegrationEnabled;
     if (settings.limsApiUrl !== undefined) dbSettings.lims_api_url = settings.limsApiUrl;
     if (settings.limsApiKey !== undefined) dbSettings.lims_api_key = settings.limsApiKey;

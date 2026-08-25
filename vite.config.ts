@@ -7,14 +7,14 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       injectRegister: 'auto',
       includeAssets: ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'pwa-192x192.svg', 'pwa-512x512.svg'],
       manifest: {
         version: '2.1.0',
         // Brand-neutral: one build serves multiple branded domains (see src/config/branding.ts)
-        name: 'Clinic Management System',
-        short_name: 'Clinic Manager',
+        name: 'Clinic Suite',
+        short_name: 'Clinic Suite',
         description: 'Clinic Management System for Clinics & Hospitals - Appointments, OPD, IPD, Billing, Pharmacy, EMR',
         theme_color: '#2563eb',
         background_color: '#ffffff',
@@ -56,6 +56,14 @@ export default defineConfig({
         // Main bundle exceeds the 2 MiB default; raise so it still gets precached
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Stable PDF links must reach the network.
+        //
+        // Workbox installs a NavigationRoute bound to index.html, so it answers
+        // *every* navigation from the precache — including /r/<token>.pdf. The
+        // Netlify redirect never runs, the app shell loads instead, and the
+        // router sends the user to "/". It looks exactly like a broken redirect
+        // rule, except curl works fine because curl has no service worker.
+        navigateFallbackDenylist: [/^\/r\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,

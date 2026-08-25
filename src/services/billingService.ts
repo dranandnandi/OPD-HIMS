@@ -639,6 +639,14 @@ export const billingService = {
       if (updates.dueDate !== undefined) updateData.due_date = updates.dueDate.toISOString();
       if (updates.totalAmount !== undefined) updateData.total_amount = updates.totalAmount;
 
+      // Clear cached PDF URLs so the next open regenerates, exactly as
+      // visitService does for visits. This was previously unnecessary only by
+      // accident: the generator looked the bill cache up under a column name
+      // that does not exist, so every bill PDF re-rendered regardless. With
+      // that lookup fixed, an edited bill would otherwise serve its old PDF.
+      updateData.pdf_url = null;
+      updateData.print_pdf_url = null;
+
       const { error } = await supabase
         .from('bills')
         .update(updateData)

@@ -81,6 +81,9 @@ const IpdTpaPage = React.lazy(() => import('./modules/ipd/pages/TpaClaimsPage'))
 const IpdDoctorSharePage = React.lazy(() => import('./modules/ipd/pages/DoctorSharePage'));
 const IpdStoresPage = React.lazy(() => import('./modules/ipd/pages/StoresPage'));
 const IpdMastersPage = React.lazy(() => import('./modules/ipd/pages/MastersPage'));
+// Ward alert bar — pending/missed doses and observations, shown above every
+// IPD page. Lazy like the pages so it stays out of the main OPD bundle.
+const IpdAlertBar = React.lazy(() => import('./modules/ipd/components/Alerts/IpdAlertBar'));
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -282,7 +285,16 @@ const IpdRoute: React.FC<{ perm: string; children: React.ReactNode }> = ({ perm,
     return <Navigate to={resolveLandingPath(user)} replace />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {/* Always on screen inside IPD: anything pending or missed surfaces here
+          instead of staying buried in one patient's chart. */}
+      <React.Suspense fallback={null}>
+        <IpdAlertBar />
+      </React.Suspense>
+      {children}
+    </>
+  );
 };
 
 // /ipd landing: send the user to the first IPD page they may open

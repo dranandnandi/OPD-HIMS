@@ -81,15 +81,30 @@ export const nursingService = {
   },
 
   // --- tasks -------------------------------------------------------------------
-  async listTasks(admissionId: string): Promise<NursingTask[]> {
+  /**
+   * Pending work first, then what has already been dealt with.
+   *
+   * Ordering by the status column alone put 'done' ahead of 'pending'
+   * alphabetically — harmless with a handful of ad-hoc tasks, wrong once a
+   * 30-minute monitoring order is expanding occurrences all day. The rank is
+   * therefore applied here, not in SQL.
+   */
+  async listTasks(admissionId: string, limit = 400): Promise<NursingTask[]> {
     const { data, error } = await supabase
       .from('ipd_nursing_tasks')
       .select('*')
       .eq('admission_id', admissionId)
-      .order('status', { ascending: true }) // pending first
-      .order('due_at', { ascending: true, nullsFirst: false });
+      .order('due_at', { ascending: false, nullsFirst: false })
+      .limit(limit);
     if (error) throw error;
-    return data as NursingTask[];
+
+    const rank = (t: NursingTask) => (t.status === 'pending' ? 0 : 1);
+    const due = (t: NursingTask) => (t.due_at ? new Date(t.due_at).getTime() : 0);
+    return (data as NursingTask[]).sort((a, b) => {
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      // pending: soonest first (what to do next). settled: most recent first.
+      return rank(a) === 0 ? due(a) - due(b) : due(b) - due(a);
+    });
   },
 
   async addTask(params: {

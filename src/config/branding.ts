@@ -17,7 +17,7 @@ export interface Brand {
   companyShort: string;
   /** Legal entity used in the copyright line */
   legalName: string;
-  /** Module/product name shown under the login heading */
+  /** Product name shown under the login heading */
   productName: string;
   loginHeading: string;
   /** Full "Powered by ..." string */
@@ -46,7 +46,7 @@ const BRANDS: Record<string, Brand> = {
     company: 'The Doctorpreneur Academy',
     companyShort: 'Doctorpreneur Academy',
     legalName: 'The Doctorpreneur Technologies',
-    productName: 'OPD Management Module',
+    productName: 'Clinic Suite',
     loginHeading: 'Welcome to The Doctorpreneur Academy',
     poweredBy: 'Powered by The Doctorpreneur Academy',
     supportContact: 'Contact The Doctorpreneur Academy',
@@ -56,7 +56,7 @@ const BRANDS: Record<string, Brand> = {
     loginLogoClass: 'w-12 h-12 object-contain',
     navLogoClass: 'w-6 h-6 object-contain',
     navLogoClassSmall: 'w-5 h-5 object-contain',
-    documentTitle: 'The Doctorpreneur Academy - OPD Management Module',
+    documentTitle: 'The Doctorpreneur Academy - Clinic Suite',
     website: 'docpreneur.academy',
     fileSlug: 'Doctorpreneur',
   },
@@ -65,7 +65,7 @@ const BRANDS: Record<string, Brand> = {
     company: 'Anpro Healthtech',
     companyShort: 'Anpro Healthtech',
     legalName: 'Anpro Healthtech',
-    productName: 'OPD Solution',
+    productName: 'Clinic Suite',
     loginHeading: 'Welcome to Anpro Healthtech',
     poweredBy: 'Powered by Anpro Healthtech',
     supportContact: 'Contact Anpro Healthtech',
@@ -75,7 +75,7 @@ const BRANDS: Record<string, Brand> = {
     loginLogoClass: 'h-16 w-auto max-w-[240px] object-contain',
     navLogoClass: 'h-6 w-auto max-w-[120px] object-contain',
     navLogoClassSmall: 'h-5 w-auto max-w-[100px] object-contain',
-    documentTitle: 'Anpro Healthtech - OPD Solution',
+    documentTitle: 'Anpro Healthtech - Clinic Suite',
     website: 'anprohealthtech.com',
     fileSlug: 'Anpro',
   },

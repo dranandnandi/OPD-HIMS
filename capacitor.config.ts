@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/core';
 
 const config: CapacitorConfig = {
   appId: 'com.opdmanagement.clinic',
-  appName: 'OPD Management',
+  appName: 'Clinic Suite',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

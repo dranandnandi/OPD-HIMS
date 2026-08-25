@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Ban } from 'lucide-react';
+import { Ban, Search, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { admissionService } from '../services/admissionService';
 import { bedService } from '../services/bedService';
 import { billingService } from '../services/billingService';
 import CancelAdmissionModal from '../components/ADT/CancelAdmissionModal';
 import type { Admission, Bed } from '../types/ipd';
+
+const PAST_STATUSES = ['discharged', 'dama', 'expired', 'transferred_out', 'cancelled'] as const;
+
+/** yyyy-MM-dd from a date input → ISO timestamp at the start / end of that local day. */
+const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString();
+const dayEnd = (d: string) => new Date(`${d}T23:59:59.999`).toISOString();
 
 export default function CensusPage() {
   const { clinicId, isAdmin } = useAuth();
@@ -20,11 +26,26 @@ export default function CensusPage() {
   const [cancelTarget, setCancelTarget] = useState<Admission | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // filters
+  const [search, setSearch] = useState('');
+  const [doctorId, setDoctorId] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateField, setDateField] = useState<'admission' | 'discharge'>('discharge');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+
   useEffect(() => {
     if (!clinicId) return;
     setLoading(true);
     Promise.all([
-      view === 'current' ? admissionService.listActive(clinicId) : admissionService.listPast(clinicId),
+      view === 'current'
+        ? admissionService.listActive(clinicId)
+        : // past patients are paged in SQL, so the date range has to go to the server
+          admissionService.listPast(clinicId, {
+            dateField,
+            from: fromDate ? dayStart(fromDate) : undefined,
+            to: toDate ? dayEnd(toDate) : undefined,
+          }),
       bedService.listBeds(clinicId),
     ])
       .then(([a, b]) => {
@@ -47,7 +68,7 @@ export default function CensusPage() {
         })
         .catch(() => setDues({}));
     }
-  }, [clinicId, view, refreshKey]);
+  }, [clinicId, view, refreshKey, fromDate, toDate, dateField]);
 
   // ward-wise occupancy cards
   const wardStats = useMemo(() => {
@@ -63,6 +84,54 @@ export default function CensusPage() {
     return [...map.entries()];
   }, [beds]);
 
+  // doctors present in the loaded set — keeps the dropdown in step with the date range
+  const doctors = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of admissions) {
+      if (a.admitting_doctor?.id) map.set(a.admitting_doctor.id, a.admitting_doctor.name ?? '—');
+    }
+    return [...map.entries()].sort((x, y) => x[1].localeCompare(y[1]));
+  }, [admissions]);
+
+  const hasFilters = Boolean(search || doctorId || statusFilter || fromDate || toDate);
+
+  const clearFilters = () => {
+    setSearch('');
+    setDoctorId('');
+    setStatusFilter('');
+    setFromDate('');
+    setToDate('');
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return admissions.filter((a) => {
+      if (doctorId && a.admitting_doctor?.id !== doctorId) return false;
+      if (view === 'past' && statusFilter && a.status !== statusFilter) return false;
+
+      // the past view filters dates in SQL; the active census is fully loaded, so filter here
+      if (view === 'current' && (fromDate || toDate)) {
+        const t = new Date(a.admission_datetime).getTime();
+        if (fromDate && t < new Date(dayStart(fromDate)).getTime()) return false;
+        if (toDate && t > new Date(dayEnd(toDate)).getTime()) return false;
+      }
+
+      if (!q) return true;
+      const haystack = [
+        a.admission_number,
+        a.patient?.name,
+        a.patient?.phone,
+        a.admitting_doctor?.name,
+        a.current_bed?.ward?.name,
+        a.current_bed?.bed_number,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [admissions, search, doctorId, statusFilter, fromDate, toDate, view]);
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
@@ -70,7 +139,8 @@ export default function CensusPage() {
           Inpatient Census
           {!loading && (
             <span className="ml-2 text-sm font-normal text-slate-500">
-              {admissions.length} admitted
+              {hasFilters && `${filtered.length} of `}
+              {admissions.length} {view === 'current' ? 'admitted' : 'past patients'}
             </span>
           )}
         </h1>
@@ -85,7 +155,7 @@ export default function CensusPage() {
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
       {/* Current / Past toggle */}
-      <div className="flex gap-1 mb-4">
+      <div className="flex gap-1 mb-3">
         {(['current', 'past'] as const).map((v) => (
           <button
             key={v}
@@ -97,6 +167,108 @@ export default function CensusPage() {
             {v === 'current' ? 'Admitted' : 'Past patients'}
           </button>
         ))}
+      </div>
+
+      {/* Search + filters */}
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-56">
+          <label className="block text-xs text-slate-500 mb-1">Search</label>
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Patient name, phone, admission # or doctor"
+              className="w-full border border-slate-200 rounded-lg pl-9 pr-8 py-2 text-sm"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                title="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Doctor</label>
+          <select
+            value={doctorId}
+            onChange={(e) => setDoctorId(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm min-w-44"
+          >
+            <option value="">All doctors</option>
+            {doctors.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {view === 'past' && (
+          <>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm capitalize"
+              >
+                <option value="">All statuses</option>
+                {PAST_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Date type</label>
+              <select
+                value={dateField}
+                onChange={(e) => setDateField(e.target.value as 'admission' | 'discharge')}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="discharge">Discharge date</option>
+                <option value="admission">Admission date</option>
+              </select>
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">From</label>
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">To</label>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => setToDate(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+
+        {hasFilters && (
+          <button
+            onClick={clearFilters}
+            className="text-sm text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-2"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Ward-wise occupancy */}
@@ -125,11 +297,20 @@ export default function CensusPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
-      ) : admissions.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-500">
-          {view === 'current'
-            ? 'No active admissions.'
-            : 'No past patients yet.'}
+          {hasFilters ? (
+            <>
+              No admissions match these filters.{' '}
+              <button onClick={clearFilters} className="text-blue-600 hover:underline">
+                Clear filters
+              </button>
+            </>
+          ) : view === 'current' ? (
+            'No active admissions.'
+          ) : (
+            'No past patients yet.'
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
@@ -146,7 +327,7 @@ export default function CensusPage() {
               </tr>
             </thead>
             <tbody>
-              {admissions.map((a) => (
+              {filtered.map((a) => (
                 <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <Link to={`/ipd/admissions/${a.id}`} className="text-blue-600 hover:underline font-medium">

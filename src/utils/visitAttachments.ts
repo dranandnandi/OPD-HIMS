@@ -6,10 +6,11 @@ import { VisitImage } from '../types';
  * the mime type when we have one and from the URL extension otherwise — old rows
  * carry neither `mimeType` nor a non-image `imageType`.
  */
-export type AttachmentKind = 'image' | 'video' | 'pdf' | 'other';
+export type AttachmentKind = 'image' | 'video' | 'audio' | 'pdf' | 'other';
 
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'svg'];
-const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv', '3gp', 'quicktime'];
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v', 'avi', 'mkv', '3gp', 'quicktime'];
+const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'ogg', 'oga', 'wav', 'opus'];
 
 /** Extension of the file the URL points at, ignoring query strings and signed-URL params. */
 const extensionOf = (url: string): string => {
@@ -22,15 +23,21 @@ const extensionOf = (url: string): string => {
 export const getAttachmentKind = (attachment: Pick<VisitImage, 'url' | 'mimeType' | 'imageType'>): AttachmentKind => {
   const mime = (attachment.mimeType || '').toLowerCase();
   if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
   if (mime.startsWith('video/')) return 'video';
   if (mime === 'application/pdf') return 'pdf';
 
   const ext = extensionOf(attachment.url);
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
   if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
   if (ext === 'pdf') return 'pdf';
 
+  // .webm carries either audio or video; the category decides which.
+  if (ext === 'webm') return attachment.imageType === 'voice_note' ? 'audio' : 'video';
+
   // No mime and no recognisable extension: fall back to the clinical category.
+  if (attachment.imageType === 'voice_note') return 'audio';
   if (attachment.imageType === 'video') return 'video';
   if (attachment.imageType === 'document') return 'pdf';
   if (mime || ext) return 'other';
@@ -49,6 +56,7 @@ export const ATTACHMENT_TYPE_LABELS: Record<VisitImage['imageType'], string> = {
   xray: 'X-Ray',
   case_paper: 'Case Paper',
   video: 'Video',
+  voice_note: 'Voice Note',
   document: 'Document',
   other: 'Other'
 };
@@ -63,13 +71,21 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;   // 15 MB
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;  // 100 MB
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25 MB
 
+/** Seconds -> "m:ss", for audio/video durations. */
+export const formatDuration = (seconds?: number): string => {
+  if (!seconds || seconds <= 0) return '';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+};
+
 /** Returns an error message when the file cannot be attached, or null when it is fine. */
 export const validateAttachmentFile = (file: File): string | null => {
   const mime = (file.type || '').toLowerCase();
   const ext = extensionOf(file.name);
 
   const isImage = mime.startsWith('image/') || IMAGE_EXTENSIONS.includes(ext);
-  const isVideo = mime.startsWith('video/') || VIDEO_EXTENSIONS.includes(ext);
+  const isVideo = mime.startsWith('video/') || VIDEO_EXTENSIONS.includes(ext) || ext === 'webm';
   const isPdf = mime === 'application/pdf' || ext === 'pdf';
 
   if (!isImage && !isVideo && !isPdf) {

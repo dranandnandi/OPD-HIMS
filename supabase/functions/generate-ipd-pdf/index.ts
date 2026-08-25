@@ -8,7 +8,17 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
+import {
+  ensureDocumentLink,
+  beginDocumentLinkGeneration,
+  publishTempUrl,
+  stampPermanentUrl,
+  markLinkFailed,
+  buildDocumentLinkUrl,
+  getDocumentLinkConfig,
+  type LinkEntityType,
+} from '../_shared/documentLinks.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +46,14 @@ async function imageUrlToBase64(url: string): Promise<string> {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  // Hoisted so the catch can retire a reserved token; otherwise a failed render
+  // leaves it 'pending' and the resolver shows a "preparing" page forever.
+  let linkCtx: {
+    admin: SupabaseClient;
+    entityType: LinkEntityType;
+    entityId: string;
+  } | null = null;
+
   try {
     // auth: signed-in users only
     const authHeader = req.headers.get('Authorization');
@@ -61,17 +79,43 @@ serve(async (req) => {
     }
     const table = docType === 'ipd_bill' ? 'ipd_bills' : 'ipd_documents';
     const safeName = (filename ?? `${docType}-${recordId}.pdf`).replace(/[^\w.-]/g, '_');
+    const entityType: LinkEntityType = docType === 'ipd_bill' ? 'ipd_bill' : 'ipd_document';
+
+    // Hook (a): reserve the share token before anything is rendered, so the link
+    // is valid immediately. Minted above the cache check on purpose — the cached
+    // early return would otherwise leave old records without a token forever.
+    let linkToken: string | null = null;
+    const linkConfig = await getDocumentLinkConfig(supabaseAdmin, clinicId);
+    if (linkConfig.enabled) {
+      // Pure mint here; the cached hit below must not disturb a live link.
+      linkToken = await ensureDocumentLink(supabaseAdmin, entityType, recordId, 'final');
+      if (linkToken) linkCtx = { admin: supabaseAdmin, entityType, entityId: recordId };
+    }
+    // Per-clinic domain first, environment default second.
+    const shareUrl = buildDocumentLinkUrl(linkToken, linkConfig.base);
 
     // cached?
     if (!forceRegenerate) {
       const { data: existing } = await supabaseAdmin
         .from(table).select('pdf_url').eq('id', recordId).single();
       if (existing?.pdf_url) {
+        // Point a freshly minted token at the copy that already exists, rather
+        // than leaving it on the resolver's "preparing" page.
+        if (linkToken) {
+          await stampPermanentUrl(supabaseAdmin, entityType, recordId, 'final', existing.pdf_url);
+        }
         return new Response(
-          JSON.stringify({ success: true, url: existing.pdf_url, cached: true }),
+          JSON.stringify({ success: true, url: existing.pdf_url, cached: true, token: linkToken, shareUrl }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    // Past the cache check, so a render is definitely happening. Marks the run
+    // as started (the resolver needs that to tell "wait for it" apart from
+    // "finished long ago") and retires the copy this render will replace.
+    if (linkToken) {
+      await beginDocumentLinkGeneration(supabaseAdmin, entityType, recordId, 'final');
     }
 
     // clinic header/footer + margins (same fields the OPD app uses)
@@ -155,6 +199,14 @@ serve(async (req) => {
     }
     if (!pdfUrl) throw new Error('PDF.co did not return a URL within timeout');
 
+    // Hook (b): publish the temp URL the moment PDF.co has one. Everything below
+    // — the HEAD verification loop, the download retries, the Storage upload —
+    // runs after the PDF already exists, and the share link stays openable
+    // throughout instead of only once that tail completes.
+    if (linkToken) {
+      await publishTempUrl(supabaseAdmin, entityType, recordId, 'final', pdfUrl);
+    }
+
     // verify the file is fetchable before returning it
     for (let i = 0; i < 5; i++) {
       const head = await fetch(pdfUrl, { method: 'HEAD' });
@@ -192,6 +244,13 @@ serve(async (req) => {
       await supabaseAdmin.from(table)
         .update({ pdf_url: publicUrl, ...(docType === 'ipd_document' ? { generated_at: new Date().toISOString() } : {}) })
         .eq('id', recordId);
+
+      // Hook (c): stamp the permanent URL. Refuses ephemeral input, so a failed
+      // upload can never freeze a PDF.co link that dies within the hour.
+      if (linkToken) {
+        await stampPermanentUrl(supabaseAdmin, entityType, recordId, 'final', publicUrl);
+      }
+
       console.log('persisted:', publicUrl);
       return publicUrl;
     };
@@ -200,16 +259,21 @@ serve(async (req) => {
     // pdf.co temp URL only if the upload fails so the user still gets a document.
     const permanentUrl = await persistToStorage();
 
+    // Share `shareUrl` rather than `url` for anything sent outward: on the
+    // temporary branch `url` is a PDF.co link that expires within the hour.
     return new Response(
       JSON.stringify(
         permanentUrl
-          ? { success: true, url: permanentUrl, temporary: false }
-          : { success: true, url: pdfUrl, temporary: true }
+          ? { success: true, url: permanentUrl, temporary: false, token: linkToken, shareUrl }
+          : { success: true, url: pdfUrl, temporary: true, token: linkToken, shareUrl }
       ),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('generate-ipd-pdf error:', error);
+    if (linkCtx) {
+      await markLinkFailed(linkCtx.admin, linkCtx.entityType, linkCtx.entityId, 'final');
+    }
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -1,35 +1,40 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { FileText, Printer, PenLine, CheckCircle2, Plus, FileDown, Sparkles } from 'lucide-react';
-import { CKEditor } from '@ckeditor/ckeditor5-react';
-import {
-  ClassicEditor, Essentials, Paragraph, Bold, Italic, Underline, Heading,
-  List, Table, TableToolbar, Alignment, Link, FontSize, HorizontalLine,
-} from 'ckeditor5';
-import 'ckeditor5/ckeditor5.css';
+import { FileText, Printer, PenLine, Eye, Plus, FileDown, Sparkles } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  documentService, docTypeLabel, hasNarrativePlaceholders,
-  DOC_TYPES, DocumentTemplate, IpdDocument,
+  documentService, docTypeLabel, hasNarrativePlaceholders, isClinicalDocType,
+  documentErrorMessage, DOC_TYPES, DocumentTemplate, IpdDocument,
 } from '../../services/documentService';
-import DocumentVoiceDictation from './DocumentVoiceDictation';
+import DocumentEditor from './DocumentEditor';
+import { documentAiService } from '../../services/documentAiService';
 import type { Admission } from '../../types/ipd';
+import { claimTab, openDocument } from '../../../../services/documentOpener';
 
 interface Props {
   admission: Admission;
 }
 
 export default function DocumentsTab({ admission }: Props) {
-  const { clinicId, profile } = useAuth();
+  const { clinicId, profile, hasPermission } = useAuth();
+  // OT notes, discharge/death summaries and referral letters are the treating
+  // doctor's. Everyone else sees and prints them but cannot write or sign one.
+  // RLS enforces the same rule, so this is not the only lock.
+  const canAuthorClinical = hasPermission('ipd_documents_clinical');
   const [documents, setDocuments] = useState<IpdDocument[]>([]);
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
-  const [docType, setDocType] = useState<string>('discharge_summary');
+  const [docType, setDocType] = useState<string>(
+    () => (canAuthorClinical ? 'discharge_summary' : 'consent')
+  );
   const [templateId, setTemplateId] = useState<string>('default');
   const [editing, setEditing] = useState<IpdDocument | null>(null);
   const [creating, setCreating] = useState(false);
   const [aiCreating, setAiCreating] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+
+  // stable identity — the AI panel refetches the rate card when this changes
+  const subject = useMemo(() => documentAiService.subjectFromAdmission(admission), [admission]);
 
   const reload = useCallback(() => {
     documentService
@@ -48,6 +53,10 @@ export default function DocumentsTab({ admission }: Props) {
       .catch(() => setTemplates([]));
   }, [clinicId]);
 
+  // Types this user may raise — the clinical ones drop out for ward staff
+  const creatableDocTypes = DOC_TYPES.filter(
+    (d) => canAuthorClinical || !isClinicalDocType(d.key)
+  );
   // Templates the clinic has authored for the chosen document type
   const docTypeTemplates = templates.filter((t) => t.doc_type === docType);
   const selectedTemplate = docTypeTemplates.find((t) => t.id === templateId) ?? null;
@@ -73,7 +82,7 @@ export default function DocumentsTab({ admission }: Props) {
       setDocuments((prev) => [doc, ...prev]);
       setEditing(doc);
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(documentErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -81,18 +90,19 @@ export default function DocumentsTab({ admission }: Props) {
 
   const openPdf = async (d: IpdDocument) => {
     if (!clinicId) return;
-    if (d.pdf_url) {
-      window.open(d.pdf_url, '_blank', 'noopener');
-      return;
-    }
+    const tab = claimTab();
     setPdfBusy(d.id);
     try {
-      const url = await documentService.generateDocumentPdf({ doc: d, admission, clinicId });
-      window.open(url, '_blank', 'noopener');
-      toast.success('PDF generated — permanent copy saving in background');
-      setTimeout(reload, 8000); // pick up the permanent pdf_url
-    } catch (e) {
-      toast.error((e as Error).message);
+      await openDocument(tab, {
+        entityType: 'ipd_document',
+        entityId: d.id,
+        variant: 'final',
+        generate: () => documentService.generateDocumentPdf({ doc: d, admission, clinicId }),
+        onComplete: () => reload(),
+        onError: (e) => toast.error((e as Error).message),
+      });
+    } catch {
+      // openDocument closes the claimed tab and reports fallback errors.
     } finally {
       setPdfBusy(null);
     }
@@ -102,7 +112,9 @@ export default function DocumentsTab({ admission }: Props) {
     return (
       <DocumentEditor
         doc={editing}
+        subject={subject}
         admission={admission}
+        viewOnly={!canAuthorClinical && isClinicalDocType(editing.doc_type)}
         onClose={() => {
           setEditing(null);
           reload();
@@ -120,7 +132,7 @@ export default function DocumentsTab({ admission }: Props) {
           className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
           title="Document type"
         >
-          {DOC_TYPES.map((d) => (
+          {creatableDocTypes.map((d) => (
             <option key={d.key} value={d.key}>{d.label}</option>
           ))}
         </select>
@@ -161,9 +173,19 @@ export default function DocumentsTab({ admission }: Props) {
         <span className="text-xs text-slate-400">
           Auto-fills patient, diagnosis, vitals, medications, investigations and round notes
           from the chart. <b>AI draft</b> also writes the hospital-course narrative, advice and
-          condition. Open any draft and use <b>Dictate</b> to speak content straight into its
-          sections — always review before signing. Manage templates in Masters → Document Templates.
+          condition. Open any draft and use <b>Dictate</b> to speak content into its sections, or
+          <b>Write with AI</b> to type a one-line brief (“typhoid fever, 5 days”) and have the
+          whole document drafted — on an estimate that includes a costed breakup priced from this
+          clinic’s rate card at the admitted bed class. Always review before signing. Manage
+          templates in Masters → Document Templates.
         </span>
+        {!canAuthorClinical && (
+          <p className="w-full text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            OT notes, discharge &amp; death summaries and referral letters are written and
+            signed by the treating doctor. You can open, print and download them here, but
+            not change them.
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -192,9 +214,15 @@ export default function DocumentsTab({ admission }: Props) {
             <button
               onClick={() => setEditing(d)}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-              title={d.status === 'draft' ? 'Edit' : 'View'}
+              title={
+                d.status === 'draft' && (canAuthorClinical || !isClinicalDocType(d.doc_type))
+                  ? 'Edit'
+                  : 'View'
+              }
             >
-              <PenLine className="w-4 h-4" />
+              {d.status === 'draft' && (canAuthorClinical || !isClinicalDocType(d.doc_type))
+                ? <PenLine className="w-4 h-4" />
+                : <Eye className="w-4 h-4" />}
             </button>
             <button
               onClick={() => openPdf(d)}
@@ -219,160 +247,6 @@ export default function DocumentsTab({ admission }: Props) {
           <div className="bg-white rounded-xl border border-slate-200 p-6 text-center text-sm text-slate-400">
             No documents yet — create the discharge summary when the patient is ready to go home.
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-function DocumentEditor({
-  doc, admission, onClose,
-}: {
-  doc: IpdDocument; admission: Admission; onClose: () => void;
-}) {
-  const { clinicId, profile } = useAuth();
-  const [content, setContent] = useState(doc.content_html);
-  const [saving, setSaving] = useState(false);
-  const [signing, setSigning] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const readOnly = doc.status !== 'draft';
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await documentService.saveContent(doc.id, content);
-      toast.success('Draft saved');
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /** Dictation writes into the editor and persists the draft in one step */
-  const applyDictation = async (html: string) => {
-    setContent(html);
-    await documentService.saveContent(doc.id, html);
-  };
-
-  const sign = async () => {
-    setSigning(true);
-    try {
-      await documentService.saveContent(doc.id, content);
-      await documentService.finalize(doc.id, profile?.id);
-      toast.success('Document signed');
-      onClose();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setSigning(false);
-    }
-  };
-
-  const serverPdf = async () => {
-    if (!clinicId) return;
-    setPdfBusy(true);
-    try {
-      const url = await documentService.generateDocumentPdf({
-        doc: { ...doc, content_html: content },
-        admission,
-        clinicId,
-        forceRegenerate: true,
-      });
-      window.open(url, '_blank', 'noopener');
-      toast.success('PDF generated');
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setPdfBusy(false);
-    }
-  };
-
-  return (
-    <div>
-      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 flex flex-wrap items-center gap-2">
-        <button onClick={onClose} className="text-sm text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5">
-          ← Back
-        </button>
-        <span className="text-sm font-medium text-slate-700 flex-1">
-          {docTypeLabel(doc.doc_type)} {doc.document_number} — {readOnly ? 'signed (read-only)' : 'draft'}
-        </span>
-        {!readOnly && (
-          <>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg px-4 py-1.5"
-            >
-              {saving ? 'Saving…' : 'Save draft'}
-            </button>
-            <button
-              onClick={sign}
-              disabled={signing}
-              className="flex items-center gap-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg px-4 py-1.5"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              {signing ? 'Signing…' : 'Finalize & sign'}
-            </button>
-          </>
-        )}
-        <button
-          onClick={serverPdf}
-          disabled={pdfBusy}
-          className="flex items-center gap-1.5 text-sm border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
-        >
-          <FileDown className="w-4 h-4" /> {pdfBusy ? 'Generating…' : 'PDF'}
-        </button>
-        <button
-          onClick={() =>
-            documentService.printDocument({
-              doc: { ...doc, content_html: content },
-              admission,
-              clinicId: clinicId!,
-            })
-          }
-          className="flex items-center gap-1.5 text-sm border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50"
-        >
-          <Printer className="w-4 h-4" /> Print
-        </button>
-      </div>
-
-      {!readOnly && (
-        <DocumentVoiceDictation
-          doc={doc}
-          admission={admission}
-          contentHtml={content}
-          onApply={applyDictation}
-        />
-      )}
-
-      <div className="max-w-3xl mx-auto ipd-document-editor">
-        {readOnly ? (
-          <div
-            className="bg-white rounded-xl border border-slate-200 p-8 min-h-[60vh] text-sm leading-relaxed ck-content"
-            dangerouslySetInnerHTML={{ __html: content }}
-          />
-        ) : (
-          <CKEditor
-            editor={ClassicEditor}
-            data={content}
-            onChange={(_, editor) => setContent(editor.getData())}
-            config={{
-              licenseKey: 'GPL',
-              plugins: [
-                Essentials, Paragraph, Bold, Italic, Underline, Heading,
-                List, Table, TableToolbar, Alignment, Link, FontSize, HorizontalLine,
-              ],
-              toolbar: [
-                'heading', '|', 'bold', 'italic', 'underline', 'fontSize', '|',
-                'bulletedList', 'numberedList', 'alignment', '|',
-                'insertTable', 'horizontalLine', 'link', '|', 'undo', 'redo',
-              ],
-              table: { contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'] },
-            }}
-          />
         )}
       </div>
     </div>

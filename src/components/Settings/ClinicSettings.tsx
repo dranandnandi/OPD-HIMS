@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer, TestTube, BedDouble } from 'lucide-react';
+import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer, TestTube, BedDouble, Mic } from 'lucide-react';
 import { ClinicSetting, AppointmentType } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
@@ -55,6 +55,7 @@ const ClinicSettings: React.FC = () => {
   ]);
 
   const [waitingSequenceEnabled, setWaitingSequenceEnabled] = useState(false);
+  const [saveVoiceRecordings, setSaveVoiceRecordings] = useState(false);
   const [ipdEnabled, setIpdEnabled] = useState(false);
   const [ipdSaving, setIpdSaving] = useState(false);
   const [labTestIntegrationEnabled, setLabTestIntegrationEnabled] = useState(false);
@@ -133,6 +134,8 @@ const ClinicSettings: React.FC = () => {
         setWaitingSequenceEnabled((clinicSettings as any).waitingSequenceEnabled);
       }
 
+      setSaveVoiceRecordings(clinicSettings.saveVoiceRecordings ?? false);
+
       // Load IPD module flag (platform-managed)
       setIpdEnabled(clinicSettings.ipdEnabled ?? false);
 
@@ -191,6 +194,7 @@ const ClinicSettings: React.FC = () => {
         pdfFooterUrl,
         whatsappTemplates,
         waitingSequenceEnabled,
+        saveVoiceRecordings,
         labTestIntegrationEnabled,
         limsApiUrl,
         limsApiKey,
@@ -887,6 +891,39 @@ const ClinicSettings: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Voice Dictation */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Mic className="w-5 h-5 text-indigo-600" />
+          <h3 className="text-lg font-semibold text-gray-800">Voice Dictation</h3>
+        </div>
+        <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+          <div>
+            <p className="font-medium text-gray-800">Save dictation audio with the visit</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Keeps the recording as a Voice Note attachment on the visit, playable from the patient's
+              history. When off, the audio is used for transcription and then discarded - only the
+              transcript and the extracted EMR data are kept.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer ml-4">
+            <input
+              type="checkbox"
+              checked={saveVoiceRecordings}
+              onChange={e => setSaveVoiceRecordings(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+        {saveVoiceRecordings && (
+          <p className="text-sm text-indigo-700 mt-3 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+            Recordings are patient data - make sure your consent process covers storing them, and that
+            staff know the audio is retained with the visit record.
+          </p>
         )}
       </div>
 

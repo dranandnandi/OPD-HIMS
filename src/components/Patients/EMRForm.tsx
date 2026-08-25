@@ -39,6 +39,8 @@ interface EMRFormProps {
   ocrData: OcrResult['extractedData'] | Record<string, never>;
   /** Blank examination template chosen before case-paper processing, if any. */
   initialExamination?: PhysicalExamination;
+  /** Attachments to seed a new visit with — e.g. the case paper the EMR was scanned from. */
+  initialAttachments?: VisitImage[];
   onSave: () => void;
 }
 
@@ -71,7 +73,7 @@ const getCurrentLocalTime = () => {
   return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 };
 
-const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, initialExamination, initialVisitDate, initialVisitTime, initialDoctorId, appointmentId: appointmentIdProp, onSave }) => {
+const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, initialExamination, initialAttachments, initialVisitDate, initialVisitTime, initialDoctorId, appointmentId: appointmentIdProp, onSave }) => {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -100,7 +102,9 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   }, [physicalExamination]);
   const [presets, setPresets] = useState<PrescriptionPreset[]>([]);
   const [loadingPresets, setLoadingPresets] = useState(false);
-  const [visitImages, setVisitImages] = useState<VisitImage[]>(existingVisit?.visitImages || []);
+  const [visitImages, setVisitImages] = useState<VisitImage[]>(
+    existingVisit?.visitImages || initialAttachments || []
+  );
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [analyzingImageId, setAnalyzingImageId] = useState<string | null>(null);
@@ -689,6 +693,41 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     return merged.summary;
   };
 
+  /**
+   * Dictation just stopped. Storing the audio is a clinic-level opt-in — when it
+   * is off we simply drop the blob, which is the long-standing behaviour.
+   */
+  const handleVoiceRecordingComplete = async (blob: Blob, durationSeconds: number) => {
+    if (!user?.clinic?.saveVoiceRecordings) return;
+
+    const stamp = new Date();
+    const file = new File([blob], `voice_note_${stamp.getTime()}.webm`, { type: blob.type || 'audio/webm' });
+
+    setUploadingAttachment(true);
+    try {
+      const url = await uploadAttachmentFile(file);
+      setVisitImages(prev => [...prev, {
+        id: `voice_${stamp.getTime()}`,
+        url,
+        imageType: 'voice_note',
+        label: `Dictation ${stamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        mimeType: file.type,
+        fileSize: file.size,
+        durationSeconds: durationSeconds || undefined,
+        uploadedAt: stamp.toISOString()
+      }]);
+    } catch (err) {
+      // A failed audio upload must not block the visit — the transcript is unaffected.
+      setAttachmentError(
+        err instanceof Error
+          ? `Could not save the dictation audio: ${err.message}. The transcript is unaffected.`
+          : 'Could not save the dictation audio. The transcript is unaffected.'
+      );
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
   const handleAnalyzeImage = async (img: VisitImage) => {
     setAnalyzingImageId(img.id);
     try {
@@ -792,7 +831,10 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
 
         doctorNotes: formData.doctorNotes,
         physicalExamination: physicalExamination,
-        caseImageUrl: existingVisit?.caseImageUrl || undefined,
+        caseImageUrl:
+          existingVisit?.caseImageUrl ||
+          visitImages.find(img => img.imageType === 'case_paper')?.url ||
+          undefined,
         visitImages: visitImages.length > 0 ? visitImages : undefined
       };
 
@@ -1103,6 +1145,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           const summary = applyAiExtraction(data, 'Voice dictation');
           if (summary) alert(summarizeMerge(summary));
         }}
+        onRecordingComplete={handleVoiceRecordingComplete}
       />
 
       {/* Diagnosis */}

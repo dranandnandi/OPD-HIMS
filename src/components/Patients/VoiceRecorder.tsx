@@ -16,6 +16,12 @@ interface VoiceRecorderProps {
     doctorSpecialization?: string;
     onTranscriptReady?: (data: VoiceTranscript['extractedData']) => void;
     onApplyToForm?: (data: VoiceTranscript['extractedData']) => void;
+    /**
+     * Fired the moment a recording stops, with the raw audio. The parent decides
+     * whether to keep it — the clinic can opt out of storing dictation audio, in
+     * which case nothing is passed here and the blob is dropped with the page.
+     */
+    onRecordingComplete?: (blob: Blob, durationSeconds: number) => void;
 }
 
 /** Flatten the nested examination object into readable "Section › Field: value" rows. */
@@ -46,7 +52,8 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     patientGender,
     doctorSpecialization,
     onTranscriptReady,
-    onApplyToForm
+    onApplyToForm,
+    onRecordingComplete
 }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
@@ -63,6 +70,10 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     const [isRemapping, setIsRemapping] = useState(false);
     const [mappedTemplateName, setMappedTemplateName] = useState<string | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // The onstop handler closes over stale state, so the elapsed count is mirrored here.
+    const recordingSecondsRef = useRef(0);
+    const onRecordingCompleteRef = useRef(onRecordingComplete);
+    useEffect(() => { onRecordingCompleteRef.current = onRecordingComplete; }, [onRecordingComplete]);
 
     // What the AI is told to map findings onto: the doctor's loaded template if
     // there is one, otherwise the standard OPD schema. Never nothing.
@@ -108,7 +119,10 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
     const startTimer = () => {
         timerRef.current = setInterval(() => {
-            setRecordingSeconds(s => s + 1);
+            setRecordingSeconds(s => {
+                recordingSecondsRef.current = s + 1;
+                return s + 1;
+            });
         }, 1000);
     };
 
@@ -130,6 +144,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         setTranscript(null);
         setExtractedData(null);
         setRecordingSeconds(0);
+        recordingSecondsRef.current = 0;
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -167,6 +182,9 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                     cancelAnimationFrame(animationRef.current);
                 }
                 stopTimer();
+                // Hand the audio to the parent, which keeps or discards it per the
+                // clinic setting. Transcription is unaffected either way.
+                onRecordingCompleteRef.current?.(blob, recordingSecondsRef.current);
             };
 
             mediaRecorder.start(1000); // Collect data every second

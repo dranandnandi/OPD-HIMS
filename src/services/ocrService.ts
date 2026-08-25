@@ -2,6 +2,7 @@ import { OcrResult, PhysicalExamination } from '../types';
 import { supabase } from '../lib/supabase';
 import { getCurrentProfile } from './profileService';
 import { buildExaminationSchemaForAI, ExaminationSchemaForAI } from '../utils/emrMapping';
+import { supabaseUrl } from '../lib/supabaseClient';
 
 
 // Convert File to base64 string
@@ -97,7 +98,7 @@ export const processCasePaperWithAI = async (
     const imageBase64 = await fileToBase64(imageFile);
 
     // Step 4: Call Vision OCR function (supports images only - PDFs converted client-side)
-    const visionOcrUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-ocr`;
+    const visionOcrUrl = `${supabaseUrl}/functions/v1/vision-ocr`;
     console.log('🔮 Calling Vision OCR URL:', visionOcrUrl);
 
     const visionResponse = await fetch(visionOcrUrl, {
@@ -119,7 +120,7 @@ export const processCasePaperWithAI = async (
     console.log('🔄 [OCR] Step 4/6: Cleaning medical text with Gemini AI...');
 
     // Step 5: Call Gemini Clean Medical Text function
-    const cleanResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-clean-medical-text`, {
+    const cleanResponse = await fetch(`${supabaseUrl}/functions/v1/gemini-clean-medical-text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -138,7 +139,7 @@ export const processCasePaperWithAI = async (
     console.log('🔄 [OCR] Step 5/6: Extracting structured medical data with Gemini NLP...');
 
     // Step 6: Call Gemini NLP function (now using cleaned text)
-    const geminiResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-nlp`, {
+    const geminiResponse = await fetch(`${supabaseUrl}/functions/v1/gemini-nlp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -158,7 +159,7 @@ export const processCasePaperWithAI = async (
     console.log('🔄 [OCR] Step 6/6: Validating and refining extracted data...');
 
     // Step 7: Call Validation and Refinement function
-    const validationResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-extracted-data`, {
+    const validationResponse = await fetch(`${supabaseUrl}/functions/v1/validate-extracted-data`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -210,7 +211,15 @@ export const processCasePaperWithAI = async (
       confidence: 0.85,
       processingTime: Date.now() - startTime,
       createdAt: new Date(),
-      validationReport: validationData.validationReport
+      validationReport: validationData.validationReport,
+      // The caller attaches this to the visit, so the scanned case paper stays
+      // visible in the patient's history alongside the extracted data.
+      sourceFile: {
+        url: publicUrl,
+        name: imageFile.name,
+        mimeType: imageFile.type || undefined,
+        size: imageFile.size
+      }
     };
 
     // Step 9: Save result to `ocr_results` table (using refined data)
@@ -345,7 +354,7 @@ export const analyzeVisitImageWithAI = async (
   let rawText = '';
 
   try {
-    const visionResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-ocr`, {
+    const visionResponse = await fetch(`${supabaseUrl}/functions/v1/vision-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ imageBase64 })
@@ -359,7 +368,7 @@ export const analyzeVisitImageWithAI = async (
   }
 
   // Step 2: Gemini Vision analyzes both image + raw text
-  const analyzeResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-analyze-image`, {
+  const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/gemini-analyze-image`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({

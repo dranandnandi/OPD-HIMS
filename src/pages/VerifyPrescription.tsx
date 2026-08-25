@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, ShieldCheck, FileText, Calendar, User, Stethoscope, Building2 } from 'lucide-react';
 import { brand } from '../config/branding';
+import { supabaseUrl } from '../lib/supabaseClient';
 
 interface VerifyData {
   visitId: string;
@@ -17,7 +18,7 @@ interface VerifyData {
   verifiedAt: string;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL = supabaseUrl;
 
 const VerifyPrescription: React.FC = () => {
   const [searchParams] = useSearchParams();

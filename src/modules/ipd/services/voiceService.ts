@@ -1,5 +1,5 @@
 import { supabase } from '../utils/supabase';
-import { treatmentPlanService } from './treatmentPlanService';
+import { treatmentPlanService, TreatmentPlanInput } from './treatmentPlanService';
 import { nursingService, VitalsInput } from './nursingService';
 import { medicationService } from './medicationService';
 import { orderService, OrderCategory } from './orderService';
@@ -160,6 +160,49 @@ const FREQUENCY_CODES = ['od', 'bd', 'tid', 'qid', 'q6h', 'q8h', 'q12h', 'hs', '
 const text = (v: unknown): string | null => {
   const s = typeof v === 'string' ? v.trim() : '';
   return s && s.toLowerCase() !== 'null' ? s : null;
+};
+
+/**
+ * What the round decided, written out as prose. A dictation that is nothing but
+ * orders ("start gentamicin, send a CBC") still has to read as the day's note —
+ * otherwise the medicines and tests land in their tabs and the treatment plan
+ * shows the day as undocumented.
+ */
+const summariseDictatedActions = (
+  data: DictationResult,
+  selections: DictationSelections
+): string | null => {
+  const lines: string[] = [];
+
+  data.medications.forEach((m, i) => {
+    if (!selections.medications[i]) return;
+    const verb = m.action === 'stop' ? 'Stop' : m.action === 'continue' ? 'Continue' : 'Start';
+    const course = m.action === 'start' && m.frequency !== 'stat' ? ` × ${m.days ?? 3}d` : '';
+    lines.push(
+      `${verb} ${m.medicine}${m.dose ? ` ${m.dose}` : ''}${m.route ? ` ${m.route}` : ''} `
+      + `${m.frequency.toUpperCase()}${course}${m.instructions ? ` — ${m.instructions}` : ''}`
+    );
+  });
+
+  const tests = data.investigations
+    .filter((_, i) => !!selections.investigationServiceIds[i])
+    .map((i) => i.testName);
+  if (tests.length) lines.push(`Send ${tests.join(', ')}`);
+
+  data.consultations.forEach((c, i) => {
+    if (!selections.consultations[i]) return;
+    lines.push(`${c.specialty} opinion${c.reason ? ` — ${c.reason}` : ''}`);
+  });
+
+  if (selections.diet && data.diet) {
+    lines.push(`Diet: ${data.diet.dietType} (${data.diet.route})`);
+  }
+
+  data.nursingTasks.forEach((t, i) => {
+    if (selections.tasks[i]) lines.push(`Nursing: ${t.task}`);
+  });
+
+  return lines.length ? lines.map((l) => `• ${l}`).join('\n') : null;
 };
 
 export const voiceService = {
@@ -333,8 +376,10 @@ export const voiceService = {
     userId?: string;
     data: DictationResult;
     selections: DictationSelections;
+    /** append to this entry instead of opening a new one (dictating again on the same round) */
+    targetPlanId?: string | null;
   }): Promise<{ applied: string[]; failed: string[] }> {
-    const { clinicId, admission, userId, data, selections } = params;
+    const { clinicId, admission, userId, data, selections, targetPlanId } = params;
     const applied: string[] = [];
     const failed: string[] = [];
     let planId: string | null = null;
@@ -359,28 +404,53 @@ export const voiceService = {
 
     const keepLeftovers = selections.additionalNotes && !!(leftoverText || data.transcript.trim());
 
-    // 1. Treatment plan entry — the anchor for everything else
+    // 1. Treatment plan entry — the anchor for everything else, and the note the
+    // day is read from. Even a pure-orders dictation gets one, written from what
+    // was raised, so nothing is only visible in the Meds and Orders tabs.
     const p = data.treatmentPlan;
     const planHasContent = [p.subjective, p.objective, p.assessment, p.plan, p.advice].some(
       (v) => v && v.trim()
     );
-    if (selections.plan && planHasContent) {
-      await run('Treatment plan', async () => {
-        const created = await treatmentPlanService.create({
-          clinicId,
-          admissionId: admission.id,
-          userId,
-          input: {
-            ...p,
-            advice: keepLeftovers && leftoverText
-              ? [p.advice, `Also noted:\n${leftoverText}`].filter(Boolean).join('\n')
-              : p.advice,
-            voiceTranscript: data.transcript,
-            doctorId: userId ?? null,
-          },
+    const fallbackNote = [
+      keepLeftovers ? leftoverText : null,
+      summariseDictatedActions(data, selections),
+    ].filter((v): v is string => !!v).join('\n')
+      || (keepLeftovers ? data.transcript.trim() || null : null);
+
+    const planFields: TreatmentPlanInput = planHasContent
+      ? {
+        ...p,
+        advice: keepLeftovers && leftoverText
+          ? [p.advice, `Also noted:\n${leftoverText}`].filter(Boolean).join('\n')
+          : p.advice,
+      }
+      : { plan: fallbackNote };
+
+    if (selections.plan && (planHasContent || fallbackNote)) {
+      if (targetPlanId) {
+        await run('Treatment plan addendum', async () => {
+          await treatmentPlanService.appendDictation({
+            planId: targetPlanId,
+            input: planFields,
+            transcript: data.transcript,
+          });
+          planId = targetPlanId;
         });
-        planId = created.id;
-      });
+      } else {
+        await run('Treatment plan', async () => {
+          const created = await treatmentPlanService.create({
+            clinicId,
+            admissionId: admission.id,
+            userId,
+            input: {
+              ...planFields,
+              voiceTranscript: data.transcript,
+              doctorId: userId ?? null,
+            },
+          });
+          planId = created.id;
+        });
+      }
     } else if (keepLeftovers) {
       // No plan entry was created, so the leftovers and the raw transcript would
       // have had nowhere to live — file them as a note instead of losing them.

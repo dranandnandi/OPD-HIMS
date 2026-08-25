@@ -3,8 +3,19 @@ import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
 // Pinned: the floating `@2` tag resolves to 2.112.1, whose esm.sh build points
 // at https://esm.sh/@supabase/auth-js@2.112.1/denonext/auth-js.mjs — which 404s,
 // breaking `supabase functions deploy` at the bundling step. 2.111.0 resolves.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0'
 import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts"
+import {
+  ensureDocumentLink,
+  beginDocumentLinkGeneration,
+  publishTempUrl,
+  stampPermanentUrl,
+  markLinkFailed,
+  buildDocumentLinkUrl,
+  getDocumentLinkConfig,
+  type LinkEntityType,
+  type LinkVariant,
+} from "../_shared/documentLinks.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -280,6 +291,16 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Hoisted so the outer catch can retire a reserved share token — otherwise a
+  // failed render leaves it 'pending' and the resolver shows the "preparing"
+  // page to anyone who opens the link.
+  let failedLinkCtx: {
+    admin: SupabaseClient
+    entityType: LinkEntityType
+    entityId: string
+    variant: LinkVariant
+  } | null = null
+
   try {
     const { type, data, printVersion, compactVersion, forceRegenerate } = await req.json()
 
@@ -305,55 +326,95 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey)
 
+    // === Record / column / link-variant resolution ===
+    //
+    // One place decides which table, which cached-URL column and which link
+    // variant this request is about. It used to be three scattered ternaries
+    // that disagreed: the bill paths named columns `pdfUrl` / `printPdfUrl`,
+    // neither of which exists (bills has pdf_url / print_pdf_url), so the cache
+    // read errored and fell through and the cache write errored and was only
+    // logged — every bill PDF re-rendered from scratch on every open.
+    const entityType: LinkEntityType | null =
+      type === 'visit' ? 'visit' : type === 'bill' ? 'bill' : null
+    const entityId: string | undefined =
+      type === 'visit' ? data.visit?.id : type === 'bill' ? data.bill?.id : undefined
+    const variant: LinkVariant = compactVersion ? 'compact' : printVersion ? 'print' : 'display'
+    const sourceTable = type === 'bill' ? 'bills' : 'visits'
+    const urlColumn = compactVersion
+      ? 'compact_print_pdf_url'
+      : printVersion
+        ? 'print_pdf_url'
+        : 'pdf_url'
+    const variantLabel = compactVersion ? 'compact print' : printVersion ? 'print' : 'display'
+
+    // === Hook (a): reserve the share token BEFORE anything is rendered ===
+    //
+    // Minted here rather than after generation so that (1) it is valid the
+    // instant the caller gets a response, and (2) the cached early-return below
+    // still produces one — a record generated before this feature existed would
+    // otherwise never get a token.
+    let linkToken: string | null = null
+    // Named distinctly: a `clinicId` const already exists further down this
+    // handler's scope, and redeclaring it breaks the deploy bundle.
+    const linkClinicId: string | undefined = data.clinicSettings?.id
+    const linkConfig = await getDocumentLinkConfig(supabaseAdmin, linkClinicId)
+    if (linkConfig.enabled && entityType && entityId) {
+      // Pure mint here — a cached hit below must not disturb a live link.
+      // Marking the run as started happens after the cache check, once we know
+      // a render is actually going to happen.
+      linkToken = await ensureDocumentLink(supabaseAdmin, entityType, entityId, variant)
+      if (linkToken) {
+        failedLinkCtx = { admin: supabaseAdmin, entityType, entityId, variant }
+      }
+    }
+    // Per-clinic domain first, environment default second.
+    const shareUrl = buildDocumentLinkUrl(linkToken, linkConfig.base)
+
     // === PDF EXISTENCE CHECK - Return cached PDF if available ===
     if (!forceRegenerate) {
-      if (type === 'visit' && data.visit?.id) {
-        const column = compactVersion ? 'compact_print_pdf_url' : printVersion ? 'print_pdf_url' : 'pdf_url'
-        const { data: existingVisit, error } = await supabaseAdmin
-          .from('visits')
-          .select(column)
-          .eq('id', data.visit.id)
+      if (entityType && entityId) {
+        const { data: existingRow, error } = await supabaseAdmin
+          .from(sourceTable)
+          .select(urlColumn)
+          .eq('id', entityId)
           .single()
 
-        if (!error && existingVisit) {
-          const existingPdfUrl = existingVisit[column]
-
-          if (existingPdfUrl) {
-            const label = compactVersion ? 'Compact print' : printVersion ? 'Print' : 'Display'
-            console.log(`[PDF GEN] ✅ ${label} PDF already exists, returning cached URL:`, existingPdfUrl)
-            return new Response(
-              JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-          }
+        if (error) {
+          console.warn(`[PDF GEN] Cache lookup failed on ${sourceTable}.${urlColumn}:`, error.message)
         }
-        const label = compactVersion ? 'compact print' : printVersion ? 'print' : 'display'
-        console.log(`[PDF GEN] No cached ${label} PDF found, generating new one...`)
-      } else if (type === 'bill' && data.bill?.id) {
-        const column = printVersion ? 'printPdfUrl' : 'pdfUrl'
-        const { data: existingBill, error } = await supabaseAdmin
-          .from('bills')
-          .select(column)
-          .eq('id', data.bill.id)
-          .single()
 
-        if (!error && existingBill) {
-          const existingPdfUrl = existingBill[column]
-
-          if (existingPdfUrl) {
-            console.log(`[PDF GEN] ✅ ${printVersion ? 'Print' : 'Display'} PDF already exists, returning cached URL:`, existingPdfUrl)
-            return new Response(
-              JSON.stringify({ success: true, url: existingPdfUrl, cached: true }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
+        // urlColumn is chosen at runtime, so the row shape is only known dynamically.
+        const existing = existingRow as Record<string, string | null> | null
+        const existingPdfUrl = existing?.[urlColumn]
+        if (existingPdfUrl) {
+          console.log(`[PDF GEN] ✅ ${variantLabel} PDF already exists, returning cached URL:`, existingPdfUrl)
+          // Backfill the token so a link minted just now resolves immediately
+          // instead of sitting on the "preparing" page until a regeneration.
+          if (linkToken) {
+            await stampPermanentUrl(supabaseAdmin, entityType, entityId, variant, existingPdfUrl)
           }
+          return new Response(
+            JSON.stringify({ success: true, url: existingPdfUrl, cached: true, token: linkToken, shareUrl }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
         }
-        console.log(`[PDF GEN] No cached ${printVersion ? 'print' : 'display'} PDF found, generating new one...`)
+        console.log(`[PDF GEN] No cached ${variantLabel} PDF found, generating new one...`)
       }
     } else {
       console.log('[PDF GEN] Force regenerate enabled: bypassing cache check.')
     }
     // === END PDF EXISTENCE CHECK ===
+
+    // Past the cache check, so a render is definitely happening. Mark the run as
+    // started and retire the previous copy on the token.
+    //
+    // Both halves matter to anyone holding the link open right now: the resolver
+    // uses generation_started_at to tell "rendering, wait for it" apart from
+    // "finished long ago, serve what's on file", and clearing permanent_url is
+    // what stops it from serving the copy this render is about to replace.
+    if (linkToken && entityType && entityId) {
+      await beginDocumentLinkGeneration(supabaseAdmin, entityType, entityId, variant)
+    }
 
     const pdfCoApiKey = Deno.env.get('PDF_CO_API')
     if (!pdfCoApiKey) {
@@ -1849,6 +1910,21 @@ Translate now:`;
       throw new Error('PDF.co job did not complete within timeout period (2 minutes)');
     }
 
+    // === Hook (b): publish the temp URL the instant PDF.co hands one over ===
+    //
+    // This is where the latency win lands. Everything below — the 3s settle, up
+    // to 10 availability checks at 2s apart, up to 5 download retries with
+    // escalating backoff, the Storage upload and the DB write — happens *after*
+    // the PDF already exists at PDF.co. Publishing here makes the share link
+    // openable during all of it, instead of only once the tail finishes.
+    //
+    // Deliberately after the job completes, not at job *creation*: with
+    // async:true PDF.co hands back the future S3 location up front, and that
+    // URL 404s until the job writes it.
+    if (linkToken && entityType && entityId) {
+      await publishTempUrl(supabaseAdmin, entityType, entityId, variant, pdfUrl)
+    }
+
     // --- Reliability Logic: Verify file availability before returning (Avoid "Broken" PDF) ---
     // This addresses the issue where PDF.co returns a URL but the file is not yet available on S3
     console.log(`[PDF GEN] ⏳ Applying safety delay (3s) for file stabilization...`);
@@ -1940,20 +2016,33 @@ Translate now:`;
         const { data: { publicUrl } } = supabaseAdmin.storage.from(bucketName).getPublicUrl(storagePath);
         console.log('[PDF GEN] Persist: ✅ Uploaded:', publicUrl);
 
-        const table = type === 'bill' ? 'bills' : 'visits';
-        const recordId = type === 'bill' ? data.bill?.id : data.visit?.id;
-        if (recordId) {
-          const column = compactVersion
-            ? 'compact_print_pdf_url'
+        if (entityId) {
+          // The generated-at stamp is not cosmetic: the link resolver dates any
+          // URL it reads back out of this table against it, because a URL in a
+          // column carries no expiry of its own and an ephemeral one left by an
+          // old failed run would otherwise look live forever.
+          const stampColumn = compactVersion
+            ? null
             : printVersion
-              ? (type === 'bill' ? 'printPdfUrl' : 'print_pdf_url')
-              : (type === 'bill' ? 'pdfUrl' : 'pdf_url');
-          const { error: dbError } = await supabaseAdmin.from(table).update({ [column]: publicUrl }).eq('id', recordId);
+              ? (type === 'bill' ? null : 'print_pdf_generated_at')
+              : 'pdf_generated_at';
+
+          const patch: Record<string, string> = { [urlColumn]: publicUrl };
+          if (stampColumn) patch[stampColumn] = new Date().toISOString();
+
+          const { error: dbError } = await supabaseAdmin.from(sourceTable).update(patch).eq('id', entityId);
           if (dbError) {
             console.error('[PDF GEN] Persist: ❌ DB update failed:', dbError.message);
           } else {
-            console.log('[PDF GEN] Persist: ✅ DB updated with column:', column);
+            console.log('[PDF GEN] Persist: ✅ DB updated with column:', urlColumn);
           }
+        }
+
+        // === Hook (c): stamp the permanent URL on the share token ===
+        // stampPermanentUrl refuses ephemeral input, so a PDF.co URL can never
+        // be frozen into a link that dies within the hour.
+        if (linkToken && entityType && entityId) {
+          await stampPermanentUrl(supabaseAdmin, entityType, entityId, variant, publicUrl);
         }
 
         return publicUrl;
@@ -1972,7 +2061,9 @@ Translate now:`;
           success: true,
           url: permanentUrl,
           filename,
-          temporary: false
+          temporary: false,
+          token: linkToken,
+          shareUrl
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -1980,6 +2071,11 @@ Translate now:`;
 
     // Storage persistence failed — fall back to the (1 hour) PDF.co temp URL
     // so the user still gets their document.
+    //
+    // The share token stays on 'temp' here (hook (c) refused the ephemeral URL),
+    // so it keeps resolving for the rest of the signature window and can be
+    // revived by a later regeneration. Share `shareUrl`, not `url`, when
+    // anything is going out over WhatsApp: `url` dies within the hour.
     console.warn('[PDF GEN] ⚠️ Storage persist failed, falling back to temp URL');
     return new Response(
       JSON.stringify({
@@ -1987,6 +2083,8 @@ Translate now:`;
         url: pdfUrl,
         filename,
         temporary: true,
+        token: linkToken,
+        shareUrl,
         message: 'PDF ready, but permanent storage failed. This link expires in 1 hour.'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1994,6 +2092,16 @@ Translate now:`;
 
   } catch (error) {
     console.error('PDF Generation Edge Function Error:', error)
+
+    if (failedLinkCtx) {
+      await markLinkFailed(
+        failedLinkCtx.admin,
+        failedLinkCtx.entityType,
+        failedLinkCtx.entityId,
+        failedLinkCtx.variant,
+      )
+    }
+
     return new Response(
       JSON.stringify({
         error: 'Failed to generate PDF',

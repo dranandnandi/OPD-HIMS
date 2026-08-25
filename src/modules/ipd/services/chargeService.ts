@@ -91,6 +91,28 @@ export const chargeService = {
     return { matches, unmatched: (data?.unmatched ?? []) as string[] };
   },
 
+  /** Conservative retrospective audit: only clearly completed activities. */
+  async auditClinicalNote(clinicId: string, text: string, noteType: string): Promise<{
+    matches: Array<{ service: ServiceRow; quantity: number; phrase?: string }>;
+    unmatched: string[];
+  }> {
+    const rows = await allServices(clinicId);
+    const services = rows.map((s) => ({ code: s.service_code, name: s.name, group: s.charge_group?.name ?? '' }));
+    const { data, error } = await supabase.functions.invoke('ai-billing-note-audit', {
+      body: { text, clinic_id: clinicId, note_type: noteType, services },
+    });
+    if (error) throw new Error(error.message ?? 'Clinical-note billing audit failed');
+    if (data?.error) throw new Error(data.error);
+    const byCode = new Map(rows.map((s) => [s.service_code.toLowerCase(), s]));
+    const matches = ((data?.items ?? []) as Array<{ service_code: string; quantity?: number; source_phrase?: string }>)
+      .map((item) => {
+        const service = byCode.get(String(item.service_code).toLowerCase());
+        return service ? { service, quantity: Math.max(1, Number(item.quantity) || 1), phrase: item.source_phrase } : null;
+      })
+      .filter((item): item is { service: ServiceRow; quantity: number; phrase?: string } => item !== null);
+    return { matches, unmatched: (data?.unmatched ?? []) as string[] };
+  },
+
   async listChargeGroups(clinicId: string): Promise<ChargeGroup[]> {
     const { data, error } = await supabase
       .from('charge_groups')

@@ -58,6 +58,16 @@ export interface AdmissionActivity {
   isEmpty: boolean;
 }
 
+export interface PastAdmissionFilters {
+  /** inclusive lower bound, ISO timestamp */
+  from?: string;
+  /** inclusive upper bound, ISO timestamp */
+  to?: string;
+  /** which date the range applies to (default: discharge) */
+  dateField?: 'admission' | 'discharge';
+  limit?: number;
+}
+
 export const admissionService = {
   /** Active census with patient + bed joined */
   async listActive(clinicId: string): Promise<Admission[]> {
@@ -76,9 +86,15 @@ export const admissionService = {
     return data as unknown as Admission[];
   },
 
-  /** Past patients: discharged / DAMA / expired / transferred, newest first */
-  async listPast(clinicId: string, limit = 100): Promise<Admission[]> {
-    const { data, error } = await supabase
+  /** Past patients: discharged / DAMA / expired / transferred, newest first.
+      A date range is applied in SQL so searching history is not capped by the
+      default page size. */
+  async listPast(clinicId: string, filters: PastAdmissionFilters = {}): Promise<Admission[]> {
+    const { from, to, dateField = 'discharge' } = filters;
+    const column = dateField === 'admission' ? 'admission_datetime' : 'discharge_datetime';
+    const limit = filters.limit ?? (from || to ? 500 : 100);
+
+    let query = supabase
       .from('ipd_admissions')
       .select(
         `*,
@@ -86,9 +102,12 @@ export const admissionService = {
          admitting_doctor:profiles!ipd_admissions_admitting_doctor_id_fkey(id, name, email, role_name, specialization, permissions, is_active, clinic_id)`
       )
       .eq('clinic_id', clinicId)
-      .in('status', ['discharged', 'dama', 'expired', 'transferred_out', 'cancelled'])
-      .order('discharge_datetime', { ascending: false })
-      .limit(limit);
+      .in('status', ['discharged', 'dama', 'expired', 'transferred_out', 'cancelled']);
+
+    if (from) query = query.gte(column, from);
+    if (to) query = query.lte(column, to);
+
+    const { data, error } = await query.order(column, { ascending: false }).limit(limit);
     if (error) throw error;
     return data as unknown as Admission[];
   },
@@ -238,25 +257,10 @@ export const admissionService = {
     admissionId: string;
     dischargeType: NonNullable<Admission['discharge_type']>;
   }): Promise<void> {
-    const now = new Date().toISOString();
-    const { error: allocErr } = await supabase
-      .from('ipd_bed_allocations')
-      .update({ to_datetime: now })
-      .eq('admission_id', params.admissionId)
-      .is('to_datetime', null);
-    if (allocErr) throw allocErr;
-
-    const { error } = await supabase
-      .from('ipd_admissions')
-      .update({
-        status: params.dischargeType === 'expired' ? 'expired'
-          : params.dischargeType === 'dama' ? 'dama' : 'discharged',
-        discharge_datetime: now,
-        discharge_type: params.dischargeType,
-        current_bed_id: null,
-        updated_at: now,
-      })
-      .eq('id', params.admissionId);
+    const { error } = await supabase.rpc('finalize_ipd_discharge', {
+      p_admission_id: params.admissionId,
+      p_discharge_type: params.dischargeType,
+    });
     if (error) throw error;
   },
 

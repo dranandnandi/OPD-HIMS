@@ -13,10 +13,12 @@ export const IPD_PERMISSIONS: IpdPermission[] = [
   { key: 'ipd_census', label: 'Census & Bed Board', description: 'View ward census and bed occupancy' },
   { key: 'ipd_admissions', label: 'Admissions (ADT)', description: 'Admit, transfer, discharge; open patient files' },
   { key: 'ipd_clinical', label: 'Nursing & Medications', description: 'Vitals, notes, tasks, eMAR administration' },
+  { key: 'ipd_treatment_plan', label: 'Treatment Plan', description: 'Plan of care — doctors only; nursing staff chart under Nursing & Medications' },
   { key: 'ipd_charges', label: 'Charge Posting', description: 'Post services/procedures to the running bill' },
   { key: 'ipd_billing', label: 'Billing & Deposits', description: 'Deposits, interim/final bills, payments, refunds' },
   { key: 'ipd_collections', label: 'Daily Collections', description: 'User-wise collection report and export' },
-  { key: 'ipd_documents', label: 'Documents', description: 'Discharge summaries, consents, OT notes' },
+  { key: 'ipd_documents', label: 'Documents', description: 'See and print every document; write consents, admission sheets, DAMA forms, estimates' },
+  { key: 'ipd_documents_clinical', label: 'Clinical Documents (author)', description: 'Write and sign OT notes, discharge/death summaries, referral letters — doctors only' },
   { key: 'ipd_stores', label: 'Stores', description: 'Ward sub-stores, indents, consumption' },
   { key: 'ipd_masters', label: 'Masters', description: 'Services, wards/beds, packages, accounts, templates' },
 ];

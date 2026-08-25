@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Clock } from 'lucide-react';
+import PreAdmissionEstimates from '../components/Estimates/PreAdmissionEstimates';
 import { useAuth } from '../contexts/AuthContext';
 import { insuranceService, ClaimWorklistRow, Claim } from '../services/insuranceService';
 
@@ -33,7 +34,7 @@ export default function TpaClaimsPage() {
   const [rows, setRows] = useState<ClaimWorklistRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'claims' | 'aging'>('claims');
+  const [view, setView] = useState<'claims' | 'aging' | 'estimates'>('claims');
   const [filter, setFilter] = useState<Claim['status'] | 'all' | 'open'>('open');
 
   useEffect(() => {
@@ -82,24 +83,32 @@ export default function TpaClaimsPage() {
         <ShieldCheck className="w-5 h-5 text-navy-600" /> TPA / Insurance
       </h1>
       <p className="text-sm text-slate-500 mb-4">
-        {loading ? 'Loading…' : view === 'claims' ? `${filtered.length} claim(s)` : `${inr(arTotal)} outstanding across ${arRows.length} claim(s)`}
+        {view === 'estimates'
+          ? 'Pre-admission cost estimates'
+          : loading
+            ? 'Loading…'
+            : view === 'claims'
+              ? `${filtered.length} claim(s)`
+              : `${inr(arTotal)} outstanding across ${arRows.length} claim(s)`}
       </p>
 
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
       <div className="flex gap-1 mb-4">
-        {(['claims', 'aging'] as const).map((v) => (
+        {(['claims', 'aging', 'estimates'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
             className={`px-4 py-1.5 rounded-lg text-sm ${view === v ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}
           >
-            {v === 'claims' ? 'Claims' : 'AR Aging'}
+            {v === 'claims' ? 'Claims' : v === 'aging' ? 'AR Aging' : 'Estimates'}
           </button>
         ))}
       </div>
 
-      {view === 'claims' ? (
+      {view === 'estimates' ? (
+        <PreAdmissionEstimates />
+      ) : view === 'claims' ? (
         <>
           <div className="flex flex-wrap gap-1 mb-4">
             {FILTERS.map((f) => (

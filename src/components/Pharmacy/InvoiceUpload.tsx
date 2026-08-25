@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import InvoiceReviewModal from './InvoiceReviewModal';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
+import { supabaseUrl } from '../../lib/supabaseClient';
 
 interface Supplier {
   id: string;
@@ -104,7 +105,7 @@ const InvoiceUpload: React.FC = () => {
       // Call the appropriate edge function based on file type
       let response;
       if (selectedFile.type === 'application/pdf') {
-        response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-pharmacy-pdf`, {
+        response = await fetch(`${supabaseUrl}/functions/v1/parse-pharmacy-pdf`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -117,7 +118,7 @@ const InvoiceUpload: React.FC = () => {
           })
         });
       } else {
-        response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-pharmacy-invoice`, {
+        response = await fetch(`${supabaseUrl}/functions/v1/parse-pharmacy-invoice`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

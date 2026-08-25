@@ -5,6 +5,7 @@ import { nursingService } from './nursingService';
 import { treatmentPlanService } from './treatmentPlanService';
 import { FREQUENCY_OPTIONS } from './medicationService';
 import { DIET_TYPES, MEAL_SLOTS } from './dietService';
+import type { GeneratedPdf } from '../../../services/pdfService';
 import type {
   Admission, IpdBill, Deposit, IpdPayment, MedicationOrder,
   DietOrder, DietChartEntry, IpdOrderItem, TreatmentPlan,
@@ -25,7 +26,11 @@ export interface DocumentTemplate {
 export interface IpdDocument {
   id: string;
   clinic_id: string;
-  admission_id: string;
+  /** null on a pre-admission estimate — the patient is not admitted yet */
+  admission_id: string | null;
+  patient_id?: string | null;
+  /** ComposeSubject the document was quoted against (pre-admission only) */
+  subject_context?: unknown;
   template_id: string | null;
   doc_type: string;
   document_number: string | null;
@@ -56,6 +61,38 @@ export const DOC_TYPES: { key: string; label: string }[] = [
 
 export const docTypeLabel = (docType: string): string =>
   DOC_TYPES.find((d) => d.key === docType)?.label ?? docType.replace(/_/g, ' ');
+
+// ---------------------------------------------------------------------------
+// The document types that are the treating doctor's to write. Everyone with
+// 'ipd_documents' may read and print these; only 'ipd_documents_clinical' may
+// create, edit, sign or delete one. The rest (consent, admission sheet, DAMA,
+// estimate) are front-desk/ward paperwork and stay open to 'ipd_documents'.
+//
+// Enforced in RLS too — keep in sync with public.ipd_is_clinical_doc_type() in
+// supabase/migrations/20260824000000_ipd_clinical_document_permission.sql.
+// ---------------------------------------------------------------------------
+export const CLINICAL_DOC_TYPES = [
+  'discharge_summary',
+  'discharge_medication',
+  'ot_note',
+  'death_summary',
+  'referral_letter',
+];
+
+export const isClinicalDocType = (docType: string): boolean =>
+  CLINICAL_DOC_TYPES.includes(docType);
+
+/**
+ * An RLS refusal on ipd_documents reads "new row violates row-level security
+ * policy…", which tells a ward user nothing. There is exactly one reason the
+ * policy fires, so say it plainly.
+ */
+export const documentErrorMessage = (e: unknown): string => {
+  const msg = (e as Error)?.message ?? 'Something went wrong';
+  return /row-level security/i.test(msg)
+    ? 'Only the treating doctor can create or change this document — OT notes, discharge & death summaries, discharge medication and referral letters are signed by the doctor.'
+    : msg;
+};
 
 // ---------------------------------------------------------------------------
 // Placeholder catalog — every {{key}} the resolver understands. The Template
@@ -794,6 +831,121 @@ export const documentService = {
     return data as IpdDocument;
   },
 
+  // --- pre-admission ("free") estimates --------------------------------------
+  //
+  // The cost estimate is the one document a hospital writes BEFORE the patient
+  // is admitted — the family and the TPA both want the figure first. These rows
+  // carry a patient_id and no admission_id; when the patient is later admitted
+  // the estimate stays attached to them, not to the (then non-existent) stay.
+
+  /**
+   * Start a pre-admission estimate for a patient who has no admission yet.
+   * The class, consultant and diagnosis picked on the form stand in for what
+   * buildPlaceholderMap would normally read off the chart.
+   */
+  async createPreAdmissionEstimate(params: {
+    clinicId: string;
+    patient: {
+      id: string; name: string; age?: number | string | null;
+      gender?: string | null; allergies?: string[] | null;
+    };
+    bedClassLabel: string;
+    doctorName: string;
+    diagnosis: string;
+    /** the ComposeSubject this estimate is quoted against, stored with the row */
+    subjectContext?: unknown;
+    templateId?: string;
+    userId?: string;
+  }): Promise<IpdDocument> {
+    let template: DocumentTemplate | null = null;
+    if (params.templateId) {
+      const { data } = await supabase
+        .from('ipd_document_templates')
+        .select('*')
+        .eq('id', params.templateId)
+        .maybeSingle();
+      template = data as DocumentTemplate | null;
+    }
+    if (!template) {
+      template = await this.getOrCreateDefaultTemplate(params.clinicId, 'estimate');
+    }
+
+    const today = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+    const { data: docNumber } = await supabase.rpc('next_document_number', {
+      p_clinic_id: params.clinicId,
+      p_doc_type: 'estimate',
+    });
+
+    // Nothing on the chart to merge — only what the form supplied. Every other
+    // placeholder resolves to a bracketed prompt so it prints as "to be filled"
+    // rather than as a raw {{token}}.
+    const map: Record<string, string> = {
+      'patient.name': params.patient.name,
+      'patient.age': String(params.patient.age ?? ''),
+      'patient.gender': params.patient.gender ?? '',
+      'patient.allergies': (params.patient.allergies ?? []).join(', ') || 'None known',
+      'admission.number': (docNumber as string) ?? 'Pre-admission',
+      'admission.date': today,
+      'admission.bed': params.bedClassLabel,
+      'admission.diagnosis': params.diagnosis,
+      'admission.reason': params.diagnosis,
+      'doctor.name': params.doctorName.replace(/^dr\.?\s*/i, ''),
+      'discharge.date': today,
+    };
+    const content = resolvePlaceholders(template.html_template, map).replace(
+      /\{\{\s*[\w.]+\s*\}\}/g,
+      '<i style="color:#94a3b8">[to be filled]</i>'
+    );
+
+    const { data, error } = await supabase
+      .from('ipd_documents')
+      .insert({
+        clinic_id: params.clinicId,
+        admission_id: null,
+        patient_id: params.patient.id,
+        template_id: template.id,
+        doc_type: 'estimate',
+        document_number: (docNumber as string) ?? null,
+        content_html: content,
+        subject_context: params.subjectContext ?? null,
+        created_by: params.userId ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as IpdDocument;
+  },
+
+  /** The pre-admission estimate worklist for a clinic */
+  async listPreAdmissionEstimates(
+    clinicId: string,
+    limit = 100
+  ): Promise<Array<IpdDocument & { patient?: { id: string; name: string; phone: string | null } }>> {
+    const { data, error } = await supabase
+      .from('ipd_documents')
+      .select('*, patient:patients(id, name, phone)')
+      .eq('clinic_id', clinicId)
+      .eq('doc_type', 'estimate')
+      .is('admission_id', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data as unknown as Array<
+      IpdDocument & { patient?: { id: string; name: string; phone: string | null } }
+    >;
+  },
+
+  async deleteDocument(documentId: string): Promise<void> {
+    const { error } = await supabase
+      .from('ipd_documents')
+      .delete()
+      .eq('id', documentId)
+      .eq('status', 'draft');
+    if (error) throw error;
+  },
+
   async saveContent(documentId: string, contentHtml: string): Promise<void> {
     const { error } = await supabase
       .from('ipd_documents')
@@ -1093,7 +1245,7 @@ export const documentService = {
     admission: Admission;
     clinicId: string;
     forceRegenerate?: boolean;
-  }): Promise<string> {
+  }): Promise<GeneratedPdf> {
     // no local letterhead — the server adds the clinic header/footer images
     const html = buildBillHtml(params.bill, params.admission, EMPTY_CLINIC_INFO, false);
     const { data, error } = await supabase.functions.invoke('generate-ipd-pdf', {
@@ -1108,7 +1260,13 @@ export const documentService = {
     });
     if (error) throw new Error(error.message ?? 'PDF generation failed');
     if (data?.error) throw new Error(data.error);
-    return data.url as string;
+    return {
+      url: data.url as string,
+      shareUrl: data.shareUrl ?? undefined,
+      token: data.token ?? undefined,
+      temporary: Boolean(data.temporary),
+      cached: Boolean(data.cached),
+    };
   },
 
   /**
@@ -1117,18 +1275,20 @@ export const documentService = {
    */
   async generateDocumentPdf(params: {
     doc: IpdDocument;
-    admission: Admission;
+    /** null for a pre-admission estimate — there is no admission yet */
+    admission: Admission | null;
     clinicId: string;
     forceRegenerate?: boolean;
-  }): Promise<string> {
-    const barcode = generateBarcodeDataUrl(params.admission.admission_number, {
+  }): Promise<GeneratedPdf> {
+    const ref = params.admission?.admission_number ?? params.doc.document_number ?? 'ESTIMATE';
+    const barcode = generateBarcodeDataUrl(ref, {
       height: 30, fontSize: 9, margin: 2,
     });
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px;line-height:1.45;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="font-size:11px;color:#555;">
-            ${params.doc.document_number ?? ''} · ${params.admission.admission_number}
+            ${params.doc.document_number ?? ''} · ${ref}
           </div>
           <img src="${barcode}" style="height:30px" />
         </div>
@@ -1146,7 +1306,13 @@ export const documentService = {
     });
     if (error) throw new Error(error.message ?? 'PDF generation failed');
     if (data?.error) throw new Error(data.error);
-    return data.url as string;
+    return {
+      url: data.url as string,
+      shareUrl: data.shareUrl ?? undefined,
+      token: data.token ?? undefined,
+      temporary: Boolean(data.temporary),
+      cached: Boolean(data.cached),
+    };
   },
 
   /**
@@ -1156,11 +1322,13 @@ export const documentService = {
    */
   async printDocument(params: {
     doc: IpdDocument;
-    admission: Admission;
+    /** null for a pre-admission estimate — there is no admission yet */
+    admission: Admission | null;
     clinicId: string;
   }): Promise<void> {
     const clinic = await getClinicInfo(params.clinicId);
-    const barcode = generateBarcodeDataUrl(params.admission.admission_number, {
+    const ref = params.admission?.admission_number ?? params.doc.document_number ?? 'ESTIMATE';
+    const barcode = generateBarcodeDataUrl(ref, {
       height: 32,
       fontSize: 9,
       margin: 2,
@@ -1188,11 +1356,11 @@ export const documentService = {
 <body>
   <div class="letterhead">
     ${letterheadInner(clinic, 'Inpatient Department')}
-    <div class="barcode"><img src="${barcode}" alt="${params.admission.admission_number}" /></div>
+    <div class="barcode"><img src="${barcode}" alt="${ref}" /></div>
   </div>
   ${params.doc.content_html}
   <div class="footer">
-    <span>${params.doc.document_number ?? ''} · ${params.admission.admission_number}</span>
+    <span>${params.doc.document_number ?? ''} · ${ref}</span>
     <span>Generated ${new Date().toLocaleString('en-IN')}</span>
   </div>
 </body>

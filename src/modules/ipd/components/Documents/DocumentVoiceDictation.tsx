@@ -6,12 +6,13 @@ import {
 import {
   documentVoiceService, DocumentDictationResult, DocumentField, DictatedSection,
 } from '../../services/documentVoiceService';
-import { IpdDocument } from '../../services/documentService';
-import type { Admission } from '../../types/ipd';
+import type { ComposeSubject } from '../../services/documentSubject';
 
 interface Props {
-  doc: IpdDocument;
-  admission: Admission;
+  docType: string;
+  documentNumber: string | null;
+  /** who the document is for — an admission, or a pre-admission estimate form */
+  subject: ComposeSubject;
   /** live editor content — the fields offered are read out of this */
   contentHtml: string;
   /** hand back the rewritten HTML; the editor saves it as the draft */
@@ -29,7 +30,9 @@ interface Draft extends DictatedSection {
  * already assigned to those fields — each row re-routable before it is
  * written into the draft.
  */
-export default function DocumentVoiceDictation({ doc, admission, contentHtml, onApply }: Props) {
+export default function DocumentVoiceDictation({
+  docType, documentNumber, subject, contentHtml, onApply,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -48,8 +51,8 @@ export default function DocumentVoiceDictation({ doc, admission, contentHtml, on
   // Re-read on every content change, but only while the panel is open — the
   // editor fires onChange per keystroke and this parses the whole document.
   const fields: DocumentField[] = useMemo(
-    () => (open ? documentVoiceService.extractDocumentFields(contentHtml, doc.doc_type) : []),
-    [open, contentHtml, doc.doc_type]
+    () => (open ? documentVoiceService.extractDocumentFields(contentHtml, docType) : []),
+    [open, contentHtml, docType]
   );
 
   useEffect(() => () => {
@@ -119,7 +122,11 @@ export default function DocumentVoiceDictation({ doc, admission, contentHtml, on
     }
     setProcessing(true);
     try {
-      const context = documentVoiceService.buildDocumentContext(admission, doc, fields);
+      const context = documentVoiceService.buildDocumentContext(
+        subject,
+        { doc_type: docType, document_number: documentNumber },
+        fields
+      );
       const data = await documentVoiceService.dictate({ ...payload, context });
       setResult(data);
       setDrafts(data.sections.map((s) => ({ ...s, include: true })));
@@ -156,7 +163,7 @@ export default function DocumentVoiceDictation({ doc, admission, contentHtml, on
       const { html, applied } = documentVoiceService.applyDictationToHtml(
         contentHtml,
         chosen,
-        doc.doc_type
+        docType
       );
       await onApply(html);
       toast.success(`Written to: ${applied.join(', ')}`, { duration: 5000 });
@@ -183,7 +190,7 @@ export default function DocumentVoiceDictation({ doc, admission, contentHtml, on
   }
 
   return (
-    <div className="bg-white rounded-xl border border-violet-200 mb-3 overflow-hidden">
+    <div className="bg-white rounded-xl border border-violet-200 w-full overflow-hidden">
       <div className="bg-gradient-to-r from-violet-50 to-blue-50 px-4 py-2.5 border-b border-violet-100 flex flex-wrap items-center gap-2">
         <Sparkles className="w-4 h-4 text-violet-600" />
         <span className="text-sm font-semibold text-slate-800">Document dictation</span>

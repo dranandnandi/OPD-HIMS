@@ -81,7 +81,7 @@ export default function UsersTab({ clinicId }: Props) {
   return (
     <div>
       <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 text-xs text-slate-500">
-        Users and roles are managed in the OPD app (Settings → User Management) — this screen
+        Users and roles are managed in Clinic Suite (Settings → User Management) — this screen
         only grants <b>IPD module access</b> per user. Admin roles bypass all checks. Changes
         apply on the user's next sign-in or page refresh.
       </div>

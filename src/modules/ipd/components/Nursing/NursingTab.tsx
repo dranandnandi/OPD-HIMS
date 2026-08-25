@@ -3,55 +3,82 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import {
   HeartPulse, ClipboardList, StickyNote, Plus, Check, SkipForward, Droplets, UtensilsCrossed,
+  Stethoscope,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { nursingService, VitalsInput } from '../../services/nursingService';
+import { monitoringService, INTERVAL_OPTIONS, intervalLabel } from '../../services/monitoringService';
 import BloodSection from './BloodSection';
 import DietSection from './DietSection';
+import DoctorOrdersSection from './DoctorOrdersSection';
+import MonitoringSection from './MonitoringSection';
 import VoiceDictation from '../Voice/VoiceDictation';
-import type { Admission, Vitals, NursingNote, NursingTask } from '../../types/ipd';
+import { notifyAlertsChanged } from '../../services/alertBus';
+import type { Admission, Vitals, NursingNote, NursingTask, MonitoringOrder } from '../../types/ipd';
 
 interface Props {
   admission: Admission;
   readOnly: boolean; // discharged admissions are view-only
 }
 
-type Section = 'vitals' | 'notes' | 'tasks' | 'diet' | 'blood';
+type Section = 'orders' | 'vitals' | 'notes' | 'tasks' | 'diet' | 'blood';
 
 export default function NursingTab({ admission, readOnly }: Props) {
   const admissionId = admission.id;
   const { clinicId, profile } = useAuth();
-  const [section, setSection] = useState<Section>('vitals');
+  // Opens on the doctor's orders: what to give and what to watch is the first
+  // thing the ward needs off this chart, before charting anything themselves.
+  const [section, setSection] = useState<Section>('orders');
   const [vitals, setVitals] = useState<Vitals[]>([]);
   const [notes, setNotes] = useState<NursingNote[]>([]);
   const [tasks, setTasks] = useState<NursingTask[]>([]);
+  const [monitoring, setMonitoring] = useState<MonitoringOrder[]>([]);
 
-  const reload = useCallback(() => {
-    Promise.all([
-      nursingService.listVitals(admissionId),
-      nursingService.listNotes(admissionId),
-      nursingService.listTasks(admissionId),
-    ])
-      .then(([v, n, t]) => {
-        setVitals(v);
-        setNotes(n);
-        setTasks(t);
-      })
-      .catch((e) => toast.error(e.message));
+  const reload = useCallback(async () => {
+    // Standing monitoring orders materialise their next block of due readings
+    // before the task list is read, so opening the chart is what keeps a
+    // 30-minute observation running. Failing to top up must not stop charting.
+    try {
+      const orders = await monitoringService.listOrders(admissionId);
+      setMonitoring(orders);
+      await monitoringService.topUp(orders);
+    } catch {
+      /* non-fatal — the tasks already materialised still load below */
+    }
+
+    try {
+      const [v, n, t] = await Promise.all([
+        nursingService.listVitals(admissionId),
+        nursingService.listNotes(admissionId),
+        nursingService.listTasks(admissionId),
+      ]);
+      setVitals(v);
+      setNotes(n);
+      setTasks(t);
+      notifyAlertsChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   }, [admissionId]);
 
-  useEffect(reload, [reload]);
+  useEffect(() => { void reload(); }, [reload]);
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
+  const missedTasks = tasks.filter(
+    (t) =>
+      t.status === 'pending' && t.due_at &&
+      Date.now() - new Date(t.due_at).getTime() > (t.grace_minutes ?? 15) * 60_000
+  ).length;
 
   return (
     <div>
       <div className="flex gap-1 mb-3">
         {(
           [
+            ['orders', Stethoscope, "Doctor's orders"],
             ['vitals', HeartPulse, `Vitals (${vitals.length})`],
             ['notes', StickyNote, `Notes (${notes.length})`],
-            ['tasks', ClipboardList, `Tasks (${pendingTasks} pending)`],
+            ['tasks', ClipboardList, `Tasks (${pendingTasks} pending${missedTasks ? `, ${missedTasks} missed` : ''})`],
             ['diet', UtensilsCrossed, 'Diet chart'],
             ['blood', Droplets, 'Blood'],
           ] as Array<[Section, typeof HeartPulse, string]>
@@ -77,11 +104,14 @@ export default function NursingTab({ admission, readOnly }: Props) {
         </div>
       )}
 
+      {section === 'orders' && <DoctorOrdersSection admissionId={admissionId} />}
       {section === 'vitals' && (
         <VitalsSection
           clinicId={clinicId!}
           admissionId={admissionId}
           vitals={vitals}
+          monitoring={monitoring}
+          tasks={tasks}
           userId={profile?.id}
           readOnly={readOnly}
           onChange={reload}
@@ -131,9 +161,10 @@ const vitalFields: Array<{ key: keyof VitalsInput; label: string; step?: string 
 ];
 
 function VitalsSection({
-  clinicId, admissionId, vitals, userId, readOnly, onChange,
+  clinicId, admissionId, vitals, monitoring, tasks, userId, readOnly, onChange,
 }: {
   clinicId: string; admissionId: string; vitals: Vitals[];
+  monitoring: MonitoringOrder[]; tasks: NursingTask[];
   userId?: string; readOnly: boolean; onChange: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>({});
@@ -152,7 +183,13 @@ function VitalsSection({
     setSaving(true);
     try {
       await nursingService.recordVitals({ clinicId, admissionId, vitals: input, userId });
-      toast.success('Vitals recorded');
+      // Charting the reading IS the evidence the observation was done — sign
+      // off the occurrence it belongs to rather than making the nurse tick a
+      // task as well.
+      const signed = await monitoringService
+        .completeDueOccurrence({ admissionId, categories: ['monitoring'], userId })
+        .catch(() => false);
+      toast.success(signed ? 'Vitals recorded — monitoring signed off' : 'Vitals recorded');
       setForm({});
       onChange();
     } catch (e) {
@@ -164,6 +201,16 @@ function VitalsSection({
 
   return (
     <div>
+      <MonitoringSection
+        clinicId={clinicId}
+        admissionId={admissionId}
+        orders={monitoring}
+        tasks={tasks}
+        userId={userId}
+        readOnly={readOnly}
+        onChange={onChange}
+      />
+
       {!readOnly && (
         <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3">
           <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
@@ -320,20 +367,39 @@ function TasksSection({
 }) {
   const [task, setTask] = useState('');
   const [dueAt, setDueAt] = useState('');
+  /** 0 = one-off; anything else makes it a standing order that keeps recurring */
+  const [repeat, setRepeat] = useState(0);
+  const [hours, setHours] = useState('24');
   const [saving, setSaving] = useState(false);
 
   const add = async () => {
     if (!task.trim()) return;
     setSaving(true);
     try {
-      await nursingService.addTask({
-        clinicId,
-        admissionId,
-        task: task.trim(),
-        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-        userId,
-      });
-      toast.success('Task added');
+      if (repeat > 0) {
+        // a repeating task is a standing order, not a row — it expands itself
+        // and keeps expanding, the same machinery as "TPR + BP every 30 min"
+        await monitoringService.create({
+          clinicId,
+          admissionId,
+          title: task.trim(),
+          kind: 'custom',
+          intervalMinutes: repeat,
+          startAt: dueAt ? new Date(dueAt) : undefined,
+          durationHours: hours ? Number(hours) : undefined,
+          userId,
+        });
+        toast.success(`Recurring task ordered — ${intervalLabel(repeat).toLowerCase()}`);
+      } else {
+        await nursingService.addTask({
+          clinicId,
+          admissionId,
+          task: task.trim(),
+          dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+          userId,
+        });
+        toast.success('Task added');
+      }
       setTask('');
       setDueAt('');
       onChange();
@@ -367,8 +433,35 @@ function TasksSection({
             type="datetime-local"
             value={dueAt}
             onChange={(e) => setDueAt(e.target.value)}
+            title="First due at"
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
           />
+          <select
+            value={repeat}
+            onChange={(e) => setRepeat(Number(e.target.value))}
+            title="Repeat"
+            className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+          >
+            <option value={0}>Once</option>
+            {INTERVAL_OPTIONS.map((o) => (
+              <option key={o.minutes} value={o.minutes}>{o.label}</option>
+            ))}
+          </select>
+          {repeat > 0 && (
+            <label className="flex items-center gap-1 text-xs text-slate-500">
+              for
+              <input
+                type="number"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                min={1}
+                max={168}
+                placeholder="24"
+                className="w-16 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+              h
+            </label>
+          )}
           <button
             onClick={add}
             disabled={saving || !task.trim()}
@@ -390,15 +483,23 @@ function TasksSection({
             >
               {t.task}
             </span>
+            {t.monitoring_order_id && (
+              <span className="text-xs uppercase bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">
+                {t.category === 'monitoring' ? 'monitoring'
+                  : t.category === 'intake_output' ? 'I/O'
+                    : t.category === 'observation' ? 'observe' : 'recurring'}
+              </span>
+            )}
             {t.due_at && (
               <span
                 className={`text-xs ${
-                  t.status === 'pending' && new Date(t.due_at) < new Date()
-                    ? 'text-red-600 font-medium'
-                    : 'text-slate-400'
+                  t.status === 'pending' && isMissed(t) ? 'text-red-600 font-medium'
+                    : t.status === 'pending' && new Date(t.due_at) <= new Date() ? 'text-amber-600 font-medium'
+                      : 'text-slate-400'
                 }`}
               >
-                due {format(new Date(t.due_at), 'dd MMM HH:mm')}
+                {t.status === 'pending' && isMissed(t) ? 'MISSED — was due ' : 'due '}
+                {format(new Date(t.due_at), 'dd MMM HH:mm')}
               </span>
             )}
             {t.status === 'pending' && !readOnly ? (
@@ -429,4 +530,10 @@ function TasksSection({
       </div>
     </div>
   );
+}
+
+/** Past its own grace window — the same rule the alert bar applies. */
+function isMissed(t: NursingTask): boolean {
+  if (!t.due_at) return false;
+  return Date.now() - new Date(t.due_at).getTime() > (t.grace_minutes ?? 15) * 60_000;
 }

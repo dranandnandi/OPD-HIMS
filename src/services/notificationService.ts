@@ -170,7 +170,7 @@ class NotificationService {
           title: notification.title || notification.data?.title || 'New Notification',
           body: notification.body || notification.data?.body || '',
           largeBody: notification.data?.body,
-          summaryText: 'OPD Management',
+          summaryText: 'Clinic Suite',
           smallIcon: 'ic_stat_icon_notification',
           iconColor: '#3B82F6',
           extra: notification.data

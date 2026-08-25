@@ -1,6 +1,7 @@
 import { Profile, Role } from '../types';
 import type { DatabaseProfile, DatabaseRole } from '../lib/supabaseClient';
 import { supabase as supabaseClient } from '../lib/supabase';
+import { supabaseUrl } from '../lib/supabaseClient';
 
 
 // Local Storage Keys
@@ -108,6 +109,7 @@ export const convertDatabaseProfile = (
       invoiceMargins: clinic.invoice_margins,
       clinicTier: (clinic.clinic_tier as 'basic' | 'silver' | 'gold') ?? 'basic',
       ipdEnabled: clinic.ipd_enabled ?? false,
+      saveVoiceRecordings: clinic.save_voice_recordings ?? false,
     }
     : undefined,
 });
@@ -183,7 +185,7 @@ export async function getCurrentProfile(providedUserId?: string, providedAccessT
     if (import.meta.env.DEV) {
       console.log('📡 [Edge Function] Calling fetch-user-profile...');
     }
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-user-profile`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/fetch-user-profile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

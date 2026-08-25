@@ -1,8 +1,73 @@
 import { createClient } from '@supabase/supabase-js';
 import type { PublicBookingPolicy } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+/**
+ * Which Supabase project this build talks to.
+ *
+ * Primary is Mumbai (ap-south-1); the fallback pair is the old Sydney project,
+ * kept so a bad cutover can be reversed by flipping one flag and rebuilding
+ * rather than by editing keys under pressure.
+ *
+ * This is a DELIBERATE, BUILD-TIME switch — not automatic failover. Do not be
+ * tempted to make the app retry against the fallback when the primary errors:
+ * a clinical database that silently accepts some writes here and some there
+ * ends up with a patient's visits split across two projects, and no way to
+ * reconcile them. A brief outage is recoverable; divergent patient records are
+ * not. If the primary is down, the honest response is downtime, then a
+ * considered decision to switch.
+ *
+ * To roll back: set VITE_SUPABASE_USE_FALLBACK=true and rebuild.
+ */
+const useFallback =
+  String(import.meta.env.VITE_SUPABASE_USE_FALLBACK ?? '').toLowerCase() === 'true';
+
+const primaryUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const primaryAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const fallbackUrl = import.meta.env.VITE_SUPABASE_URL_FALLBACK || '';
+const fallbackAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY_FALLBACK || '';
+
+// Only honour the flag if the fallback is actually configured. Otherwise a
+// stray "true" in the environment would silently build an app with no
+// database at all, which fails much later and much less obviously.
+const fallbackUsable = Boolean(fallbackUrl && fallbackAnonKey);
+const activeTarget: 'primary' | 'fallback' =
+  useFallback && fallbackUsable ? 'fallback' : 'primary';
+
+/**
+ * The resolved project URL and anon key — exported deliberately.
+ *
+ * A lot of code calls edge functions with a hand-built
+ * `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/...`. Reading the raw env
+ * var there defeats the fallback switch entirely: flipping
+ * VITE_SUPABASE_USE_FALLBACK would move the database client to one project
+ * while every hand-built function URL stayed pointed at the other. That is the
+ * split-brain this whole mechanism exists to avoid.
+ *
+ * Import these instead of touching import.meta.env directly.
+ */
+export const supabaseUrl = activeTarget === 'fallback' ? fallbackUrl : primaryUrl;
+export const supabaseAnonKey = activeTarget === 'fallback' ? fallbackAnonKey : primaryAnonKey;
+
+/** Base for hand-built edge function calls: `${functionsBase}/name`. */
+export const functionsBase = `${supabaseUrl}/functions/v1`;
+
+if (useFallback && !fallbackUsable) {
+  console.warn(
+    '[supabase] VITE_SUPABASE_USE_FALLBACK is set but no fallback is configured — using primary.',
+  );
+}
+
+/**
+ * Always log which project is live, in every environment.
+ *
+ * The rest of the debug logging below is DEV-only, but this one line is not:
+ * after a migration, "which database is this build actually pointing at?" is
+ * the first question anyone asks when something looks wrong, and the project
+ * ref is not a secret.
+ */
+console.info(
+  `[supabase] target=${activeTarget} project=${supabaseUrl.replace(/^https:\/\/([^.]+).*/, '$1') || 'NOT SET'}`,
+);
 
 // Debug: Log environment variables only in development
 if (import.meta.env.DEV) {
@@ -552,6 +617,7 @@ export interface DatabaseClinicSetting {
   clinic_tier?: 'basic' | 'silver' | 'gold';
   ipd_enabled?: boolean;
   waiting_sequence_enabled?: boolean;
+  save_voice_recordings?: boolean;
   lab_test_integration_enabled?: boolean;
   lims_api_url?: string;
   lims_api_key?: string;
