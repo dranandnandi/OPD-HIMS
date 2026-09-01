@@ -73,20 +73,67 @@ serve(async (req) => {
       throw new AbdmUpstreamError('ABDM returned no user token', 502, '<token absent>');
     }
 
-    const profile = await fetchAbhaProfile(cfg, accessToken, xToken, requestId);
-    if (!profile.abhaNumber) {
-      throw new AbdmUpstreamError('ABDM returned no ABHA number', 502, '<profile absent>');
+    // Which token the profile call actually accepted. ABDM returns two shapes
+    // from `login/verify` (spec 7.4 vs 7.6.1.3): a 300s T-token that must be
+    // exchanged here, or a 1800s X-token that is already the user token. When
+    // it is the latter, the token minted by /verify/user is refused by the
+    // profile endpoint with a *gateway-level, empty-bodied* 401 — no ABDM error
+    // code, nothing in the logs to read. Observed on sandbox 2026-08-25.
+    //
+    // So: try the exchanged token, and on 401/403 fall back to the one from
+    // step 2. Narrow on purpose — 401/403 only, and only here. Whichever
+    // answers is the token retained for the card, or the card breaks the same
+    // way. COLLAPSE THIS once `tokenExpiresIn` has shown which shape sandbox
+    // and production each return.
+    // Spec 9.0 is ENRICHMENT here, not the source of truth.
+    //
+    // `login/verify` already returned this account in full — ABHA number,
+    // address, name, gender, DOB, status, kycVerified — and the desk has it on
+    // screen. Get Profile adds only `mobileMasked`, which is the number the
+    // desk just typed. So a refusal here must not fail a verification that
+    // ABDM has already completed: the patient answered their OTP and the
+    // account was selected.
+    //
+    // It is not hypothetical. On sandbox this endpoint refuses every token we
+    // can present with an empty-bodied 401 — no ABDM error code, nothing
+    // logged upstream — most likely a client-ID entitlement, which is an NHA
+    // question and not something the front desk can wait on. See
+    // session-log-2026-08-25.md 4e.
+    let profile: Awaited<ReturnType<typeof fetchAbhaProfile>> | null = null;
+    try {
+      profile = await fetchAbhaProfile(cfg, accessToken, xToken, requestId);
+    } catch (e) {
+      console.warn(
+        `[abdm][${requestId}] profile enrichment unavailable ` +
+          `(${e instanceof AbdmUpstreamError ? e.status : 'error'}); ` +
+          'continuing on the account returned by login/verify.',
+      );
     }
+    const effectiveXToken = xToken;
 
     // The T-token is spent, but the X-token is retained for one more TTL so the
     // desk can print the ABHA card and QR (spec 10/11) without a second OTP —
     // those endpoints have no other way to authenticate as the patient. The
     // token stays server-side; the client only ever holds the opaque handle.
     // If the card is not requested, the row expires on its own within minutes.
-    await extendFlowSession(caller, sessionId, { tToken: null, xToken });
+    await extendFlowSession(caller, sessionId, { tToken: null, xToken: effectiveXToken });
 
-    await writeAudit(caller, { action: 'login_verify_user', requestId, status: 'success', patientId });
+    await writeAudit(caller, {
+      action: 'login_verify_user',
+      requestId,
+      status: 'success',
+      patientId,
+      // Recorded so the trail shows WHICH verifications ran without the
+      // profile call. An assessor asking "was this identity confirmed against
+      // ABDM?" needs to see that the answer is yes either way — the OTP and
+      // the account selection are what confirm it — and needs to be able to
+      // count how often enrichment was unavailable.
+      errorMessage: profile ? null : 'profile_enrichment_unavailable',
+    });
 
+    // `profile: null` means "verified, but Get Profile did not answer". The
+    // client falls back to the account it already chose. It is NOT a failure
+    // and must not be rendered as one.
     return jsonResponse(req, { profile, sessionId, requestId });
   } catch (err) {
     if (caller) {

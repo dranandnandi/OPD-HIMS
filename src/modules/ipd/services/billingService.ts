@@ -223,11 +223,13 @@ export const billingService = {
         .from('ipd_deposits')
         .select('admission_id, amount, entry_type')
         .in('admission_id', ids),
+      // provisional statements and superseded bills carry no money
       supabase
         .from('ipd_bills')
         .select('admission_id, balance_amount, status')
         .in('admission_id', ids)
-        .neq('status', 'cancelled'),
+        .eq('is_provisional', false)
+        .not('status', 'in', '(cancelled,superseded)'),
     ]);
 
     return admissions.map((a: any) => {
@@ -333,7 +335,17 @@ export const billingService = {
     return data as Deposit;
   },
 
-  /** Sweep pending postings into an interim/final bill via the DB function */
+  /**
+   * Build a bill via the DB function.
+   *  - 'interim'       provisional running statement. Prints everything
+   *                    charged so far and consumes nothing — charges stay
+   *                    unbilled, packages unclaimed, no money owed against it.
+   *  - 'final'         the one consolidated bill for the whole episode. Sweeps
+   *                    every non-cancelled charge and every package, and
+   *                    supersedes earlier bills, carrying their receipts and
+   *                    applied deposits onto itself.
+   *  - 'supplementary' pending-only, for charges that land after the final.
+   */
   async generateBill(
     admissionId: string,
     billType: 'interim' | 'final' | 'supplementary',
@@ -344,24 +356,13 @@ export const billingService = {
       p_bill_type: billType,
       p_created_by: userId ?? null,
     });
-    if (error) throw error;
-    return data as string;
-  },
-
-  /** Relabel an interim bill as the FINAL bill (one final per admission — DB-enforced) */
-  async markAsFinal(billId: string): Promise<void> {
-    const { error } = await supabase
-      .from('ipd_bills')
-      .update({ bill_type: 'final', updated_at: new Date().toISOString() })
-      .eq('id', billId)
-      .eq('bill_type', 'interim')
-      .neq('status', 'cancelled');
     if (error) {
       if (error.message?.includes('uq_final_bill_per_admission')) {
         throw new Error('A final bill already exists for this admission.');
       }
       throw error;
     }
+    return data as string;
   },
 
   async listBills(admissionId: string): Promise<IpdBill[]> {

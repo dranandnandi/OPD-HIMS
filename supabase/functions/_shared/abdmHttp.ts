@@ -6,7 +6,7 @@
 
 import type { AbdmCaller } from './abdmAuthz.ts';
 import { AbdmAuthError } from './abdmAuthz.ts';
-import { AbdmUpstreamError } from './abdmSession.ts';
+import { AbdmUpstreamError, AbdmResponseShapeError } from './abdmSession.ts';
 import { AbdmConfigError } from './abdmConfig.ts';
 
 /**
@@ -23,6 +23,19 @@ function allowedOrigins(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Request headers the browser is allowed to send.
+ *
+ * `x-region` matters and is easy to miss: abhaService pins every ABDM call to
+ * ap-south-1 with that header, which makes each call non-simple and triggers a
+ * preflight. A header absent from this list fails the preflight, so the POST is
+ * never sent and the browser reports a bare CORS error with no function log to
+ * match it against — the whole ABHA flow dies while every other endpoint,
+ * which sends no custom header, keeps working.
+ */
+const ALLOWED_REQUEST_HEADERS =
+  'authorization, x-client-info, apikey, content-type, x-region';
+
 export function corsHeaders(req: Request): Record<string, string> {
   const origin = (req.headers.get('Origin') ?? '').replace(/\/+$/, '');
   const allowed = allowedOrigins();
@@ -31,18 +44,31 @@ export function corsHeaders(req: Request): Record<string, string> {
   // keeps existing deployments working rather than breaking the ABHA flow the
   // moment this ships — but it is logged loudly, because shipping to production
   // in this state is the finding, not the fix.
-  const permit =
-    allowed.length === 0
-      ? (console.warn('[abdm] ABDM_ALLOWED_ORIGINS unset — CORS is not restricted'), origin || '*')
-      : allowed.includes(origin)
-        ? origin
-        : '';
+  let permit: string;
+  if (allowed.length === 0) {
+    console.warn('[abdm] ABDM_ALLOWED_ORIGINS unset — CORS is not restricted');
+    permit = origin || '*';
+  } else if (allowed.includes(origin)) {
+    permit = origin;
+  } else {
+    // The other way this fails in production: allowlist set, but to a value
+    // that does not match the deployed frontend (trailing path, www., http://,
+    // a preview domain). Without this line the symptom is identical to the
+    // header case above and equally invisible server-side.
+    console.warn(
+      `[abdm] origin ${origin || '<none>'} is not in ABDM_ALLOWED_ORIGINS ` +
+        `(${allowed.length} configured) — response will be blocked by the browser`,
+    );
+    permit = '';
+  }
 
   return {
     // No match => no ACAO header at all, so the browser blocks the response.
     ...(permit ? { 'Access-Control-Allow-Origin': permit } : {}),
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': ALLOWED_REQUEST_HEADERS,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    // Cuts the preflight round-trip off every step of a multi-call OTP flow.
+    'Access-Control-Max-Age': '86400',
     // Responses vary per Origin; without this a cache could serve one clinic's
     // permitted response to a disallowed origin.
     'Vary': 'Origin',
@@ -116,6 +142,21 @@ export function errorResponse(req: Request, err: unknown, requestId: string): Re
     return jsonResponse(req, { error: 'ABDM is not configured', requestId }, 500);
   }
 
+  // Checked BEFORE AbdmUpstreamError: this is our parsing failing, not ABDM
+  // being down, and conflating the two costs real diagnostic time.
+  if (err instanceof AbdmResponseShapeError) {
+    console.error(`[abdm][${requestId}] response shape:`, err.message, err.detail);
+    return jsonResponse(
+      req,
+      {
+        error:
+          'ABDM replied, but the response could not be read. This is a fault on our side — please report it with the request id.',
+        requestId,
+      },
+      500,
+    );
+  }
+
   if (err instanceof AbdmUpstreamError) {
     // The upstream body is the sensitive part — it goes to logs only.
     console.error(`[abdm][${requestId}] upstream ${err.status}:`, err.upstreamBody);
@@ -165,7 +206,22 @@ export type AbdmAuditAction =
   | 'abha_address_create'
   | 'abha_card_fetch'
   | 'enrol_mobile_otp_request'
-  | 'enrol_mobile_otp_verify';
+  | 'enrol_mobile_otp_verify'
+  // Scan & share (spec 4.3.2/4.3.3) and the bridge registration behind it.
+  // `scan_share_receive` is the only audited action with no authenticated
+  // staff member behind it — the actor is ABDM, on the patient's instruction.
+  | 'scan_share_receive'
+  | 'callback_url_register'
+  // Fetch-ABHA-details (spec 7.6.1 / 7.6.2) — the mandatory M1 flows
+  // VRFY_ABHA_301-305 and 401-405.
+  | 'fetch_otp_request'
+  | 'fetch_otp_verify'
+  // ABHA *address* verification (spec 14.1/14.2) — VRFY_ABHA_102 / 202.
+  | 'abha_address_search'
+  | 'abha_address_otp_request'
+  | 'abha_address_verify'
+  // M2 HIP-initiated linking (spec 4.3.3).
+  | 'link_carecontext';
 
 /**
  * Writes one audit row. Best-effort by design: losing an audit row must not

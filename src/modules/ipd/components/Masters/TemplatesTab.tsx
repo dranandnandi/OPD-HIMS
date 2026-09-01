@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FileText, Plus, Save, Sparkles, X } from 'lucide-react';
+import { FileText, Plus, Save, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { CKEditor } from '@ckeditor/ckeditor5-react';
 import {
   ClassicEditor, Essentials, Paragraph, Bold, Italic, Underline, Heading,
@@ -10,7 +10,8 @@ import {
 import 'ckeditor5/ckeditor5.css';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  documentService, DOC_TYPES, DocumentTemplate, PLACEHOLDER_CATALOG,
+  documentService, docTypePermission, DOC_AUTHOR_LEVELS, DOC_TYPES, DocAuthorPermission,
+  DocTypeAccessMap, DocumentTemplate, PLACEHOLDER_CATALOG,
 } from '../../services/documentService';
 import { aiAssistantService } from '../../services/aiAssistantService';
 
@@ -27,6 +28,8 @@ export default function TemplatesTab({ clinicId }: Props) {
   const [html, setHtml] = useState('');
   const [saving, setSaving] = useState(false);
   const [aiOpen, setAiOpen] = useState<'new' | 'revise' | null>(null);
+  const [access, setAccess] = useState<DocTypeAccessMap>({});
+  const [seeding, setSeeding] = useState(false);
   const editorRef = useRef<ClassicEditor | null>(null);
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
@@ -38,7 +41,54 @@ export default function TemplatesTab({ clinicId }: Props) {
       .catch((e) => toast.error(e.message));
   }, [clinicId]);
 
+  const reloadAccess = useCallback(() => {
+    documentService
+      .listDocTypeAccess(clinicId)
+      .then(setAccess)
+      .catch(() => setAccess({}));
+  }, [clinicId]);
+
   useEffect(reload, [reload]);
+  useEffect(reloadAccess, [reloadAccess]);
+
+  const seedDefaults = async () => {
+    setSeeding(true);
+    try {
+      const n = await documentService.seedDefaultTemplates(clinicId);
+      toast.success(
+        n > 0
+          ? `${n} default template(s) created or refreshed`
+          : 'Default templates are already up to date'
+      );
+      reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const changeAccess = async (docType: string, permission: DocAuthorPermission) => {
+    // back to the built-in mapping when the choice matches it
+    const isDefault = permission === docTypePermission(docType);
+    setAccess((prev) => {
+      const next = { ...prev };
+      if (isDefault) delete next[docType];
+      else next[docType] = permission;
+      return next;
+    });
+    try {
+      await documentService.setDocTypeAccess({
+        clinicId,
+        docType,
+        permission: isDefault ? null : permission,
+        userId: profile?.id,
+      });
+    } catch (e) {
+      toast.error((e as Error).message);
+      reloadAccess();
+    }
+  };
 
   const open = (t: DocumentTemplate) => {
     setSelectedId(t.id);
@@ -123,6 +173,54 @@ export default function TemplatesTab({ clinicId }: Props) {
   };
 
   return (
+    <div className="space-y-4">
+      {/* who may write each document type + one-click default templates */}
+      <div className="bg-white rounded-xl border border-slate-200 p-3">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <p className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-navy-600" /> Document types &amp; who may write them
+          </p>
+          <button
+            onClick={seedDefaults}
+            disabled={seeding}
+            className="ml-auto text-sm border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50 rounded-lg px-3 py-1.5"
+            title="Create the built-in template for every document type this clinic is missing"
+          >
+            {seeding ? 'Seeding…' : 'Seed default templates'}
+          </button>
+        </div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          {DOC_TYPES.map((d) => {
+            const current = docTypePermission(d.key, access);
+            const overridden = access[d.key] !== undefined;
+            return (
+              <div key={d.key} className="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                <span className="flex-1 min-w-0 text-sm text-slate-700 truncate" title={d.label}>
+                  {d.label}
+                  {overridden && <span className="ml-1 text-[10px] text-amber-600 uppercase">custom</span>}
+                </span>
+                <select
+                  value={current}
+                  onChange={(e) => changeAccess(d.key, e.target.value as DocAuthorPermission)}
+                  className="border border-slate-300 rounded-lg px-2 py-1 text-xs max-w-[190px]"
+                  title="Who may create, edit and sign this document type"
+                >
+                  {DOC_AUTHOR_LEVELS.map((l) => (
+                    <option key={l.key} value={l.key}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+          Everyone with the Documents permission can open, print and download every type — this
+          sets who may <b>write and sign</b> each one. Doctors (Clinical Documents) can always
+          write nursing documents. The same rule is enforced in the database, so changing it
+          here changes it everywhere. Per-user grants live in Masters → Users.
+        </p>
+      </div>
+
     <div className="grid lg:grid-cols-[280px,1fr] gap-4 items-start">
       {aiOpen && (
         <AiTemplateModal
@@ -285,6 +383,7 @@ export default function TemplatesTab({ clinicId }: Props) {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

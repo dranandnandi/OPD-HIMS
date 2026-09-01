@@ -23,6 +23,15 @@ export type AbdmFlow =
   /** Spec 7.6.1.1 — find ABHA by mobile. */
   | 'abha-search'
   /**
+   * Spec 14.1/14.2 — verify an ABHA by its ADDRESS.
+   *
+   * Kept distinct from 'mobile-login' because the X-token it mints belongs to
+   * the PHR endpoint family: spending an address-flow handle on a mobile-login
+   * step (or the reverse) would send the token to the wrong host and produce a
+   * misleading "X-token expired" (FAQ v1.4 Q21).
+   */
+  | 'abha-address'
+  /**
    * Spec 3 — Aadhaar enrolment, and the steps that chain off it: mobile
    * verification (3.4) and ABHA address creation (3.6). Those steps are
    * identified upstream by the enrolment `txnId`, which is why the session

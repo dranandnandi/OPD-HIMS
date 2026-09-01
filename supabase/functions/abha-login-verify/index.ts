@@ -54,6 +54,11 @@ serve(async (req) => {
       method: 'POST',
       headers: abdmHeaders(cfg, accessToken, requestId),
       body: JSON.stringify({
+        // Must match the scope sent to request/otp exactly — ABDM validates the
+        // pair. Adding 'abha-profile' here (an attempt to entitle the X-token
+        // to read the profile) is rejected outright by request/otp with a 400;
+        // that scope belongs to profile-management flows that already hold an
+        // X-token, not to login. Tried and rejected 2026-08-25.
         scope: ['abha-login', 'mobile-verify'],
         authData: {
           authMethods: ['otp'],
@@ -95,7 +100,19 @@ serve(async (req) => {
     await writeAudit(caller, { action: 'login_otp_verify', requestId, status: 'success', patientId });
 
     // Accounts only — no T-token, no profile photos (stripped in the mapper).
-    return jsonResponse(req, { sessionId: nextSessionId, accounts, requestId });
+    //
+    // `tokenExpiresIn` is the token's LIFETIME IN SECONDS, not the token. It
+    // distinguishes the two shapes ABDM returns from this one endpoint:
+    //   300  -> T-token (spec 7.4)      -> /verify/user is required next
+    //   1800 -> X-token (spec 7.6.1.3)  -> already the user token; no /verify/user
+    // Safe to expose (it is a duration) and the only way the desk can tell why
+    // a verification behaved differently for one patient than another.
+    return jsonResponse(req, {
+      sessionId: nextSessionId,
+      accounts,
+      tokenExpiresIn: typeof data.expiresIn === 'number' ? data.expiresIn : null,
+      requestId,
+    });
   } catch (err) {
     if (caller) {
       await writeAudit(caller, {

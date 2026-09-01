@@ -3,3 +3,58 @@ verify_jwt = false
 
 [functions.doc-link]
 verify_jwt = false
+
+# Anonymous-visitor endpoints: the browser sends no Authorization header, so
+# the gateway must not demand one. Both authorise per-request on their own
+# opaque identifier (booking slug / upload code) and use the service role
+# internally. Verified by config, NOT by a --no-verify-jwt deploy flag: flags
+# live only on the project they were run against and are silently lost in a
+# migration. That is exactly how public-booking broke on the 2026-08-25
+# Sydney -> Mumbai cutover.
+[functions.public-booking]
+verify_jwt = false
+
+[functions.patient-upload]
+verify_jwt = false
+
+# External machine callers: the HIMS bot and the partner LIMS. They hold no
+# Supabase session, so the gateway must let them reach the handler, which then
+# authenticates them on a shared secret of its own:
+#   hims-*              x-hims-bot-secret  vs HIMS_BOT_SECRET
+#   lims-receive-result x-lab-api-key      vs LIMS_CALLBACK_SECRET
+#   hims-order-create   x-lab-api-key      vs lab_api_keys.key_hash (per clinic)
+# Every one of those checks fails closed when its secret is unset. Do not
+# relax that: with verify_jwt = false the check is the ONLY thing in front of
+# a service-role handler.
+[functions.hims-get-doctors]
+verify_jwt = false
+
+[functions.hims-get-slots]
+verify_jwt = false
+
+[functions.hims-book-appointment]
+verify_jwt = false
+
+[functions.hims-cancel-appointment]
+verify_jwt = false
+
+[functions.hims-get-appointments]
+verify_jwt = false
+
+[functions.hims-order-create]
+verify_jwt = false
+
+[functions.lims-receive-result]
+verify_jwt = false
+
+# THE ABDM callback door. ABDM stores ONE base URL per bridge and appends its
+# own path for every flow, so this single function dispatches all of them —
+# scan & share, link tokens, discovery, consent, data flow.
+#
+# It MUST be public: ABDM holds no Supabase session and cannot present a JWT.
+# It is NOT unauthenticated — every request must carry an ABDM-signed JWT that
+# verifies against ABDM's own JWKS (_shared/abdmCallbackAuth.ts) before any
+# body is acted on. That check is in the dispatcher, once, so no handler can
+# forget it.
+[functions.abdm-callback]
+verify_jwt = false

@@ -35,6 +35,25 @@ export class AbdmUpstreamError extends Error {
   }
 }
 
+/**
+ * ABDM answered, but we could not find what we expected inside the response.
+ *
+ * Deliberately NOT an AbdmUpstreamError. Throwing that with status 502 renders
+ * as "ABDM is unavailable right now", which is a lie: ABDM replied, and
+ * promptly. The parsing is ours. On 2026-08-27 that phrasing sent an
+ * investigation hunting for a sandbox outage while the real cause was a
+ * response shape we had not accounted for — the ABHA-address flow nests its
+ * details under `users[]` rather than at the top level.
+ *
+ * `detail` is for logs only, same rule as an upstream body (G-03).
+ */
+export class AbdmResponseShapeError extends Error {
+  constructor(message: string, readonly detail: string) {
+    super(message);
+    this.name = 'AbdmResponseShapeError';
+  }
+}
+
 async function readCache(
   supabase: SupabaseClient,
   kind: 'token' | 'certificate',

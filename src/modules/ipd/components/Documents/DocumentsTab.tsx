@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 import { FileText, Printer, PenLine, Eye, Plus, FileDown, Sparkles } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  documentService, docTypeLabel, hasNarrativePlaceholders, isClinicalDocType,
-  documentErrorMessage, DOC_TYPES, DocumentTemplate, IpdDocument,
+  documentService, docTypeLabel, hasNarrativePlaceholders, canAuthorDocType,
+  documentErrorMessage, DOC_TYPES, DocumentTemplate, DocTypeAccessMap, IpdDocument,
 } from '../../services/documentService';
 import DocumentEditor from './DocumentEditor';
 import { documentAiService } from '../../services/documentAiService';
@@ -18,15 +18,15 @@ interface Props {
 
 export default function DocumentsTab({ admission }: Props) {
   const { clinicId, profile, hasPermission } = useAuth();
-  // OT notes, discharge/death summaries and referral letters are the treating
-  // doctor's. Everyone else sees and prints them but cannot write or sign one.
-  // RLS enforces the same rule, so this is not the only lock.
-  const canAuthorClinical = hasPermission('ipd_documents_clinical');
+  // Each document type has a required permission — the clinic's own map, from
+  // Masters -> Document Templates, falling back to the built-in one. Everyone
+  // with 'ipd_documents' still reads and prints every type. RLS resolves the
+  // same map, so this is not the only lock.
+  const [access, setAccess] = useState<DocTypeAccessMap>({});
+  const canAuthor = (t: string) => canAuthorDocType(t, hasPermission, access);
   const [documents, setDocuments] = useState<IpdDocument[]>([]);
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
-  const [docType, setDocType] = useState<string>(
-    () => (canAuthorClinical ? 'discharge_summary' : 'consent')
-  );
+  const [docType, setDocType] = useState<string>('admission_sheet');
   const [templateId, setTemplateId] = useState<string>('default');
   const [editing, setEditing] = useState<IpdDocument | null>(null);
   const [creating, setCreating] = useState(false);
@@ -51,12 +51,23 @@ export default function DocumentsTab({ admission }: Props) {
       .listTemplates(clinicId, true)
       .then(setTemplates)
       .catch(() => setTemplates([]));
+    documentService
+      .listDocTypeAccess(clinicId)
+      .then(setAccess)
+      .catch(() => setAccess({}));
   }, [clinicId]);
 
-  // Types this user may raise — the clinical ones drop out for ward staff
-  const creatableDocTypes = DOC_TYPES.filter(
-    (d) => canAuthorClinical || !isClinicalDocType(d.key)
-  );
+  // Types this user may raise — the ones they cannot write drop out
+  const creatableDocTypes = DOC_TYPES.filter((d) => canAuthor(d.key));
+  const creatableKeys = creatableDocTypes.map((d) => d.key).join(',');
+  // Keep the picker on something this user may actually create
+  useEffect(() => {
+    const keys = creatableKeys ? creatableKeys.split(',') : [];
+    if (keys.length > 0 && !keys.includes(docType)) {
+      setDocType(keys[0]);
+      setTemplateId('default');
+    }
+  }, [creatableKeys, docType]);
   // Templates the clinic has authored for the chosen document type
   const docTypeTemplates = templates.filter((t) => t.doc_type === docType);
   const selectedTemplate = docTypeTemplates.find((t) => t.id === templateId) ?? null;
@@ -114,7 +125,7 @@ export default function DocumentsTab({ admission }: Props) {
         doc={editing}
         subject={subject}
         admission={admission}
-        viewOnly={!canAuthorClinical && isClinicalDocType(editing.doc_type)}
+        viewOnly={!canAuthor(editing.doc_type)}
         onClose={() => {
           setEditing(null);
           reload();
@@ -179,11 +190,12 @@ export default function DocumentsTab({ admission }: Props) {
           clinic’s rate card at the admitted bed class. Always review before signing. Manage
           templates in Masters → Document Templates.
         </span>
-        {!canAuthorClinical && (
+        {creatableDocTypes.length < DOC_TYPES.length && (
           <p className="w-full text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-            OT notes, discharge &amp; death summaries and referral letters are written and
-            signed by the treating doctor. You can open, print and download them here, but
-            not change them.
+            {DOC_TYPES.filter((d) => !canAuthor(d.key)).map((d) => d.label).join(', ')} —
+            written and signed by the staff your clinic assigns to them. You can open, print
+            and download them here, but not change them. Masters → Document Templates sets
+            who may write each type.
           </p>
         )}
       </div>
@@ -215,12 +227,10 @@ export default function DocumentsTab({ admission }: Props) {
               onClick={() => setEditing(d)}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
               title={
-                d.status === 'draft' && (canAuthorClinical || !isClinicalDocType(d.doc_type))
-                  ? 'Edit'
-                  : 'View'
+                d.status === 'draft' && canAuthor(d.doc_type) ? 'Edit' : 'View'
               }
             >
-              {d.status === 'draft' && (canAuthorClinical || !isClinicalDocType(d.doc_type))
+              {d.status === 'draft' && canAuthor(d.doc_type)
                 ? <PenLine className="w-4 h-4" />
                 : <Eye className="w-4 h-4" />}
             </button>

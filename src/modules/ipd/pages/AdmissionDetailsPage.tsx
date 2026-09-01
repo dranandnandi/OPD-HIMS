@@ -21,6 +21,7 @@ import MedicationsTab from '../components/Medications/MedicationsTab';
 import TreatmentPlanTab from '../components/TreatmentPlan/TreatmentPlanTab';
 import OrdersTab from '../components/Orders/OrdersTab';
 import InsuranceClaimsTab from '../components/Insurance/InsuranceClaimsTab';
+import PackageBreakupModal from '../components/Packages/PackageBreakupModal';
 import { packageService, AdmissionPackage } from '../services/packageService';
 import type { Admission, BedAllocation, ChargePosting, Deposit, IpdBill, Profile, ServiceMaster } from '../types/ipd';
 
@@ -288,7 +289,7 @@ export default function AdmissionDetailsPage() {
       {tab === 'charges' && (
         <>
           {admissionPackage ? (
-            <PackageMonitor assignment={admissionPackage} onConverted={reload} />
+            <PackageMonitor assignment={admissionPackage} admission={admission} clinicId={clinicId!} onConverted={reload} />
           ) : (
             admission.status === 'admitted' && (
               <AssignPackageBar
@@ -328,7 +329,7 @@ export default function AdmissionDetailsPage() {
         />
       )}
       {tab === 'billing' && admissionPackage && (
-        <PackageMonitor assignment={admissionPackage} onConverted={reload} />
+        <PackageMonitor assignment={admissionPackage} admission={admission} clinicId={clinicId!} onConverted={reload} />
       )}
       {tab === 'billing' && (
         <BillingTab
@@ -1325,10 +1326,11 @@ function AssignPackageBar({
 
 /** Package monitor: agreed price vs itemized consumption, overrun alert (concept file §B/§10) */
 function PackageMonitor({
-  assignment, onConverted,
+  assignment, admission, clinicId, onConverted,
 }: {
-  assignment: AdmissionPackage; onConverted: () => void;
+  assignment: AdmissionPackage; admission: Admission; clinicId: string; onConverted: () => void;
 }) {
+  const [showBreakup, setShowBreakup] = useState(false);
   const pct = assignment.agreed_price > 0
     ? Math.min((assignment.consumed_amount / assignment.agreed_price) * 100, 100)
     : 0;
@@ -1386,7 +1388,23 @@ function PackageMonitor({
             </button>
           </span>
         )}
+        <button
+          onClick={() => setShowBreakup(true)}
+          title="Present the package price head-wise for a TPA claim"
+          className="text-xs text-navy-700 border border-navy-300 rounded-lg px-2 py-1 hover:bg-navy-50"
+        >
+          Claim break-up
+        </button>
       </div>
+
+      {showBreakup && (
+        <PackageBreakupModal
+          clinicId={clinicId}
+          assignment={assignment}
+          admission={admission}
+          onClose={() => { setShowBreakup(false); onConverted(); }}
+        />
+      )}
       <div className="flex items-center gap-3 text-sm">
         <div className="flex-1">
           <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1495,6 +1513,18 @@ function GroupedPostings({
                       {p.covered_by_package && (
                         <span className="ml-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1 py-0.5 align-middle">
                           PKG
+                        </span>
+                      )}
+                      {p.split_reason && (
+                        <span
+                          title={
+                            p.split_parent_id
+                              ? 'The part of this charge above the package limit — payable by the patient'
+                              : 'The part of this charge the package absorbed up to its limit'
+                          }
+                          className="ml-1 text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1 py-0.5 align-middle"
+                        >
+                          SPLIT
                         </span>
                       )}
                     </td>
@@ -1705,29 +1735,40 @@ function BillingTab({
 }) {
   const admissionId = admission.id;
   const nothingToBill = pendingCount === 0 && !unbilledPackage;
-  const hasFinal = bills.some((b) => b.bill_type === 'final' && b.status !== 'cancelled');
+  const hasFinal = bills.some(
+    (b) => b.bill_type === 'final' && !['cancelled', 'superseded'].includes(b.status)
+  );
+  // The final consolidates the whole episode, so it stays available even once
+  // every charge has already appeared on an interim statement.
+  const hasAnythingToConsolidate =
+    !nothingToBill || bills.some((b) => (b.lines?.length ?? 0) > 0);
+  const payableBills = bills.filter(
+    (b) => !b.is_provisional && !['cancelled', 'superseded'].includes(b.status) && b.balance_amount > 0
+  );
   const [generating, setGenerating] = useState(false);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [payBillId, setPayBillId] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('cash');
 
-  const markFinal = async (billId: string) => {
-    if (!confirm('Mark this bill as the FINAL bill for the admission?')) return;
-    try {
-      await billingService.markAsFinal(billId);
-      toast.success('Bill marked as final');
-      onChange();
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
   const generate = async (type: 'interim' | 'final' | 'supplementary') => {
+    if (
+      type === 'final' &&
+      !confirm(
+        'Generate the FINAL bill?\n\n' +
+          'Every charge and package of this admission goes onto one consolidated bill. ' +
+          'Interim statements and any earlier bills are superseded, and their receipts ' +
+          'and applied deposits move onto the final. This cannot be undone.'
+      )
+    ) return;
     setGenerating(true);
     try {
       await billingService.generateBill(admissionId, type, userId);
-      toast.success(`${type} bill generated`);
+      toast.success(
+        type === 'interim'
+          ? 'Interim statement generated'
+          : `${type} bill generated`
+      );
       onChange();
     } catch (e) {
       toast.error((e as Error).message);
@@ -1766,16 +1807,18 @@ function BillingTab({
           {pendingCount} unbilled charge(s)
           {unbilledPackage && (
             <span className="ml-2 text-navy-700 font-medium">
-              + 📦 {unbilledPackage.name} ₹{unbilledPackage.agreed.toLocaleString('en-IN')} (added to the next bill)
+              + 📦 {unbilledPackage.name} ₹{unbilledPackage.agreed.toLocaleString('en-IN')} (added to the final bill)
             </span>
           )}
         </span>
         <button onClick={() => generate('interim')} disabled={generating || nothingToBill}
+          title="Provisional running statement — prints everything charged so far and settles nothing"
           className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg">
-          <ReceiptText className="w-4 h-4" /> Interim bill
+          <ReceiptText className="w-4 h-4" /> Interim statement
         </button>
         {!hasFinal ? (
-          <button onClick={() => generate('final')} disabled={generating || nothingToBill}
+          <button onClick={() => generate('final')} disabled={generating || !hasAnythingToConsolidate}
+            title="One consolidated bill for the whole admission — every charge, every package"
             className="flex items-center gap-1 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg">
             <ReceiptText className="w-4 h-4" /> Final bill
           </button>
@@ -1788,12 +1831,13 @@ function BillingTab({
         )}
       </div>
 
-      {bills.length > 0 && (
+      {payableBills.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 flex flex-wrap gap-2 items-center">
           <select value={payBillId} onChange={(e) => setPayBillId(e.target.value)}
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
             <option value="">Pay against bill…</option>
-            {bills.filter((b) => b.status !== 'cancelled' && b.balance_amount > 0).map((b) => (
+            {/* money is only ever taken against a real bill — never a provisional statement */}
+            {payableBills.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.bill_number} — bal ₹{b.balance_amount.toFixed(0)}
               </option>
@@ -1816,30 +1860,37 @@ function BillingTab({
 
       <div className="space-y-3">
         {bills.map((b) => (
-          <div key={b.id} className="bg-white rounded-xl border border-slate-200 p-4 text-sm">
+          <div
+            key={b.id}
+            className={`bg-white rounded-xl border p-4 text-sm ${
+              b.status === 'superseded' ? 'border-slate-200 opacity-60' : 'border-slate-200'
+            }`}
+          >
             <div className="flex flex-wrap justify-between gap-2 mb-2">
               <span className="font-medium text-slate-800">
                 {b.bill_number}
                 <span className="ml-2 text-xs uppercase bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                  {b.bill_type}
+                  {b.is_provisional ? 'interim statement' : b.bill_type}
                 </span>
-                <span className={`ml-1 text-xs uppercase px-2 py-0.5 rounded ${
-                  b.status === 'settled' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                }`}>
-                  {b.status.replace('_', ' ')}
-                </span>
+                {b.is_provisional ? (
+                  <span
+                    title="Running statement — nothing is owed against it and no charge is consumed"
+                    className="ml-1 text-xs uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-700"
+                  >
+                    provisional
+                  </span>
+                ) : (
+                  <span className={`ml-1 text-xs uppercase px-2 py-0.5 rounded ${
+                    b.status === 'settled' ? 'bg-emerald-100 text-emerald-700'
+                      : b.status === 'superseded' ? 'bg-slate-100 text-slate-500'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {b.status.replace('_', ' ')}
+                  </span>
+                )}
               </span>
               <span className="flex items-center gap-2 text-slate-500">
                 {format(new Date(b.bill_datetime), 'dd MMM yyyy, HH:mm')}
-                {b.bill_type === 'interim' && !hasFinal && b.status !== 'cancelled' && (
-                  <button
-                    onClick={() => markFinal(b.id)}
-                    title="Relabel this bill as the FINAL bill"
-                    className="text-[10px] font-semibold border border-slate-300 text-slate-600 rounded px-1.5 py-0.5 hover:bg-slate-50"
-                  >
-                    Mark final
-                  </button>
-                )}
                 <button
                   onClick={async () => {
                     const tab = claimTab();
@@ -1885,18 +1936,32 @@ function BillingTab({
               <span>Deposits applied <b className="block text-sm text-emerald-700">₹{b.deposits_applied.toFixed(2)}</b></span>
               <span>Payments received <b className="block text-sm text-emerald-700">₹{b.paid_amount.toFixed(2)}</b></span>
               <span>
-                Balance
+                {b.is_provisional ? 'Balance if settled today' : 'Balance'}
                 <b className={`block text-sm ${b.balance_amount > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                   ₹{b.balance_amount.toFixed(2)}
                 </b>
               </span>
             </div>
+            {b.is_provisional && b.status !== 'superseded' && (
+              <p className="mt-2 text-xs text-blue-700">
+                Provisional statement — charges to date, nothing settled against it. The final
+                bill carries every item of the admission.
+              </p>
+            )}
+            {b.status === 'superseded' && (
+              <p className="mt-2 text-xs text-slate-500">
+                {b.is_provisional
+                  ? 'Replaced by a newer statement.'
+                  : 'Superseded by the final bill — its items, receipts and applied deposits moved there.'}
+              </p>
+            )}
             {b.payer_expected > 0 && (
               <p className="mt-2 text-xs text-slate-500">
                 Payer / insurance share ₹{b.payer_expected.toFixed(2)} — patient payable ₹{b.patient_payable.toFixed(2)}
               </p>
             )}
-            {b.balance_amount <= 0 && b.status !== 'cancelled' && (
+            {!b.is_provisional && b.status !== 'superseded'
+              && b.balance_amount <= 0 && b.status !== 'cancelled' && (
               <p className="mt-1 text-xs text-emerald-700">
                 Nothing outstanding — {[
                   b.deposits_applied > 0 ? `₹${b.deposits_applied.toFixed(2)} adjusted from deposits` : null,
@@ -1971,7 +2036,8 @@ function BillingTab({
         ))}
         {bills.length === 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-400">
-            No bills yet — post charges, then generate an interim or final bill.
+            No bills yet — post charges, then print an interim statement, or generate the
+            final bill at discharge.
           </div>
         )}
       </div>

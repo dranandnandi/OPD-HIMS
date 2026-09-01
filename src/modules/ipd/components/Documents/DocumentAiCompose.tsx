@@ -7,8 +7,8 @@ import {
   documentVoiceService, DocumentField, DictatedSection,
 } from '../../services/documentVoiceService';
 import {
-  documentAiService, isCostedDocType, lineAmount, estimateTotal,
-  AiComposeResult, ComposeSubject, EstimateLine, TariffSnapshot,
+  documentAiService, isCostedDocType, lineAmount, estimateTotal, rollUpToHeads,
+  AiComposeResult, ComposeSubject, EstimateDetail, EstimateLine, TariffSnapshot,
 } from '../../services/documentAiService';
 import { docTypeLabel } from '../../services/documentService';
 
@@ -58,6 +58,18 @@ const EXAMPLES: Record<string, string[]> = {
 
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
+/** How the family wants to read the quote — remembered, since a clinic tends
+    to print all its estimates the same way */
+const DETAIL_KEY = 'ipd.estimateDetail';
+
+const loadDetail = (): EstimateDetail => {
+  try {
+    return localStorage.getItem(DETAIL_KEY) === 'broad' ? 'broad' : 'detailed';
+  } catch {
+    return 'detailed';
+  }
+};
+
 /**
  * "Write with AI" — the typed counterpart to dictation. The clinician gives a
  * one-line brief and the whole document is drafted: prose for each of its own
@@ -77,6 +89,7 @@ export default function DocumentAiCompose({
   const [sections, setSections] = useState<SectionDraft[]>([]);
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [stayDays, setStayDays] = useState(1);
+  const [detail, setDetail] = useState<EstimateDetail>(loadDetail);
   const [dropIds, setDropIds] = useState<Set<string>>(new Set());
 
   const costed = isCostedDocType(docType);
@@ -161,6 +174,12 @@ export default function DocumentAiCompose({
 
   const chosenLines = lines.filter((l) => l.include && l.unitRate > 0 && l.quantity > 0);
   const total = estimateTotal(chosenLines, stayDays);
+  const heads = useMemo(() => rollUpToHeads(chosenLines, stayDays), [chosenLines, stayDays]);
+
+  const chooseDetail = (next: EstimateDetail) => {
+    setDetail(next);
+    try { localStorage.setItem(DETAIL_KEY, next); } catch { /* private mode */ }
+  };
 
   const apply = async () => {
     const chosenSections = sections.filter((s) => s.include && s.text.trim());
@@ -186,6 +205,7 @@ export default function DocumentAiCompose({
           mode: 'replace',
           html: documentAiService.buildCostTableHtml(chosenLines, stayDays, {
             excluded: result?.estimate?.excluded,
+            detail,
           }),
         });
       }
@@ -355,6 +375,25 @@ export default function DocumentAiCompose({
                     />
                     day(s)
                   </label>
+                  <div
+                    className="flex rounded-lg overflow-hidden border border-slate-300 text-[11px]"
+                    title="How the breakup prints on the estimate the family gets"
+                  >
+                    {([
+                      ['detailed', 'Itemised'],
+                      ['broad', 'Broad heads'],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => chooseDetail(value)}
+                        className={`px-2 py-1 ${
+                          detail === value ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <span className="ml-auto text-sm font-semibold text-slate-800">
                     {rupees(total)}
                     <span className="ml-2 text-xs font-normal text-slate-500">
@@ -444,6 +483,30 @@ export default function DocumentAiCompose({
                     </tbody>
                   </table>
                 </div>
+
+                {detail === 'broad' && heads.length > 0 && (
+                  <div className="px-3 py-2 border-t border-slate-200 bg-emerald-50/50">
+                    <p className="text-[11px] text-slate-500 mb-1.5">
+                      Prints as <b>{heads.length} head{heads.length === 1 ? '' : 's'}</b> — the lines
+                      above still set the money, they are just not printed one by one.
+                    </p>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {heads.map((h) => (
+                          <tr key={h.category} className="border-b border-emerald-100 last:border-0">
+                            <td className="py-1 pr-2 font-medium text-slate-700 whitespace-nowrap">
+                              {h.label}
+                            </td>
+                            <td className="py-1 pr-2 text-slate-500">{h.basis}</td>
+                            <td className="py-1 text-right font-medium text-slate-800 whitespace-nowrap">
+                              {rupees(h.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <div className="px-3 py-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
                   <button

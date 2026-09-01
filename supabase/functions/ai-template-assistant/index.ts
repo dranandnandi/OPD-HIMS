@@ -18,6 +18,7 @@ const corsHeaders = {
 const DOC_TYPES = [
   'discharge_summary', 'discharge_medication', 'admission_sheet', 'consent', 'ot_note',
   'death_summary', 'dama_form', 'referral_letter', 'estimate',
+  'initial_assessment', 'case_sheet', 'nursing_chart',
 ];
 
 const TEMPLATE_SCHEMA = {

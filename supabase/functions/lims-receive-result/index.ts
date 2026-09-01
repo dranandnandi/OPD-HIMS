@@ -40,6 +40,20 @@ serve(async (req) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
+  // Shared-secret auth. This function runs with verify_jwt = false so the
+  // external lab can post results without a Supabase session, which means THIS
+  // is the only thing guarding it. It writes results against any order via the
+  // service role, so it must fail closed: an unset LIMS_CALLBACK_SECRET rejects
+  // everything rather than accepting everything.
+  const callbackSecret = Deno.env.get("LIMS_CALLBACK_SECRET");
+  if (!callbackSecret || req.headers.get("x-lab-api-key") !== callbackSecret) {
+    console.error("[lims-receive-result] REJECTED 401: bad or missing x-lab-api-key", {
+      secretConfigured: Boolean(callbackSecret),
+      headerPresent: req.headers.get("x-lab-api-key") !== null,
+    });
+    return json({ error: "Unauthorized" }, 401);
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,

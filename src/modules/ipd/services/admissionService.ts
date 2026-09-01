@@ -1,4 +1,5 @@
 import { supabase } from '../utils/supabase';
+import { notifyAlertsChanged } from './alertBus';
 import type { Admission, AdmissionType, BedAllocation, DischargeChecklist } from '../types/ipd';
 
 export interface MlcDetails {
@@ -75,7 +76,7 @@ export const admissionService = {
       .from('ipd_admissions')
       .select(
         `*,
-         patient:patients(id, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
+         patient:patients(id, patient_number, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
          admitting_doctor:profiles!ipd_admissions_admitting_doctor_id_fkey(id, name, email, role_name, specialization, permissions, is_active, clinic_id),
          current_bed:ipd_beds(*, ward:ipd_wards(*), bed_type:bed_types(*))`
       )
@@ -98,7 +99,7 @@ export const admissionService = {
       .from('ipd_admissions')
       .select(
         `*,
-         patient:patients(id, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
+         patient:patients(id, patient_number, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
          admitting_doctor:profiles!ipd_admissions_admitting_doctor_id_fkey(id, name, email, role_name, specialization, permissions, is_active, clinic_id)`
       )
       .eq('clinic_id', clinicId)
@@ -117,7 +118,7 @@ export const admissionService = {
       .from('ipd_admissions')
       .select(
         `*,
-         patient:patients(id, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
+         patient:patients(id, patient_number, name, phone, age, gender, blood_group, allergies, abha_number, clinic_id),
          admitting_doctor:profiles!ipd_admissions_admitting_doctor_id_fkey(id, name, email, role_name, specialization, permissions, is_active, clinic_id),
          current_bed:ipd_beds(*, ward:ipd_wards(*), bed_type:bed_types(*))`
       )
@@ -262,6 +263,9 @@ export const admissionService = {
       p_discharge_type: params.dischargeType,
     });
     if (error) throw error;
+    // a discharged chart owes nothing — drop it from the ward alert bar now
+    // rather than on the bar's next 30-second poll
+    notifyAlertsChanged();
   },
 
   // --- Cancel / delete a wrongly-created admission ----------------------------
@@ -300,7 +304,18 @@ export const admissionService = {
       vitals, notes, documents, packages, policy, preauths, claims,
     ] = await Promise.all([
       count('charge_postings', true),
-      count('ipd_bills', true),
+      // a provisional interim statement settles nothing, so it must not block
+      // cancelling a wrongly-created admission
+      (async () => {
+        const { count: c, error } = await supabase
+          .from('ipd_bills')
+          .select('*', { count: 'exact', head: true })
+          .eq('admission_id', admissionId)
+          .eq('is_provisional', false)
+          .neq('status', 'cancelled');
+        if (error) throw error;
+        return c ?? 0;
+      })(),
       depositLedger(),
       count('ipd_orders'),
       count('ipd_medication_orders'),
@@ -409,6 +424,7 @@ export const admissionService = {
       .eq('id', params.admissionId)
       .eq('status', 'admitted');
     if (error) throw error;
+    notifyAlertsChanged();
   },
 
   /** Permanently remove an admission created by mistake. Only allowed while
@@ -426,5 +442,6 @@ export const admissionService = {
     // the discharge checklist and any remaining child rows cascade
     const { error } = await supabase.from('ipd_admissions').delete().eq('id', admissionId);
     if (error) throw error;
+    notifyAlertsChanged();
   },
 };

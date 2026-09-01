@@ -150,9 +150,13 @@ block a patient being seen.
 
 ## Known gaps still open
 
-- **Scan-and-share QR + HIP-initiated linking token** — now part of M1
-  functional testing, but **not specified in the ABHA V3 PDF we hold**. Needs
-  the HIECM/HIP spec (linking token, synchronous discovery) before it can be
-  built. This is the only remaining M1 item.
-- No migration has been applied to any environment yet; see the roadmap's
-  deployment notes.
+- **Scan-and-share QR + HIP-initiated linking token** — the only remaining M1
+  item. **No longer blocked on documentation:** the spec arrived 2026-08-21
+  (`Scan_and_share_Document_03_03_25...pdf` §4, and `M2_Document_16_02_2026`
+  §7 more recently). It is blocked on **HFR registration** — the QR is just
+  `share-profile?hipid=<HIP ID>&counterid=<context>`, so an HIP ID is the one
+  thing missing. See `session-log-2026-08-25.md` §3.
+- Migrations **are** applied on the Mumbai project — but at least one was
+  applied from an older version of its file, leaving
+  `ipd_documents.subject_context` missing in production while the code writes
+  to it. See `session-log-2026-08-25.md` §2.

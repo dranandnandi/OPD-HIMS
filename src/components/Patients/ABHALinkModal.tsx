@@ -613,7 +613,9 @@ const ABHALinkModal: React.FC<ABHALinkModalProps> = ({
               )}
             </div>
 
-            {sessionId && <ABHACardPanel sessionId={sessionId} patientName={patientName} />}
+            {sessionId && (
+              <ABHACardPanel sessionId={sessionId} patientName={patientName} profile={profile} />
+            )}
 
             <button onClick={onClose} className="btn-primary w-full">
               Done

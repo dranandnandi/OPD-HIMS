@@ -21,7 +21,15 @@ export interface AbhaProfile {
   dob: string;
   /** Masked to the last four digits — the client never needs the full number. */
   mobileMasked: string;
-  kycVerified: boolean;
+  /**
+   * `null` means ABDM did not state it — NOT that the ABHA failed KYC.
+   *
+   * The fetch-details flows (spec 7.6.1.3 / 7.6.2.3) return a thinner accounts
+   * payload than mobile login (7.4) and omit this field entirely. Collapsing
+   * that to `false` would show reception a false negative on an identity
+   * assurance flag.
+   */
+  kycVerified: boolean | null;
 }
 
 function str(v: unknown): string {
@@ -55,6 +63,25 @@ function buildDob(src: Record<string, unknown>): string {
   return `${day}-${month}-${year}`;
 }
 
+
+/**
+ * ABDM's KYC flag, preserving "not stated".
+ *
+ * `src.kycVerified === true` looks harmless and is not: ABDM omits this field
+ * entirely from several response shapes, and collapsing absent to `false`
+ * tells reception a KYC-verified ABHA is unverified. Observed on the
+ * enrol/byAadhaar response and on the fetch-details accounts payload, both for
+ * an account the search endpoint reports as `kycVerified: true`.
+ *
+ * ABDM also sends it as the STRING "true" on some endpoints, which a strict
+ * `=== true` silently reads as false.
+ */
+function kycFlag(v: unknown): boolean | null {
+  if (v === true || v === 'true') return true;
+  if (v === false || v === 'false') return false;
+  return null;
+}
+
 export function normaliseAbhaProfile(raw: unknown): AbhaProfile {
   const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
@@ -73,13 +100,83 @@ export function normaliseAbhaProfile(raw: unknown): AbhaProfile {
     abhaNumber: str(src.ABHANumber) || str(src.abhaNumber) || str(src.healthIdNumber),
     abhaAddress,
     // `name` first: when ABDM sends both, the whole-name field is the
-    // authoritative one and already carries the right ordering.
-    name: str(src.name) || composed,
+    // authoritative one and already carries the right ordering. `fullName` is
+    // the ABHA-address family's spelling of the same thing (spec 14.1 Step 3).
+    name: str(src.name) || str(src.fullName) || composed,
     gender: str(src.gender),
     dob: buildDob(src),
     mobileMasked: maskMobile(src.mobile),
-    kycVerified: src.kycVerified === true,
+    // `kycStatus` is the ABHA-address family's equivalent, carrying a string
+    // such as "VERIFIED" rather than a boolean.
+    kycVerified:
+      src.kycVerified !== undefined
+        ? kycFlag(src.kycVerified)
+        : typeof src.kycStatus === 'string'
+          ? (src.kycStatus.toUpperCase() === 'VERIFIED' ? true : false)
+          : null,
   };
+}
+
+
+/**
+ * Which family of ABDM endpoints an X-token belongs to.
+ *
+ * ABDM has two, and a token from one is NOT accepted by the other — the
+ * rejection arrives as a misleading "X-token expired" / 401 rather than a
+ * routing error, which is what makes this expensive to diagnose (FAQ v1.4 Q21).
+ *
+ *  - `enrolment` / `login`: tokens from Aadhaar enrolment, ABHA-number login,
+ *    find-ABHA and mobile-OTP login (spec 7.4). All on `abhaBase`, profile at
+ *    spec 9.0 `/v3/profile/account`.
+ *  - `abha-address`: tokens from ABHA-*address* login only (spec 14.1/14.2).
+ *    On `phrBase`.
+ *
+ * 2026-08-25: mobile-OTP login was briefly routed to `phrBase` on the strength
+ * of Q21. That was WRONG and is recorded so it is not retried — spec 7.4 and
+ * 7.6.1.3 both post to `/v3/profile/login/verify`, the ABHA family, and
+ * `phrBase` answered 400/404. Q21 is about ABHA-address verification only.
+ *
+ * Pick from the flow that produced the token, never from the endpoint you wish
+ * to call.
+ */
+export type AbhaTokenFamily = 'login' | 'enrolment' | 'abha-address';
+
+/**
+ * Profile, card and QR endpoints for a token family.
+ *
+ * One function rather than three constants: the whole bug class here is calling
+ * one family's profile endpoint alongside the other's card endpoint, and a
+ * single returned object makes that mismatch hard to write.
+ */
+export function abhaEndpoints(cfg: AbdmConfig, family: AbhaTokenFamily): {
+  profile: string;
+  qrCode: string;
+  card: string;
+} {
+  if (family === 'abha-address') {
+    return {
+      profile: `${cfg.phrBase}/login/profile/abha-profile`,
+      qrCode: `${cfg.phrBase}/login/profile/abha/qr-code`,
+      card: `${cfg.phrBase}/login/profile/abha/phr-card`,
+    };
+  }
+  return {
+    profile: `${cfg.abhaBase}/v3/profile/account`,
+    qrCode: `${cfg.abhaBase}/v3/profile/account/qrCode`,
+    card: `${cfg.abhaBase}/v3/profile/account/abha-card`,
+  };
+}
+
+/**
+ * The X-token header.
+ *
+ * Spelled `X-token` to match the spec. Header names are case-insensitive and
+ * Deno lowercases them on the wire, so the casing is documentation rather than
+ * behaviour — but it stops the next reader "fixing" it to X-Token and wondering
+ * whether that mattered. It did not: see session-log-2026-08-25.md 4e.
+ */
+export function xTokenHeader(xToken: string): Record<string, string> {
+  return { 'X-token': xToken.startsWith('Bearer ') ? xToken : `Bearer ${xToken}` };
 }
 
 /**
@@ -97,8 +194,8 @@ export async function fetchAbhaProfile(
   const res = await fetch(`${cfg.abhaBase}/v3/profile/account`, {
     method: 'GET',
     headers: abdmHeaders(cfg, accessToken, requestId, {
-      // ABDM expects the user token to carry its own Bearer prefix here.
-      'X-Token': xToken.startsWith('Bearer ') ? xToken : `Bearer ${xToken}`,
+      // Spec 9.0: the user token carries its own Bearer prefix here.
+      'X-token': xToken.startsWith('Bearer ') ? xToken : `Bearer ${xToken}`,
     }),
   });
 
@@ -118,7 +215,8 @@ export interface AbhaAccountChoice {
   gender: string;
   dob: string;
   status: string;
-  kycVerified: boolean;
+  /** null = ABDM did not state it, NOT a failed KYC. */
+  kycVerified: boolean | null;
 }
 
 /**
@@ -144,7 +242,7 @@ export function normaliseAccountChoices(raw: unknown): AbhaAccountChoice[] {
       // ABDM returns DEACTIVATED accounts alongside ACTIVE ones; the UI has to
       // show the difference rather than silently offer a dead account.
       status: str(src.status) || 'UNKNOWN',
-      kycVerified: src.kycVerified === true,
+      kycVerified: kycFlag(src.kycVerified),
     };
   }).filter((a) => a.abhaNumber);
 }

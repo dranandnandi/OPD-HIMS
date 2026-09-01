@@ -133,6 +133,10 @@ export async function enforceRateLimit(
     p_clinic_id: caller.clinicId,
     p_action: action,
     p_target_hash: targetHash,
+    // Caps come from the SQL defaults (30/actor/hr, 5/target/hr). A testing
+    // override raising the per-target cap was added and removed on 2026-08-25;
+    // if you need it again for sandbox work, pass p_target_max here and REMOVE
+    // IT AGAIN — the per-target cap is the anti-SMS-bombing control (G-08).
   });
 
   if (error) {

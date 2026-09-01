@@ -7,6 +7,8 @@
 export interface Patient {
   id: string;
   clinic_id: string | null;
+  /** UHID printed on every ward sheet (patients.patient_number) */
+  patient_number?: string | null;
   name: string;
   phone: string;
   age: number | null;
@@ -548,6 +550,9 @@ export interface ChargePosting {
   status: 'pending' | 'billed' | 'cancelled';
   bill_line_id: string | null;
   description?: string | null;
+  /** Set on the EXCESS half of a charge the package could only partly absorb. */
+  split_parent_id?: string | null;
+  split_reason?: 'amount_cap' | 'qty_cap' | 'bed_cap' | 'implant_cap' | null;
   // joined
   service?: ServiceMaster;
   performing_doctor?: { id: string; name: string | null } | null;
@@ -573,6 +578,10 @@ export interface IpdBill {
   admission_id: string;
   bill_number: string;
   bill_type: 'interim' | 'final' | 'supplementary';
+  /** Interim running statement: display-only, never payable, consumes nothing. */
+  is_provisional: boolean;
+  /** Set when a consolidated final bill retired this one. */
+  superseded_by_bill_id: string | null;
   bill_datetime: string;
   gross_total: number;
   discount_total: number;
@@ -584,7 +593,7 @@ export interface IpdBill {
   deposits_applied: number;
   paid_amount: number;
   balance_amount: number;
-  status: 'draft' | 'issued' | 'partially_paid' | 'settled' | 'cancelled';
+  status: 'draft' | 'issued' | 'partially_paid' | 'settled' | 'superseded' | 'cancelled';
   pdf_url: string | null;
   lines?: IpdBillLine[];
   payments?: IpdPayment[];
@@ -611,6 +620,8 @@ export interface IpdPayment {
   id: string;
   clinic_id: string;
   bill_id: string;
+  /** Bill the receipt was raised against, before the final absorbed it. */
+  original_bill_id: string | null;
   receipt_number: string;
   amount: number;
   payer_kind: 'patient' | 'tpa' | 'insurer' | 'corporate';

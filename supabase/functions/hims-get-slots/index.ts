@@ -56,7 +56,10 @@ serve(async (req) => {
   }
 
   const botSecret = Deno.env.get("HIMS_BOT_SECRET");
-  if (botSecret && req.headers.get("x-hims-bot-secret") !== botSecret) {
+  // Fail CLOSED: an unset HIMS_BOT_SECRET must reject, not wave everyone through.
+  // This function runs with verify_jwt = false, so this check is the only thing
+  // in front of it. Secrets do not survive a project migration.
+  if (!botSecret || req.headers.get("x-hims-bot-secret") !== botSecret) {
     console.error("[get-slots] REJECTED 401: bad or missing x-hims-bot-secret header", {
       secretHeaderPresent: req.headers.get("x-hims-bot-secret") !== null,
     });

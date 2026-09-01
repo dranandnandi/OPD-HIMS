@@ -247,19 +247,69 @@ const esc = (s: string) =>
 const TD = 'padding:4px 6px;border:1px solid #ccc';
 const TH = `${TD};text-align:left;background:#f1f5f9`;
 
-/**
- * The costed lines → the table that goes into "Estimated Cost Breakup".
- * Grouped by head, one row per line, with the per-day arithmetic spelled out
- * so the family can see how the figure was reached.
- */
-export function buildCostTableHtml(
-  lines: EstimateLine[],
-  stayDays: number,
-  opts: { excluded?: string[] } = {}
-): string {
-  const priced = lines.filter((l) => l.unitRate > 0 && l.quantity > 0);
-  if (priced.length === 0) return '<p>[Cost breakup]</p>';
+export type EstimateDetail = 'detailed' | 'broad';
 
+/** One rolled-up head of a broad estimate */
+export interface EstimateHead {
+  category: string;
+  label: string;
+  basis: string;
+  amount: number;
+  items: EstimateLine[];
+}
+
+const pricedOnly = (lines: EstimateLine[]) =>
+  lines.filter((l) => l.unitRate > 0 && l.quantity > 0);
+
+const headOf = (line: EstimateLine) =>
+  CATEGORY_ORDER.includes(line.category) ? line.category : 'misc';
+
+/** "CBC ×2, LFT ×2, KFT +2 more" — what sits inside a rolled-up head */
+const itemsPhrase = (items: EstimateLine[], max = 3): string => {
+  const names = items.map((l) => `${l.label}${l.quantity > 1 ? ` ×${l.quantity}` : ''}`);
+  const rest = names.length - max;
+  return rest > 0 ? `${names.slice(0, max).join(', ')} +${rest} more` : names.join(', ');
+};
+
+/**
+ * Itemised lines → one row per head, which is how most families and TPAs want
+ * to read a quote: stay, nursing, doctor, investigations, medicines. Nothing
+ * about the money changes — every line is still priced off the clinic's rate
+ * card and only the printing is collapsed.
+ */
+export function rollUpToHeads(lines: EstimateLine[], stayDays: number): EstimateHead[] {
+  const days = Math.max(1, stayDays);
+  const buckets = new Map<string, EstimateLine[]>();
+  for (const line of pricedOnly(lines)) {
+    const cat = headOf(line);
+    buckets.set(cat, [...(buckets.get(cat) ?? []), line]);
+  }
+
+  return CATEGORY_ORDER.filter((cat) => buckets.has(cat)).map((cat) => {
+    const items = buckets.get(cat)!;
+    const daily = items.filter((l) => l.perDay);
+    const oneOff = items.filter((l) => !l.perDay);
+
+    // A head can hold both kinds — "₹650/day × 4 day(s) + Admission fee"
+    const basis: string[] = [];
+    if (daily.length > 0) {
+      const perDay = daily.reduce((sum, l) => sum + l.unitRate * l.quantity, 0);
+      basis.push(`${CURRENCY(perDay)}/day × ${days} day(s)`);
+    }
+    if (oneOff.length > 0) basis.push(itemsPhrase(oneOff));
+
+    return {
+      category: cat,
+      label: CATEGORY_LABEL[cat] ?? cat,
+      basis: basis.join(' + '),
+      amount: items.reduce((sum, l) => sum + lineAmount(l, days), 0),
+      items,
+    };
+  });
+}
+
+/** Every line printed under its head, with the per-day arithmetic spelled out */
+function detailedRowsHtml(priced: EstimateLine[], stayDays: number): string {
   const groups = CATEGORY_ORDER.map((cat) => ({
     cat,
     items: priced.filter((l) => l.category === cat),
@@ -269,9 +319,9 @@ export function buildCostTableHtml(
   const rest = priced.filter((l) => !known.has(l.category));
   if (rest.length > 0) groups.push({ cat: 'misc', items: rest });
 
-  const rows = groups
+  return groups
     .map(({ cat, items }) => {
-      const head = `<tr><td colspan="4" style="${TD};background:#f8fafc"><b>${esc(
+      const head = `<tr><td colspan="3" style="${TD};background:#f8fafc"><b>${esc(
         CATEGORY_LABEL[cat] ?? cat
       )}</b></td></tr>`;
       const body = items
@@ -290,6 +340,38 @@ export function buildCostTableHtml(
       return head + body;
     })
     .join('');
+}
+
+/** One row per head — the broad quote */
+function broadRowsHtml(priced: EstimateLine[], stayDays: number): string {
+  return rollUpToHeads(priced, stayDays)
+    .map(
+      (h) => `<tr>
+        <td style="${TD}"><b>${esc(h.label)}</b></td>
+        <td style="${TD};color:#475569">${esc(h.basis)}</td>
+        <td style="${TD};text-align:right">${CURRENCY(h.amount)}</td>
+      </tr>`
+    )
+    .join('');
+}
+
+/**
+ * The costed lines → the table that goes into "Estimated Cost Breakup".
+ * `detail: 'broad'` prints one row per head (stay, nursing, doctor,
+ * investigations, medicines…); the default prints every line under its head.
+ */
+export function buildCostTableHtml(
+  lines: EstimateLine[],
+  stayDays: number,
+  opts: { excluded?: string[]; detail?: EstimateDetail } = {}
+): string {
+  const priced = pricedOnly(lines);
+  if (priced.length === 0) return '<p>[Cost breakup]</p>';
+
+  const rows =
+    opts.detail === 'broad'
+      ? broadRowsHtml(priced, stayDays)
+      : detailedRowsHtml(priced, stayDays);
 
   const total = estimateTotal(priced, stayDays);
   const excluded = (opts.excluded ?? []).filter(Boolean);
@@ -310,7 +392,8 @@ export function buildCostTableHtml(
   Approximately <b>${CURRENCY(total / Math.max(1, stayDays))} per day</b>.
 </p>${
     excluded.length > 0
-      ? `\n<p style="font-size:12px;color:#475569;margin:4px 0 0"><b>Not included:</b> ${esc(
+      ? `
+<p style="font-size:12px;color:#475569;margin:4px 0 0"><b>Not included:</b> ${esc(
           excluded.join(', ')
         )}.</p>`
       : ''
@@ -322,6 +405,7 @@ export function buildCostTableHtml(
 export const documentAiService = {
   buildTariffSnapshot,
   buildCostTableHtml,
+  rollUpToHeads,
   lineAmount,
   estimateTotal,
   isCostedDocType,

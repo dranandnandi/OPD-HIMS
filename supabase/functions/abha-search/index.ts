@@ -17,12 +17,23 @@ import { abdmEncrypt, hashIdentifier, normaliseMobile } from '../_shared/abdmCry
 import { getAbdmCredentials, AbdmUpstreamError } from '../_shared/abdmSession.ts';
 import { authenticateCaller, assertPatientInCallerClinic, enforceRateLimit } from '../_shared/abdmAuthz.ts';
 import { jsonResponse, preflight, errorResponse, writeAudit, auditReason } from '../_shared/abdmHttp.ts';
+import { createFlowSession } from '../_shared/abdmFlowSession.ts';
 
 interface AbhaSearchHit {
+  /**
+   * ABDM's 1-based position in the result list.
+   *
+   * This is how the follow-up OTP step addresses an account (spec 7.6.1.2 /
+   * 7.6.2.2 send `loginHint: "index"`), so it must survive to the client even
+   * though it means nothing on its own. Without it the search is a dead end:
+   * you can see the accounts but cannot act on one.
+   */
+  index: number;
   abhaNumber: string;
   name: string;
   gender: string;
-  kycVerified: boolean;
+  /** null = ABDM did not state it, NOT a failed KYC. */
+  kycVerified: boolean | null;
   /** Which verification methods this ABHA supports, e.g. ["MOBILE_OTP"]. */
   authMethods: string[];
 }
@@ -42,11 +53,19 @@ function mapHits(raw: unknown): AbhaSearchHit[] {
     .map((entry) => {
       const src = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       return {
+        index: typeof src.index === 'number' ? src.index : 0,
         abhaNumber: typeof src.ABHANumber === 'string' ? src.ABHANumber : '',
         name: typeof src.name === 'string' ? src.name : '',
         gender: typeof src.gender === 'string' ? src.gender : '',
-        // ABDM sends this as the string "true" here, not a boolean.
-        kycVerified: src.kycVerified === true || src.kycVerified === 'true',
+        // ABDM sends this as the string "true" here, not a boolean — and omits
+        // it entirely on other endpoints, so absent must stay absent rather
+        // than collapsing to "not KYC verified".
+        kycVerified:
+          src.kycVerified === true || src.kycVerified === 'true'
+            ? true
+            : src.kycVerified === false || src.kycVerified === 'false'
+              ? false
+              : null,
         authMethods: Array.isArray(src.authMethods)
           ? src.authMethods.filter((m): m is string => typeof m === 'string')
           : [],
@@ -68,6 +87,7 @@ serve(async (req) => {
     const body = await req.json();
     patientId = body?.patientId ? String(body.patientId) : null;
     const mobile = normaliseMobile(body?.mobile);
+    const chain = body?.chain === true;
 
     if (!/^[6-9]\d{9}$/.test(mobile)) {
       return jsonResponse(req, { error: 'A valid 10-digit mobile number is required', requestId }, 400);
@@ -103,12 +123,26 @@ serve(async (req) => {
 
     const data = unwrap(await res.json());
     const accounts = mapHits(data.ABHA);
+    const txnId = typeof data.txnId === 'string' ? data.txnId : null;
 
     await writeAudit(caller, { action: 'abha_search', requestId, status: 'success', patientId });
 
-    // No txnId is returned: the search transaction is not chained into the
-    // login flow, which starts its own. Returning it would only invite a
-    // client to try to splice the two.
+    // Default stays a pure pre-check: no txnId, no session, nothing to splice.
+    //
+    // `chain: true` opts into the fetch-details flow (spec 7.6.1 / 7.6.2), where
+    // the search txnId must survive into the OTP step. Even then the txnId
+    // itself never leaves the server — the client gets an opaque handle, same
+    // contract as every other ABDM flow here.
+    if (chain && txnId && accounts.length > 0) {
+      const sessionId = await createFlowSession(caller, 'abha-search', {
+        txnId,
+        tToken: null,
+        xToken: null,
+        patientId,
+      });
+      return jsonResponse(req, { found: true, accounts, sessionId, requestId });
+    }
+
     return jsonResponse(req, { found: accounts.length > 0, accounts, requestId });
   } catch (err) {
     if (caller) {

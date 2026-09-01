@@ -1,5 +1,13 @@
 # ABDM Work Log — 2026-08-21 (Phase 2)
 
+> **Status corrected 2026-08-25.** Everything below about *what is deployed* is
+> stale. This log was written at 00:13; the HIECM/HIP documents it asks for
+> arrived at 13:21 the **same day**, and the Mumbai cutover, the migrations and
+> all 13 functions have since gone live. The **design decisions, spec gotchas
+> and smoke-test list remain authoritative** — only the status table, the deploy
+> section and "Next" are superseded. See `session-log-2026-08-25.md`.
+
+
 Continues `session-log-2026-08-20.md`. Still **nothing deployed and no SQL
 executed** — yesterday's migration has not been run yet either.
 

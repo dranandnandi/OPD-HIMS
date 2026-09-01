@@ -8,7 +8,7 @@ import { DIET_TYPES, MEAL_SLOTS } from './dietService';
 import type { GeneratedPdf } from '../../../services/pdfService';
 import type {
   Admission, IpdBill, Deposit, IpdPayment, MedicationOrder,
-  DietOrder, DietChartEntry, IpdOrderItem, TreatmentPlan,
+  DietOrder, DietChartEntry, IpdOrderItem, TreatmentPlan, Vitals,
 } from '../types/ipd';
 
 export interface DocumentTemplate {
@@ -48,11 +48,14 @@ export interface IpdDocument {
 // doc_type CHECK constraint on ipd_documents / ipd_document_templates.
 // ---------------------------------------------------------------------------
 export const DOC_TYPES: { key: string; label: string }[] = [
+  { key: 'initial_assessment', label: 'Initial Doctor Assessment' },
+  { key: 'admission_sheet', label: 'Admission Sheet' },
+  { key: 'case_sheet', label: 'IPD Case Sheet (Orders)' },
+  { key: 'nursing_chart', label: 'Nursing Sheet' },
+  { key: 'ot_note', label: 'OT Note (Report of Surgery)' },
   { key: 'discharge_summary', label: 'Discharge Summary' },
   { key: 'discharge_medication', label: 'Discharge Medication' },
-  { key: 'admission_sheet', label: 'Admission Sheet' },
   { key: 'consent', label: 'Consent Form' },
-  { key: 'ot_note', label: 'OT Note' },
   { key: 'death_summary', label: 'Death Summary' },
   { key: 'dama_form', label: 'DAMA Form' },
   { key: 'referral_letter', label: 'Referral Letter' },
@@ -63,24 +66,78 @@ export const docTypeLabel = (docType: string): string =>
   DOC_TYPES.find((d) => d.key === docType)?.label ?? docType.replace(/_/g, ' ');
 
 // ---------------------------------------------------------------------------
-// The document types that are the treating doctor's to write. Everyone with
-// 'ipd_documents' may read and print these; only 'ipd_documents_clinical' may
-// create, edit, sign or delete one. The rest (consent, admission sheet, DAMA,
-// estimate) are front-desk/ward paperwork and stay open to 'ipd_documents'.
+// Who may WRITE each document type. Everyone with 'ipd_documents' reads and
+// prints every type; authoring (create / edit / sign / delete) is gated on the
+// type's required permission:
 //
-// Enforced in RLS too — keep in sync with public.ipd_is_clinical_doc_type() in
-// supabase/migrations/20260824000000_ipd_clinical_document_permission.sql.
+//   ipd_documents           front-desk & ward paperwork — consent, admission
+//                           sheet, DAMA, estimate
+//   ipd_documents_nursing   the nursing sheet
+//   ipd_documents_clinical  the treating doctor's documents — assessment, case
+//                           sheet, OT note, discharge/death summary, referral
+//
+// A clinic can move any type between the three from Masters → Document
+// Templates; the override lives in ipd_doc_type_access. RLS resolves the same
+// map (public.ipd_can_author_doc), so this is not the only lock — keep in sync
+// with public.ipd_default_doc_permission() in
+// supabase/migrations/20260829000000_ipd_doc_types_and_authorship.sql.
 // ---------------------------------------------------------------------------
-export const CLINICAL_DOC_TYPES = [
-  'discharge_summary',
-  'discharge_medication',
-  'ot_note',
-  'death_summary',
-  'referral_letter',
+export type DocAuthorPermission =
+  | 'ipd_documents'
+  | 'ipd_documents_nursing'
+  | 'ipd_documents_clinical';
+
+export const DOC_AUTHOR_LEVELS: { key: DocAuthorPermission; label: string }[] = [
+  { key: 'ipd_documents', label: 'Any documents user (front desk / ward)' },
+  { key: 'ipd_documents_nursing', label: 'Nursing staff & doctors' },
+  { key: 'ipd_documents_clinical', label: 'Treating doctor only' },
 ];
 
-export const isClinicalDocType = (docType: string): boolean =>
-  CLINICAL_DOC_TYPES.includes(docType);
+export const DEFAULT_DOC_TYPE_PERMISSION: Record<string, DocAuthorPermission> = {
+  initial_assessment: 'ipd_documents_clinical',
+  admission_sheet: 'ipd_documents',
+  case_sheet: 'ipd_documents_clinical',
+  nursing_chart: 'ipd_documents_nursing',
+  ot_note: 'ipd_documents_clinical',
+  discharge_summary: 'ipd_documents_clinical',
+  discharge_medication: 'ipd_documents_clinical',
+  consent: 'ipd_documents',
+  death_summary: 'ipd_documents_clinical',
+  dama_form: 'ipd_documents',
+  referral_letter: 'ipd_documents_clinical',
+  estimate: 'ipd_documents',
+};
+
+/** Per-clinic overrides, doc_type → required permission */
+export type DocTypeAccessMap = Record<string, DocAuthorPermission>;
+
+/** The permission a doc type needs in this clinic (override, else built-in) */
+export const docTypePermission = (
+  docType: string,
+  access?: DocTypeAccessMap
+): DocAuthorPermission =>
+  access?.[docType] ?? DEFAULT_DOC_TYPE_PERMISSION[docType] ?? 'ipd_documents';
+
+/**
+ * May this user author the type? The doctor's key covers nursing documents —
+ * a consultant writing the nursing sheet is normal; the reverse is not.
+ * Mirrors public.ipd_can_author_doc().
+ */
+export const canAuthorDocType = (
+  docType: string,
+  hasPermission: (key: string) => boolean,
+  access?: DocTypeAccessMap
+): boolean => {
+  const perm = docTypePermission(docType, access);
+  return (
+    hasPermission(perm) ||
+    (perm === 'ipd_documents_nursing' && hasPermission('ipd_documents_clinical'))
+  );
+};
+
+/** Kept for callers that only care about the doctor-owned types */
+export const isClinicalDocType = (docType: string, access?: DocTypeAccessMap): boolean =>
+  docTypePermission(docType, access) === 'ipd_documents_clinical';
 
 /**
  * An RLS refusal on ipd_documents reads "new row violates row-level security
@@ -90,7 +147,7 @@ export const isClinicalDocType = (docType: string): boolean =>
 export const documentErrorMessage = (e: unknown): string => {
   const msg = (e as Error)?.message ?? 'Something went wrong';
   return /row-level security/i.test(msg)
-    ? 'Only the treating doctor can create or change this document — OT notes, discharge & death summaries, discharge medication and referral letters are signed by the doctor.'
+    ? 'You are not allowed to write this document type — the treating doctor signs assessments, case sheets, OT notes, discharge/death summaries and referrals. Masters → Document Templates shows who may write each type.'
     : msg;
 };
 
@@ -100,14 +157,21 @@ export const documentErrorMessage = (e: unknown): string => {
 // ---------------------------------------------------------------------------
 export const PLACEHOLDER_CATALOG: { key: string; label: string }[] = [
   { key: 'patient.name', label: 'Patient name' },
+  { key: 'patient.uhid', label: 'UHID' },
   { key: 'patient.age', label: 'Age' },
   { key: 'patient.gender', label: 'Gender' },
+  { key: 'patient.age_sex', label: 'Age / Sex' },
   { key: 'patient.phone', label: 'Phone' },
   { key: 'patient.blood_group', label: 'Blood group' },
   { key: 'patient.allergies', label: 'Allergies' },
   { key: 'admission.number', label: 'Admission no' },
   { key: 'admission.date', label: 'Admission date' },
+  { key: 'admission.datetime', label: 'Admission date & time' },
   { key: 'admission.bed', label: 'Ward / bed' },
+  { key: 'admission.attendant', label: 'Attendant (name & phone)' },
+  { key: 'today', label: 'Today’s date' },
+  { key: 'now', label: 'Date & time now' },
+  { key: 'vitals.chart', label: 'Vitals chart (all recorded rounds)' },
   { key: 'admission.diagnosis', label: 'Diagnosis' },
   { key: 'admission.icd_codes', label: 'ICD-10 codes' },
   { key: 'admission.reason', label: 'Reason for admission' },
@@ -128,10 +192,10 @@ export const PLACEHOLDER_CATALOG: { key: string; label: string }[] = [
   { key: 'narrative.condition', label: 'Condition at discharge — AI narrative' },
 ];
 
-// Bumped whenever DEFAULT_DISCHARGE_TEMPLATE changes; auto-created default
-// templates below this version are upgraded in place (Studio edits bump the
-// row version past this, so customized templates are never touched).
-const DEFAULT_TEMPLATE_VERSION = 4;
+// Bumped whenever a built-in template changes; auto-created default templates
+// below this version are upgraded in place (Studio edits bump the row version
+// past this, so customized templates are never touched).
+const DEFAULT_TEMPLATE_VERSION = 5;
 
 // ---------------------------------------------------------------------------
 // Default discharge summary template (created per clinic on first use;
@@ -205,6 +269,16 @@ const DEFAULT_DISCHARGE_TEMPLATE = `
 // (the voice panel offers exactly these headings as target fields).
 // ---------------------------------------------------------------------------
 const DOC_TYPE_SECTIONS: Record<string, string[]> = {
+  initial_assessment: [
+    'Present Complaints', 'History of Present Illness', 'Past History',
+    'Family History', 'Personal History', 'Physical Examination',
+    'Systemic Examination', 'Local Examination', 'Provisional Diagnosis',
+    'Treatment Plan',
+  ],
+  case_sheet: ['Details', 'Management'],
+  nursing_chart: [
+    'Vitals', 'Intake & Output', 'Nursing Observations', 'Care Given',
+  ],
   discharge_medication: [
     'Diagnosis', 'Medications on Discharge', 'Diet Advice', 'Advice & Follow-up',
   ],
@@ -244,17 +318,239 @@ const DOC_TYPE_SECTIONS: Record<string, string[]> = {
 const DOC_HEADER_BLOCK = `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px">
   <tr>
     <td style="padding:2px 4px"><b>Patient:</b> {{patient.name}} ({{patient.age}}y / {{patient.gender}})</td>
-    <td style="padding:2px 4px"><b>Admission No:</b> {{admission.number}}</td>
+    <td style="padding:2px 4px"><b>UHID:</b> {{patient.uhid}}</td>
   </tr>
   <tr>
     <td style="padding:2px 4px"><b>Admitted:</b> {{admission.date}}</td>
-    <td style="padding:2px 4px"><b>Ward/Bed:</b> {{admission.bed}}</td>
+    <td style="padding:2px 4px"><b>Admission No:</b> {{admission.number}}</td>
   </tr>
   <tr>
     <td style="padding:2px 4px"><b>Consultant:</b> Dr. {{doctor.name}}</td>
-    <td style="padding:2px 4px"><b>Diagnosis:</b> {{admission.diagnosis}}</td>
+    <td style="padding:2px 4px"><b>Ward/Bed:</b> {{admission.bed}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px" colspan="2"><b>Diagnosis:</b> {{admission.diagnosis}}</td>
   </tr>
 </table>`;
+
+// ---------------------------------------------------------------------------
+// Ward sheets — the paperwork the ward runs on, laid out the way it is written
+// by hand: a dated title, the patient strip, then the sheet's own body. These
+// are seeded for every clinic by "Seed defaults" and stay editable in the
+// Template Studio.
+// ---------------------------------------------------------------------------
+
+/** Patient strip used by the ward sheets (Name / Age-Sex / Room / UHID / IPD No) */
+const WARD_HEADER_BLOCK = `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:10px">
+  <tr>
+    <td style="padding:2px 4px"><b>Name of Patient:</b> {{patient.name}}</td>
+    <td style="padding:2px 4px"><b>Age / Sex:</b> {{patient.age_sex}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Room:</b> {{admission.bed}}</td>
+    <td style="padding:2px 4px"><b>UHID:</b> {{patient.uhid}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>IPD No:</b> {{admission.number}}</td>
+    <td style="padding:2px 4px"><b>Consultant:</b> Dr. {{doctor.name}}</td>
+  </tr>
+</table>`;
+
+/** Title line every ward sheet opens with */
+const wardSheetHead = (title: string) => `<p style="margin:0;font-size:13px"><b>Date:</b> {{today}}</p>
+<h2 style="text-align:center;margin:2px 0 8px">${title}</h2>
+${WARD_HEADER_BLOCK}`;
+
+/** Doctor's signature strip closing a ward sheet */
+const WARD_SIGN_BLOCK = `<table style="width:100%;font-size:13px;margin-top:18px">
+  <tr>
+    <td><b>Dr. {{doctor.name}}</b><br/>Consultant</td>
+    <td style="text-align:right">Sign: ____________________</td>
+  </tr>
+</table>`;
+
+const DEFAULT_INITIAL_ASSESSMENT_TEMPLATE = `${wardSheetHead('INITIAL DOCTOR ASSESSMENT')}
+<h3>Present Complaints</h3>
+<p>{{admission.reason}}</p>
+
+<h3>History of Present Illness</h3>
+<p></p>
+
+<h3>Past History</h3>
+<p></p>
+
+<h3>Family History</h3>
+<p></p>
+
+<h3>Personal History</h3>
+<table style="width:100%;font-size:13px;border-collapse:collapse">
+  <tr>
+    <td style="padding:2px 4px"><b>Diet:</b> </td>
+    <td style="padding:2px 4px"><b>Appetite:</b> </td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Bowel / Bladder:</b> </td>
+    <td style="padding:2px 4px"><b>Sleep:</b> </td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Addiction:</b> </td>
+    <td style="padding:2px 4px"><b>Current Medication:</b> </td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px" colspan="2"><b>Allergy:</b> {{patient.allergies}}</td>
+  </tr>
+</table>
+
+<h3>Physical Examination</h3>
+<p><b>Vitals:</b> {{vitals.latest}}</p>
+<p><b>Sensorium:</b> Conscious &nbsp;·&nbsp; <b>Pallor:</b> &nbsp;·&nbsp; <b>Icterus:</b> &nbsp;·&nbsp;
+<b>Cyanosis:</b> &nbsp;·&nbsp; <b>Oedema:</b> &nbsp;·&nbsp; <b>Lymphadenopathy:</b> </p>
+
+<h3>Systemic Examination</h3>
+<p><b>P/A:</b> &nbsp;·&nbsp; <b>R/S:</b> &nbsp;·&nbsp; <b>CVS:</b> &nbsp;·&nbsp; <b>CNS:</b> </p>
+
+<h3>Local Examination</h3>
+<ul>
+  <li><b>Inspection:</b> </li>
+  <li><b>Palpation:</b> </li>
+  <li><b>Special examination (P/R, proctoscopy, probing, etc.):</b> </li>
+</ul>
+
+<h3>Investigations</h3>
+{{investigations.list}}
+
+<h3>Provisional Diagnosis</h3>
+<p>{{admission.diagnosis}}</p>
+
+<h3>Treatment Plan</h3>
+<p></p>
+${WARD_SIGN_BLOCK}
+`;
+
+/**
+ * IPD Case Sheet — the running order sheet. One block per round: when it was
+ * written, what was found (Details) and what was ordered (Management). The
+ * first block is pre-filled from the chart; the two blanks below are for the
+ * rounds that follow, and more can be pasted in the editor.
+ */
+const caseSheetEntry = (details: string, management: string) =>
+  `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px">
+  <tr>
+    <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f1f5f9;width:50%">
+      <b>Date &amp; Time of Order:</b> ____________________
+    </td>
+    <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f1f5f9">
+      Seen by: Dr. ____________________
+    </td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc"><b>Details</b></td>
+    <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc"><b>Management</b></td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #cbd5e1;padding:6px;vertical-align:top;height:110px">${details}</td>
+    <td style="border:1px solid #cbd5e1;padding:6px;vertical-align:top">${management}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #cbd5e1;padding:4px 6px" colspan="2">Sign: ____________________</td>
+  </tr>
+</table>`;
+
+const DEFAULT_CASE_SHEET_TEMPLATE = `${wardSheetHead('IPD CASE SHEET')}
+${caseSheetEntry(
+  `<p><b>S/B</b> Dr. {{doctor.name}}</p><p><b>Vitals:</b> {{vitals.latest}}</p>
+    <p><b>C/O:</b> {{admission.reason}}</p><p><b>Diagnosis:</b> {{admission.diagnosis}}</p>`,
+  `<p>Orders:</p><ul><li></li><li></li><li></li></ul>`
+)}
+${caseSheetEntry('<p></p>', '<p></p>')}
+${caseSheetEntry('<p></p>', '<p></p>')}
+`;
+
+const DEFAULT_NURSING_CHART_TEMPLATE = `${wardSheetHead('NURSING SHEET')}
+<h3>Vitals</h3>
+{{vitals.chart}}
+
+<h3>Intake &amp; Output</h3>
+<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <tr>
+    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Time</th>
+    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Oral / IV intake</th>
+    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Urine</th>
+    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Drain / Other</th>
+    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Sign</th>
+  </tr>
+  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
+  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
+  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
+</table>
+
+<h3>Diet</h3>
+<p>{{diet.current}}</p>
+
+<h3>Medication Administered</h3>
+{{medications.course}}
+
+<h3>Nursing Observations &amp; Care Given</h3>
+<p></p>
+
+<table style="width:100%;font-size:13px;margin-top:18px">
+  <tr>
+    <td>Staff Nurse: ____________________</td>
+    <td style="text-align:right">Sign: ____________________</td>
+  </tr>
+</table>
+`;
+
+const DEFAULT_OT_NOTE_TEMPLATE = `${wardSheetHead('REPORT OF SURGERY')}
+<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:10px">
+  <tr>
+    <td style="padding:2px 4px"><b>Date &amp; time of surgery:</b> {{now}}</td>
+    <td style="padding:2px 4px"><b>Surgeon:</b> Dr. {{doctor.name}}</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Assistant(s):</b> </td>
+    <td style="padding:2px 4px"><b>Anaesthetist:</b> </td>
+  </tr>
+  <tr>
+    <td style="padding:2px 4px"><b>Anaesthesia:</b> </td>
+    <td style="padding:2px 4px"><b>Position:</b> </td>
+  </tr>
+</table>
+
+<h3>Pre-operative Diagnosis</h3>
+<p>{{admission.diagnosis}}</p>
+
+<h3>Post-operative Diagnosis</h3>
+<p></p>
+
+<h3>Procedure Performed</h3>
+<p></p>
+
+<h3>Operative Findings</h3>
+<p></p>
+
+<h3>Procedure in Detail</h3>
+<p></p>
+
+<h3>Specimen / Implants</h3>
+<p></p>
+
+<h3>Blood Loss &amp; Fluids</h3>
+<p></p>
+
+<h3>Post-operative Instructions</h3>
+<ul><li></li><li></li><li></li></ul>
+${WARD_SIGN_BLOCK}
+`;
+
+/** Doc types with a hand-written built-in template rather than a skeleton */
+const BESPOKE_TEMPLATES: Record<string, string> = {
+  discharge_summary: DEFAULT_DISCHARGE_TEMPLATE,
+  initial_assessment: DEFAULT_INITIAL_ASSESSMENT_TEMPLATE,
+  case_sheet: DEFAULT_CASE_SHEET_TEMPLATE,
+  nursing_chart: DEFAULT_NURSING_CHART_TEMPLATE,
+  ot_note: DEFAULT_OT_NOTE_TEMPLATE,
+};
 
 /**
  * Build a skeleton template for a document type that has no clinic template
@@ -298,9 +594,9 @@ ${sections}
 `;
 }
 
-/** The built-in template body for a doc type — discharge has a bespoke one */
+/** The built-in template body for a doc type — some have a bespoke one */
 const defaultTemplateHtml = (docType: string): string =>
-  docType === 'discharge_summary' ? DEFAULT_DISCHARGE_TEMPLATE : buildSkeletonTemplate(docType);
+  BESPOKE_TEMPLATES[docType] ?? buildSkeletonTemplate(docType);
 
 /** Name given to auto-created templates — the marker for the auto-upgrade path */
 const defaultTemplateName = (docType: string): string => `Default ${docTypeLabel(docType)}`;
@@ -519,10 +815,49 @@ async function buildCourseNotesHtml(admissionId: string): Promise<string> {
     .join('');
 }
 
+/**
+ * Every charted vitals round as one table — this is the Nursing Sheet. Rounds
+ * run oldest-first the way the ward writes them, and the trailing Sign column
+ * is left blank for the nurse on duty to initial after printing.
+ */
+function buildVitalsChartHtml(vitals: Vitals[]): string {
+  if (vitals.length === 0) {
+    return '<p>[No vitals charted yet — record them under Nursing, or fill this sheet by hand]</p>';
+  }
+  const cell = 'border:1px solid #cbd5e1;padding:3px 5px';
+  const rows = [...vitals]
+    .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
+    .map((v) => {
+      const at = new Date(v.recorded_at).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+      const bp = v.bp_systolic != null ? `${v.bp_systolic}/${v.bp_diastolic ?? '—'}` : '—';
+      const cols = [
+        at,
+        bp,
+        v.pulse != null ? String(v.pulse) : '—',
+        v.spo2 != null ? `${v.spo2}%` : '—',
+        v.temperature != null ? `${v.temperature}°C` : 'Afebrile',
+        v.resp_rate != null ? String(v.resp_rate) : '—',
+        v.blood_sugar != null ? String(v.blood_sugar) : '—',
+        '',
+      ];
+      return `<tr>${cols.map((c) => `<td style="${cell}">${esc(c)}</td>`).join('')}</tr>`;
+    })
+    .join('');
+  const heads = ['Date & Time', 'BP (mmHg)', 'Pulse /min', 'SpO₂', 'Temp', 'RR /min', 'Sugar', 'Sign']
+    .map((h) => `<th style="${cell};background:#f1f5f9;text-align:left">${h}</th>`)
+    .join('');
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <tr>${heads}</tr>
+  ${rows}
+</table>`;
+}
+
 async function buildPlaceholderMap(admission: Admission): Promise<Record<string, string>> {
   const [vitals, medOrders, investigations, courseNotes, reports, consultations, diet] =
     await Promise.all([
-      nursingService.listVitals(admission.id, 1).catch(() => []),
+      nursingService.listVitals(admission.id, 60).catch(() => []),
       supabase
         .from('ipd_medication_orders')
         .select('*')
@@ -549,6 +884,12 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
 
   const fmt = (d: string | null | undefined) =>
     d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const fmtDateTime = (d: string | null | undefined) =>
+    d
+      ? new Date(d).toLocaleString('en-IN', {
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        })
+      : '—';
 
   const dischargeAt = admission.discharge_datetime ?? new Date().toISOString();
   const los = Math.max(
@@ -565,13 +906,26 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
 
   return {
     'patient.name': admission.patient?.name ?? '',
+    'patient.uhid': admission.patient?.patient_number ?? '—',
     'patient.age': String(admission.patient?.age ?? ''),
     'patient.gender': admission.patient?.gender ?? '',
+    'patient.age_sex': [
+      admission.patient?.age != null ? String(admission.patient.age) : '—',
+      admission.patient?.gender
+        ? admission.patient.gender.charAt(0).toUpperCase()
+        : '—',
+    ].join(' / '),
     'patient.phone': admission.patient?.phone ?? '',
     'patient.blood_group': admission.patient?.blood_group ?? '—',
     'patient.allergies': admission.patient?.allergies?.join(', ') || 'None known',
     'admission.number': admission.admission_number,
     'admission.date': fmt(admission.admission_datetime),
+    'admission.datetime': fmtDateTime(admission.admission_datetime),
+    'admission.attendant': [admission.attendant_name, admission.attendant_phone]
+      .filter(Boolean)
+      .join(' · ') || '—',
+    today: fmt(new Date().toISOString()),
+    now: fmtDateTime(new Date().toISOString()),
     'admission.bed': admission.current_bed
       ? `${admission.current_bed.ward?.name ?? ''} / ${admission.current_bed.bed_number}`
       : '—',
@@ -585,6 +939,7 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
       ? DISCHARGE_TYPE_LABEL[admission.discharge_type] ?? admission.discharge_type
       : 'Routine',
     'vitals.latest': latestVitals,
+    'vitals.chart': buildVitalsChartHtml(vitals),
     'medications.discharge': buildDischargeMedsHtml(medOrders),
     'medications.course': buildCourseMedsHtml(medOrders),
     'investigations.list': investigations,
@@ -703,6 +1058,75 @@ export const documentService = {
       .single();
     if (error) throw error;
     return data as DocumentTemplate;
+  },
+
+  /**
+   * Create the built-in template for every document type this clinic has none
+   * for, and upgrade the untouched ones — what "Seed defaults" in Masters
+   * calls so a fresh clinic starts with the whole ward paperwork set.
+   * Returns how many were created/upgraded.
+   */
+  async seedDefaultTemplates(clinicId: string): Promise<number> {
+    const before = await this.listTemplates(clinicId);
+    let touched = 0;
+    for (const { key } of DOC_TYPES) {
+      const existing = before.find(
+        (t) => t.doc_type === key && t.name === defaultTemplateName(key)
+      );
+      // a clinic that renamed or edited its default is left alone
+      if (existing && (existing.version ?? 1) > DEFAULT_TEMPLATE_VERSION) continue;
+      const isNew = !before.some((t) => t.doc_type === key);
+      try {
+        await this.getOrCreateDefaultTemplate(clinicId, key);
+        if (isNew || existing) touched += 1;
+      } catch {
+        // one bad type must not abort the seed — the rest still land
+      }
+    }
+    return touched;
+  },
+
+  // --- Who may write each document type -------------------------------------
+
+  /** Per-clinic overrides of the built-in authorship map */
+  async listDocTypeAccess(clinicId: string): Promise<DocTypeAccessMap> {
+    const { data, error } = await supabase
+      .from('ipd_doc_type_access')
+      .select('doc_type, required_permission')
+      .eq('clinic_id', clinicId);
+    if (error) return {};
+    return Object.fromEntries(
+      (data ?? []).map((r) => [r.doc_type, r.required_permission as DocAuthorPermission])
+    );
+  },
+
+  /** Set (or clear, back to the built-in) who may write a document type */
+  async setDocTypeAccess(params: {
+    clinicId: string;
+    docType: string;
+    permission: DocAuthorPermission | null;
+    userId?: string;
+  }): Promise<void> {
+    if (params.permission === null) {
+      const { error } = await supabase
+        .from('ipd_doc_type_access')
+        .delete()
+        .eq('clinic_id', params.clinicId)
+        .eq('doc_type', params.docType);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase.from('ipd_doc_type_access').upsert(
+      {
+        clinic_id: params.clinicId,
+        doc_type: params.docType,
+        required_permission: params.permission,
+        updated_at: new Date().toISOString(),
+        updated_by: params.userId ?? null,
+      },
+      { onConflict: 'clinic_id,doc_type' }
+    );
+    if (error) throw error;
   },
 
   // --- Template Studio (Masters → Document Templates) ------------------------
@@ -893,6 +1317,10 @@ export const documentService = {
       'admission.reason': params.diagnosis,
       'doctor.name': params.doctorName.replace(/^dr\.?\s*/i, ''),
       'discharge.date': today,
+      today,
+      now: new Date().toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      }),
     };
     const content = resolvePlaceholders(template.html_template, map).replace(
       /\{\{\s*[\w.]+\s*\}\}/g,
@@ -976,6 +1404,109 @@ export const documentService = {
   async printBill(params: { bill: IpdBill; admission: Admission; clinicId: string }): Promise<void> {
     const clinic = await getClinicInfo(params.clinicId);
     const html = buildBillHtml(params.bill, params.admission, clinic, true);
+    printHtml(html);
+  },
+
+  /**
+   * TPA claim annexure: the package price broken into heads, ending in the
+   * residual line. Totals the agreed price exactly — the patient's own bill
+   * still carries the single package line.
+   */
+  async printPackageBreakup(params: {
+    lines: Array<{ description: string; quantity: number; unit_rate: number; net: number; is_residual: boolean }>;
+    packageName: string;
+    agreedPrice: number;
+    admission: Admission;
+    clinicId: string;
+  }): Promise<void> {
+    const { lines, packageName, agreedPrice, admission } = params;
+    const clinic = await getClinicInfo(params.clinicId);
+    const inr = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const fmt = (d: string) =>
+      new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const barcode = generateBarcodeDataUrl(admission.admission_number, { height: 30, fontSize: 9, margin: 2 });
+
+    // Every head prints identically. The residual is an ordinary line to the
+    // payer — nothing on the annexure should advertise it as a balancing figure.
+    const rows = lines.map((l) => `
+      <tr>
+        <td>${esc(l.description)}</td>
+        <td class="r">${l.quantity}</td>
+        <td class="r">${inr(l.unit_rate)}</td>
+        <td class="r">${inr(l.net)}</td>
+      </tr>`).join('');
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(admission.admission_number)} — package break-up</title>
+  <style>
+    @page { size: A4; margin: 15mm 12mm 18mm 12mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 12px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 2px solid #1F5065; padding-bottom: 6px; margin-bottom: 10px; }
+    .letterhead h1 { margin: 0; font-size: 17px; color: #1F5065; }
+    .sub { font-size: 10px; color: #555; }
+    .meta { display: flex; justify-content: space-between; font-size: 11px;
+      background: #f4f6f8; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 10px; text-transform: uppercase; color: #666;
+      border-bottom: 1px solid #bbb; padding: 4px 6px; }
+    td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+    .r { text-align: right; }
+    .totals { margin-top: 10px; margin-left: auto; width: 55%; font-size: 12px; }
+    .totals td { padding: 3px 6px; }
+    .totals .grand td { font-size: 14px; font-weight: bold; border-top: 2px solid #1F5065; }
+    .sign { margin-top: 30px; display: flex; justify-content: space-between; font-size: 11px; }
+    .footer { position: fixed; bottom: 0; left: 0; right: 0; font-size: 9.5px; color: #777;
+      border-top: 1px solid #ddd; padding-top: 3px; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div class="letterhead">
+    ${letterheadInner(clinic, 'Package Break-up — Claim Annexure')}
+    <img src="${barcode}" alt="${esc(admission.admission_number)}" style="height:32px" />
+  </div>
+
+  <div class="meta">
+    <div>
+      <b>${esc(admission.patient?.name ?? '')}</b>
+      (${admission.patient?.age ?? '—'}y / ${esc(admission.patient?.gender ?? '—')})<br/>
+      ${esc(admission.patient?.phone ?? '')}
+    </div>
+    <div>
+      Admission: <b>${esc(admission.admission_number)}</b><br/>
+      Admitted: ${fmt(admission.admission_datetime)}
+    </div>
+    <div>
+      Package: <b>${esc(packageName)}</b><br/>
+      Agreed: ${inr(agreedPrice)}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Head</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <table class="totals">
+    <tr class="grand"><td>Package Total</td><td class="r">${inr(agreedPrice)}</td></tr>
+  </table>
+
+  <div class="sign">
+    <span>Patient / Attendant Signature</span>
+    <span>Authorised Signatory</span>
+  </div>
+
+  <div class="footer">
+    <span>${esc(admission.admission_number)} · package break-up</span>
+    <span>Generated ${new Date().toLocaleString('en-IN')}</span>
+  </div>
+</body>
+</html>`;
     printHtml(html);
   },
 
@@ -1439,6 +1970,12 @@ function buildBillHtml(
 
   const barcode = generateBarcodeDataUrl(admission.admission_number, { height: 30, fontSize: 9, margin: 2 });
 
+  // An interim is a running statement, not a demand for payment. It must never
+  // read as a bill on paper.
+  const docLabel = bill.is_provisional
+    ? 'PROVISIONAL STATEMENT'
+    : `${bill.bill_type.toUpperCase()} BILL`;
+
   const styles = `
     ${letterhead ? '@page { size: A4; margin: 15mm 12mm 18mm 12mm; }' : ''}
     body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 12px; }
@@ -1465,15 +2002,17 @@ function buildBillHtml(
     ${letterhead ? `.footer { position: fixed; bottom: 0; left: 0; right: 0; font-size: 9.5px; color: #777;
       border-top: 1px solid #ddd; padding-top: 3px; display: flex; justify-content: space-between; }` : ''}
     .sign { margin-top: 34px; display: flex; justify-content: space-between; font-size: 11px; }
+    .provisional { border: 1px solid #b45309; background: #fffbeb; color: #92400e;
+      border-radius: 6px; padding: 6px 9px; font-size: 10.5px; margin-bottom: 9px; }
   `;
 
   const headerBlock = letterhead
     ? `<div class="letterhead">
-        ${letterheadInner(clinic, `Inpatient Department — ${bill.bill_type.toUpperCase()} BILL`)}
+        ${letterheadInner(clinic, `Inpatient Department — ${docLabel}`)}
         <img src="${barcode}" alt="${admission.admission_number}" style="height:32px" />
       </div>`
     : `<div class="billtitle">
-        <b>${bill.bill_type.toUpperCase()} BILL — INPATIENT DEPARTMENT</b>
+        <b>${docLabel} — INPATIENT DEPARTMENT</b>
         <img src="${barcode}" alt="${admission.admission_number}" style="height:30px" />
       </div>`;
 
@@ -1503,6 +2042,11 @@ function buildBillHtml(
     </div>
   </div>
 
+  ${bill.is_provisional ? `<div class="provisional">
+    Provisional — charges recorded up to ${fmt(bill.bill_datetime)}. Not a demand for payment
+    and not a tax invoice. The final bill issued at discharge carries every item of this admission.
+  </div>` : ''}
+
   <table>
     <thead>
       <tr><th>Description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Disc</th><th class="r">Amount</th></tr>
@@ -1517,19 +2061,19 @@ function buildBillHtml(
     <tr><td>Gross Total</td><td class="r">${inr(bill.gross_total)}</td></tr>
     ${bill.discount_total > 0 ? `<tr><td>Discount</td><td class="r">− ${inr(bill.discount_total)}</td></tr>` : ''}
     ${bill.tax_total > 0 ? `<tr><td>Tax</td><td class="r">${inr(bill.tax_total)}</td></tr>` : ''}
-    <tr><td><b>Net Payable</b></td><td class="r"><b>${inr(bill.net_total)}</b></td></tr>
-    ${bill.deposits_applied > 0 ? `<tr><td>Deposits Applied</td><td class="r">− ${inr(bill.deposits_applied)}</td></tr>` : ''}
+    <tr><td><b>${bill.is_provisional ? 'Total Charges To Date' : 'Net Payable'}</b></td><td class="r"><b>${inr(bill.net_total)}</b></td></tr>
+    ${bill.deposits_applied > 0 ? `<tr><td>${bill.is_provisional ? 'Advance Held' : 'Deposits Applied'}</td><td class="r">− ${inr(bill.deposits_applied)}</td></tr>` : ''}
     ${bill.paid_amount > 0 ? `<tr><td>Payments Received</td><td class="r">− ${inr(bill.paid_amount)}</td></tr>` : ''}
-    <tr class="grand"><td>Balance Due</td><td class="r">${inr(bill.balance_amount)}</td></tr>
+    <tr class="grand"><td>${bill.is_provisional ? 'Balance If Settled Today' : 'Balance Due'}</td><td class="r">${inr(bill.balance_amount)}</td></tr>
   </table>
 
-  <div class="sign">
+  ${bill.is_provisional ? '' : `<div class="sign">
     <span>Patient / Attendant Signature</span>
     <span>Authorised Signatory</span>
-  </div>
+  </div>`}
 
   ${letterhead ? `<div class="footer">
-    <span>${bill.bill_number} · ${admission.admission_number} · ${bill.status.toUpperCase()}</span>
+    <span>${bill.bill_number} · ${admission.admission_number} · ${bill.is_provisional ? 'PROVISIONAL' : bill.status.toUpperCase()}</span>
     <span>Generated ${new Date().toLocaleString('en-IN')}</span>
   </div>` : ''}
 </body>

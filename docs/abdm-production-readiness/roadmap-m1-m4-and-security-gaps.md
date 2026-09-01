@@ -1,5 +1,30 @@
 # ABDM Roadmap: M1 → M4, Security Gaps, and the Mobile-Only Plan
 
+> ## ⚠️ CORRECTION 2026-08-27 — M4 is NHPR, not NHCX
+>
+> Every reference below to "M4 — NHCX (National Health Claims Exchange)" is
+> **wrong**. It predates NHA's own description of the milestone.
+>
+> **M4 is the National Healthcare Providers Registry (NHPR):** integrating
+> registration of health *professionals* (HPID/HPR) and health *facilities*
+> (HFR) natively into the software, so a clinic can onboard from inside this
+> app instead of on the NHA portal.
+>
+> What the mix-up changes:
+> - M4 is **not** insurance or claims work and has nothing to do with
+>   `billingService`. The "only worth it for cashless/insurance" reasoning below
+>   is void, as is "defer until commercially justified".
+> - We are **already partly inside M4**: the HFR facility APIs in
+>   `abdm guidlines/HFR_Documentation_SBX_...pdf` are M4's facility half, and
+>   `m2-prerequisites.md` §10 documents them.
+> - M4 needs **M1, M2 and M3 complete first**, plus NHA assigning the **HPID**
+>   and **HFR** roles to our client ID. Those are not enabled by default.
+> - Sign-off needs a **video recording of the workflow** and a **security audit
+>   + VAPT report** — a longer lead time than any code in it.
+>
+> See `m4-nhpr.md`. Treat the M4 sections below as historical error.
+
+
 > Assessed 2026-08-20 against `ABDM_ABHA_V3_AP_Is_V1_31_07_2025.pdf` (ABHA V3 APIs, Integrator Guide v1.4)
 > Current state: ABHA sandbox integration via **Aadhaar OTP enrolment** only.
 
@@ -58,22 +83,34 @@ no scan-and-share, no linking token, no ABHA address creation, no ABHA card.
 
 ## 2. M1 gap list (against the PDF)
 
+> **Refreshed 2026-08-25** after Phases 1-2 and the first live sandbox testing.
+> "proven" = exercised end to end against ABDM sandbox with a real ABHA on a
+> real mobile. "built" = written and deployed, never yet exercised.
+
 | # | Spec § | Capability | Status |
 |---|---|---|---|
-| 1.1 | §1.0 | Generate session token | ✅ built (but bypassed) |
-| 1.2 | §2.0 | Encrypt Aadhaar/Mobile/OTP/Password | ✅ built (inlined, duplicated) |
-| 1.3 | §3 Step 1–3 | ABHA creation via Aadhaar OTP → `enrol/byAadhaar` | ✅ built |
-| 1.4 | §3 Step 4 | ABHA **mobile verification** (`enrollment/auth/byAbdm`) | ❌ **missing** |
-| 1.5 | §3 Step 6 | ABHA **address suggestions + creation** (`enrol/suggestion`, `enrol/abha-address`) | ❌ **missing** — a newly enrolled ABHA has no usable address without this |
-| 1.6 | §4 | Creation via Driving Licence (`enrol/byDocument`) | ⏸️ **not recommended** — yields an *enrolment number*, not a KYC'd ABHA; needs front/back JPEGs + NEPIX validation. Rarely implemented by HMS vendors. |
-| 1.7 | §7.4 | **Login via Mobile OTP** (verify existing ABHA) | ❌ **missing — the core of the mobile-only plan** |
+| 1.1 | §1.0 | Generate session token | ✅ **proven** |
+| 1.2 | §2.0 | Encrypt Aadhaar/Mobile/OTP/Password (RSA-OAEP on Deno) | ✅ **proven** |
+| 1.3 | §3 Step 1-3 | ABHA creation via Aadhaar OTP → `enrol/byAadhaar` | ✅ built, untested (burns sandbox quota — 100 cap) |
+| 1.4 | §3 Step 4 | ABHA mobile verification (`auth/byAbdm`) | ✅ built, untested |
+| 1.5 | §3 Step 6 | ABHA address suggestions + creation | ✅ built, untested |
+| 1.6 | §4 | Creation via Driving Licence | ⏸️ deliberately not built — yields an *enrolment number*, not a KYC'd ABHA |
+| 1.7 | §7.4 | **Login via Mobile OTP** — the core OPD path | ✅ **proven end to end** |
 | 1.8 | §7.3 | Login via ABHA number + OTP | ❌ missing |
-| 1.9 | §7.6.1 | **Find ABHA using mobile** (`profile/account/abha/search`) | ❌ missing — needed when a patient forgot their ABHA |
-| 1.10 | §9.0 | Get profile | ✅ built |
-| 1.11 | §10/§11 | Generate QR code / ABHA card | ❌ missing |
-| 1.12 | §14.1 | ABHA **address** verification via mobile OTP (PHR base URL) | ❌ missing |
-| 1.13 | — | Scan-and-share QR + V3 linking token + synchronous discovery | ❌ missing (now part of M1 testing) |
-| 1.14 | — | HFR facility registration → HIP ID | ❌ **not started (operational)** |
+| 1.9 | §7.6.1 | Find ABHA using mobile | ✅ **proven** |
+| 1.10 | §9.0 | Get profile | ⚠️ **built, refused by ABDM** — empty-bodied 401. Now optional enrichment; verification no longer depends on it. See session-log-2026-08-25.md §4e/§4f |
+| 1.11 | §10 | Generate QR code | ✅ **proven** — real QR PNG returned |
+| 1.11b | §11 | Generate ABHA card | ⚠️ **built, refused by ABDM** — same empty 401 as 1.10. Returns null; the UI hides the option |
+| 1.12 | §14.1 | ABHA *address* verification via mobile OTP (PHR base) | ❌ missing |
+| 1.13 | — | Scan-and-share | ❌ missing — spec now held; blocked only on an HIP ID |
+| 1.14 | — | HFR facility registration → HIP ID | ❌ **not started (operational)** — now the single biggest blocker |
+
+**The 1.10 / 1.11b anomaly is worth stating precisely**, because it is the one
+open technical question in M1: `/v3/profile/account/qrCode` **succeeds** with a
+given X-token while `/v3/profile/account` and `/v3/profile/account/abha-card`
+return **401 with an empty body** using that same token, same host, same header,
+in the same request. That rules out our request construction, the token, the
+header format and the credentials. It is an NHA-side question.
 
 Deliberately out of scope, and I recommend keeping them out: biometrics (§6, §7.5, §13.6.3),
 Benefit APIs (§13 — government integrators only), Child ABHA (§13.7 — NHA-approved integrators only),
@@ -270,8 +307,13 @@ this section has run against a database or against ABDM sandbox.
 **Phase 2 landed 2026-08-21** — spec §3.4 mobile verification, §3.6 ABHA
 address, §10/§11 card and QR, plus G-13 unlink. Six more functions and
 `ABHACardPanel.tsx`. **13 edge functions now need deploying, not 7.** Details
-in `session-log-2026-08-21.md`. M1 is complete except scan-and-share, which
-needs the HIECM/HIP spec we do not hold.
+in `session-log-2026-08-21.md`. M1 is complete except scan-and-share.
+
+> **Superseded 2026-08-25.** "13 edge functions now need deploying" and "the
+> HIECM/HIP spec we do not hold" are both out of date. The functions **are
+> deployed** to the Mumbai project, and the spec **arrived 2026-08-21**
+> (`abdm guidlines/`). Scan-and-share is now blocked on HFR registration, not on
+> documentation. See `session-log-2026-08-25.md`.
 
 Phase 1 additions: `abha-login-request-otp`, `abha-login-verify`,
 `abha-login-verify-user`, `abha-search`, `abha-link-patient`, and

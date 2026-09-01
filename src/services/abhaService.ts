@@ -15,7 +15,8 @@ export interface ABHAProfile {
   gender: string;
   dob: string;
   mobileMasked: string;
-  kycVerified: boolean;
+  /** null = ABDM did not state it, NOT a failed KYC. Render as "unknown". */
+  kycVerified: boolean | null;
 }
 
 /** One ABHA on a mobile number, for the account picker. */
@@ -27,15 +28,49 @@ export interface ABHAAccountChoice {
   gender: string;
   dob: string;
   status: string;
-  kycVerified: boolean;
+  /** null = ABDM did not state it, NOT a failed KYC. Render as "unknown". */
+  kycVerified: boolean | null;
 }
 
 export interface ABHASearchHit {
+  /**
+   * ABDM's 1-based position in the result list.
+   *
+   * Meaningless on its own, but it is the ONLY way to address an account in the
+   * fetch-details flow — spec 7.6.1.2 / 7.6.2.2 send `loginHint: "index"`, not
+   * an ABHA number. Without it a chained search is a dead end.
+   */
+  index: number;
   abhaNumber: string;
   name: string;
   gender: string;
-  kycVerified: boolean;
+  /** null = ABDM did not state it, NOT a failed KYC. Render as "unknown". */
+  kycVerified: boolean | null;
   authMethods: string[];
+}
+
+/** Where ABDM sends the OTP. The distinction is user-visible at the desk. */
+export type ABHAOtpSystem = 'abdm' | 'aadhaar';
+
+/** What `abha-address-search` returns — spec 14.1 Step 1. */
+export interface ABHAAddressLookup {
+  found: boolean;
+  abhaAddress: string;
+  /** Masked by ABDM. */
+  abhaNumber: string;
+  name: string;
+  status: string;
+  /** Masked by ABDM, e.g. "******9725". */
+  mobileMasked: string;
+  /**
+   * Offer ONLY these to the operator.
+   *
+   * Offering a method ABDM has blocked produces a failure reception cannot
+   * explain to the patient standing in front of them.
+   */
+  authMethods: string[];
+  /** Shown so the desk can say *why* a route is unavailable. */
+  blockedAuthMethods: string[];
 }
 
 export type ABHAAuthMethod = 'aadhaar-otp' | 'mobile-otp' | 'qr-scan';
@@ -132,7 +167,14 @@ export const abhaService = {
     invokeFunction('abha-login-verify', { sessionId, otp }),
 
   /**
-   * Step 3. Confirms the chosen ABHA and returns its profile.
+   * Step 3. Confirms the chosen ABHA.
+   *
+   * `profile` is **nullable**, and null is a success, not a failure. ABDM's Get
+   * Profile call is enrichment on top of the account already returned by step
+   * 2 — it adds only the masked mobile — and it can be refused independently of
+   * the verification itself. When it is null, fall back to the account the
+   * operator selected; do not show an error, because the patient's OTP was
+   * accepted and the identity is confirmed.
    *
    * Returns the session handle too: the ABHA card and QR need the patient's
    * X-token, which is retained server-side against this handle for a few more
@@ -141,7 +183,7 @@ export const abhaService = {
   loginVerifyUser: async (
     sessionId: string,
     abhaNumber: string,
-  ): Promise<{ profile: ABHAProfile; sessionId: string }> =>
+  ): Promise<{ profile: ABHAProfile | null; sessionId: string }> =>
     invokeFunction('abha-login-verify-user', { sessionId, abhaNumber }),
 
   /** Find ABHA by mobile (spec 7.6.1.1) — pre-check, sends no OTP. */
@@ -150,6 +192,103 @@ export const abhaService = {
     patientId?: string,
   ): Promise<{ found: boolean; accounts: ABHASearchHit[] }> =>
     invokeFunction('abha-search', { mobile, patientId }),
+
+  // ── Fetch ABHA details (spec 7.6.1 / 7.6.2) ──────────────────────────────
+  //
+  // Mandatory M1: VRFY_ABHA_301-305 (OTP to the ABHA's own mobile) and
+  // VRFY_ABHA_401-405 (OTP to the AADHAAR-registered mobile). One flow; the
+  // only difference is `otpSystem`, and that difference is the patient's
+  // problem, not ours: the Aadhaar-registered number may be a phone they are
+  // not holding. Say which number the OTP went to.
+  //
+  // Unlike the 7.4 login there is no account picker at the end — the account is
+  // chosen by `index` BEFORE the OTP is sent, so the choice happens first.
+
+  /**
+   * Step 1. Same search as `searchByMobile`, but keeps the ABDM transaction
+   * alive so an account can be acted on.
+   *
+   * Separate method rather than a flag on `searchByMobile` because the two have
+   * different costs: the pre-check is free and disposable, this one opens a
+   * server-side session. Callers should not acquire one by accident.
+   */
+  searchByMobileForFetch: async (
+    mobile: string,
+    patientId?: string,
+  ): Promise<{ found: boolean; accounts: ABHASearchHit[]; sessionId?: string }> =>
+    invokeFunction('abha-search', { mobile, patientId, chain: true }),
+
+  /**
+   * Step 2. Sends the OTP for the account at `index`.
+   *
+   * `message` is ABDM's own masked confirmation and is the only way the desk
+   * learns the OTP went somewhere unexpected — show it verbatim rather than
+   * substituting our own wording.
+   */
+  fetchRequestOTP: async (
+    sessionId: string,
+    index: number,
+    otpSystem: ABHAOtpSystem = 'abdm',
+  ): Promise<{ sessionId: string; message: string | null; otpSystem: ABHAOtpSystem }> =>
+    invokeFunction('abha-fetch-request-otp', { sessionId, index, otpSystem }),
+
+  /**
+   * Step 3. Returns the profile directly — this flow yields the X-token without
+   * the 7.4 exchange, so there is nothing further to confirm.
+   *
+   * `profile.kycVerified` is commonly **null** here: this response is thinner
+   * than 7.4's and omits the flag entirely. Render null as *unknown*, never as
+   * "not verified" — that would be a false negative on an identity-assurance
+   * flag.
+   */
+  fetchVerify: async (
+    sessionId: string,
+    otp: string,
+    otpSystem: ABHAOtpSystem = 'abdm',
+  ): Promise<{ profile: ABHAProfile; sessionId: string | null }> =>
+    invokeFunction('abha-fetch-verify', { sessionId, otp, otpSystem }),
+
+  // ── ABHA address verification (spec 14.1 / 14.2) ─────────────────────────
+  //
+  // Mandatory M1: VRFY_ABHA_202 (mobile OTP) and VRFY_ABHA_102 (Aadhaar OTP).
+  // Runs on the PHR host, a different API family from everything above.
+
+  /**
+   * Step 1. Look up an ABHA address (`someone@abdm`) — no OTP is sent.
+   *
+   * The address is NOT lowercased anywhere in this flow. They are user-chosen
+   * and routinely contain capitals; normalising the case turns a real address
+   * into one ABDM does not hold, and the failure reads as "no such ABHA".
+   */
+  searchAbhaAddress: async (
+    abhaAddress: string,
+    patientId?: string,
+  ): Promise<ABHAAddressLookup> =>
+    invokeFunction('abha-address-search', { abhaAddress, patientId }),
+
+  /** Step 2. Sends the OTP, by whichever route the lookup said is available. */
+  addressRequestOTP: async (
+    abhaAddress: string,
+    otpSystem: ABHAOtpSystem = 'abdm',
+    patientId?: string,
+  ): Promise<{ sessionId: string; message: string | null; otpSystem: ABHAOtpSystem }> =>
+    invokeFunction('abha-address-request-otp', { abhaAddress, otpSystem, patientId }),
+
+  /**
+   * Step 3. Verifies and returns the profile.
+   *
+   * Known limitation: this flow returns identity but **no demographics** —
+   * `gender`, `dob` and `mobileMasked` come back empty and profile enrichment
+   * does not fill them. That is acceptable because the test asks for
+   * verification, not a profile, and demographics are already on the patient
+   * record. Do not present the blanks as missing data.
+   */
+  addressVerify: async (
+    sessionId: string,
+    otp: string,
+    otpSystem: ABHAOtpSystem = 'abdm',
+  ): Promise<{ profile: ABHAProfile; sessionId: string | null }> =>
+    invokeFunction('abha-address-verify', { sessionId, otp, otpSystem }),
 
   // ── Aadhaar OTP creation (spec 3) — retained for patients with no ABHA ────
 
@@ -173,7 +312,12 @@ export const abhaService = {
   verifyOTP: async (
     txnId: string,
     otp: string,
-    mobile?: string,
+    /**
+     * REQUIRED, not optional. ABDM's enrol/byAadhaar marks `mobile` mandatory —
+     * it is the new ABHA's primary/communication number. Omitting it returns a
+     * bare 400 with no usable message.
+     */
+    mobile: string,
     patientId?: string,
   ): Promise<{ profile: ABHAProfile; sessionId: string; needsAbhaAddress: boolean }> =>
     invokeFunction('abdm-verify-otp', { txnId, otp, mobile, patientId }),

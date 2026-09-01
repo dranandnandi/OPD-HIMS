@@ -1,12 +1,25 @@
 import { supabase } from '../utils/supabase';
 import { chargeService } from './chargeService';
+import { documentService } from './documentService';
 import type { Ward, Bed, BedType, ServiceMaster, ChargeGroup, Payer, TariffPlan } from '../types/ipd';
 
 export const masterService = {
+  /**
+   * Charge groups, services, wards/beds — plus the built-in document templates,
+   * so a new clinic starts with the whole ward paperwork set (assessment, case
+   * sheet, nursing sheet, OT note, discharge summary…) ready to print.
+   */
   async seedDefaults(clinicId: string): Promise<string> {
     const { data, error } = await supabase.rpc('seed_ipd_masters', { p_clinic_id: clinicId });
     if (error) throw error;
-    return data as string;
+    let templateNote = '';
+    try {
+      const seeded = await documentService.seedDefaultTemplates(clinicId);
+      if (seeded > 0) templateNote = ` · ${seeded} document template(s) ready`;
+    } catch {
+      // masters are seeded either way — templates are also created on first use
+    }
+    return `${data as string}${templateNote}`;
   },
 
   // --- wards ---------------------------------------------------------------

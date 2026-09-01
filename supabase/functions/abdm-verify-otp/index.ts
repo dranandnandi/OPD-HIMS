@@ -36,6 +36,22 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'A transaction id and OTP are required', requestId }, 400);
     }
 
+    // `mobile` is MANDATORY on enrol/byAadhaar, despite a description that reads
+    // optional ("if the user wants a number other than the Aadhaar-linked one").
+    // The spec's Mandatory column says Yes, and its own footnote calls it "the
+    // primary mobile number". Omitting it returns a bare 400 with no usable
+    // message — diagnosed against sandbox 2026-08-27.
+    //
+    // Rejected here rather than upstream so reception is told which field is
+    // missing, instead of "ABDM rejected the request".
+    if (!mobile) {
+      return jsonResponse(
+        req,
+        { error: "The patient's mobile number is required to create an ABHA", requestId },
+        400,
+      );
+    }
+
     if (patientId) await assertPatientInCallerClinic(caller, patientId);
 
     const cfg = getAbdmConfig();
@@ -49,7 +65,8 @@ serve(async (req) => {
       txnId,
       otpValue: encryptedOtp,
     };
-    if (mobile) otpPayload.mobile = mobile;
+    // Always sent — required by the spec (see the guard above).
+    otpPayload.mobile = mobile;
 
     const res = await fetch(`${cfg.abhaBase}/v3/enrollment/enrol/byAadhaar`, {
       method: 'POST',
