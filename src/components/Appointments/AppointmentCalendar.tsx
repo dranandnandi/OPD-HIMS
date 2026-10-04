@@ -858,6 +858,18 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
       return patientById;
     }
 
+    // Prescription PDFs carry a "Scan to verify" QR whose id is the visit id,
+    // not the patient id. Resolve the visit and fall through to its patient.
+    const visitForScan = await visitService.getVisit(lookupValue.trim()).catch(() => null);
+    if (visitForScan?.patientId) {
+      const visitPatient =
+        patients.find((patient) => patient.id === visitForScan.patientId) ||
+        (await patientService.getPatientById(visitForScan.patientId));
+      if (visitPatient) {
+        return visitPatient;
+      }
+    }
+
     const searchMatches = await patientService.searchPatients(lookupValue.trim());
     return searchMatches.find((patient) =>
       patient.id.toLowerCase() === normalizedLookup ||

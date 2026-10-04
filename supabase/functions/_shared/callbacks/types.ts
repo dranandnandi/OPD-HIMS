@@ -16,8 +16,16 @@ import type { getAbdmConfig } from '../abdmConfig.ts';
 export interface CallbackContext {
   admin: SupabaseClient;
   cfg: ReturnType<typeof getAbdmConfig>;
-  /** Our correlation id for this delivery. ABDM's own id is in the body. */
+  /** Our correlation id for this delivery, for log grep only. */
   requestId: string;
+  /**
+   * ABDM's REQUEST-ID **header** on the inbound callback.
+   *
+   * Several `on-*` replies must echo this exact value in `response.requestId`
+   * or ABDM answers ABDM-1015 "Invalid Response" — which reads like a payload
+   * problem and is not one. Null only if ABDM omitted the header.
+   */
+  abdmRequestId: string | null;
   /** From the X-HIP-ID header — which facility this callback is for. */
   hipId: string;
   body: Record<string, unknown>;

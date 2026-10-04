@@ -394,7 +394,7 @@ export interface Bill {
   totalAmount: number;
   paidAmount: number;
   balanceAmount: number;
-  paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue';
+  paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
   paymentMethod?: 'cash' | 'card' | 'upi' | 'cheque' | 'online';
   billDate: Date;
   dueDate?: Date;
@@ -403,6 +403,9 @@ export interface Bill {
   refundStatus: 'not_requested' | 'pending' | 'partial' | 'refunded';
   lastRefundAt?: Date;
   refundNotes?: string;
+  cancelledAt?: Date;
+  cancelledBy?: string;
+  cancellationReason?: string;
   pdfUrl?: string; // URL to the stored display PDF in Supabase Storage
   printPdfUrl?: string; // URL to grayscale print version for letterhead
   createdAt: Date;
@@ -414,31 +417,57 @@ export interface Bill {
   visit?: Visit;
 }
 
+/** One person's takings over the counter for a day. Refunds are negative. */
+export interface CollectorCollectionRow {
+  userId: string | null;
+  userName: string;
+  gross: number;
+  refunds: number;
+  net: number;
+  count: number;
+  byMethod: { [method: string]: number };
+}
+
 export interface DailyPaymentSummary {
   date: Date;
+  // Method totals are net of refunds taken back through that same method.
   cash: number;
   card: number;
   upi: number;
   cheque: number;
   net_banking: number;
   wallet: number;
+  /** Collections before refunds. */
+  gross: number;
+  /** Refunds paid out, carried as a negative number. */
+  refunds: number;
+  /** gross + refunds - what the clinic actually holds for the day. */
   total: number;
   transactionCount: number;
+  refundCount: number;
   paymentBreakdown: {
     method: string;
     amount: number;
     count: number;
   }[];
+  collectorBreakdown: CollectorCollectionRow[];
 }
 
 export interface EnhancedDailyReport {
   date: Date;
+  /** Collections before refunds. */
+  gross: number;
+  /** Refunds paid out, carried as a negative number. */
+  refunds: number;
+  /** gross + refunds. */
   totalCollection: number;
   transactionCount: number;
+  refundCount: number;
   averageTransactionValue: number;
+  /** Open balance across all bills as at now - a position, not a daily flow. */
   outstandingBalance: number;
 
-  // Payment method breakdown
+  // Payment method breakdown, net of refunds through the same method
   paymentMethods: {
     method: string;
     amount: number;
@@ -446,7 +475,10 @@ export interface EnhancedDailyReport {
     percentage: number;
   }[];
 
-  // Service category breakdown
+  // Who took the money
+  collectorBreakdown: CollectorCollectionRow[];
+
+  // Category mix of the bills collected against today, each bill counted once
   serviceCategories: {
     category: 'consultation' | 'procedure' | 'medicine' | 'test' | 'other';
     amount: number;
@@ -661,6 +693,17 @@ export interface ClinicSetting {
   publicSlug?: string | null;
   publicBookingEnabled?: boolean;
   publicBookingPolicy?: PublicBookingPolicy | null;
+  // ABDM / HFR identity for this clinic.
+  //
+  // HIP ID is per-clinic (ABDM mints one per facility x bridge), which is why
+  // it lives here and not in an app-wide config. All four are ABDM's record of
+  // us, mirrored for display — the app never authors them.
+  hfrFacilityId?: string | null;
+  abdmHipId?: string | null;
+  /** Patient-facing: the name shown in the ABHA app, not `clinicName`. */
+  abdmHipName?: string | null;
+  /** Which reception desk a scan-and-share QR belongs to. Defaults to '1'. */
+  abdmCounterCode?: string | null;
   // Lab Test Integration
   labTestIntegrationEnabled?: boolean;
   // LIMS Outbound Integration (sending orders to external LIMS)

@@ -32,6 +32,7 @@ import { verifyAbdmCallback, AbdmCallbackAuthError } from '../_shared/abdmCallba
 import { handlePatientShare } from '../_shared/callbacks/patientShare.ts';
 import { handleOnGenerateToken } from '../_shared/callbacks/onGenerateToken.ts';
 import { handleOnLinkCareContext } from '../_shared/callbacks/onLinkCareContext.ts';
+import { handleDiscover } from '../_shared/callbacks/discover.ts';
 
 /**
  * Match on the path SUFFIX, not equality.
@@ -48,6 +49,10 @@ const ROUTES: Array<{ suffix: string; handler: typeof handlePatientShare }> = [
   // environments, so both are routed rather than guessing which arrives.
   { suffix: '/hip/link/care-context/on-add-contexts', handler: handleOnLinkCareContext },
   { suffix: '/link/on-add-contexts', handler: handleOnLinkCareContext },
+  // Spec 5.3.2, user-initiated linking. Suffix confirmed against a live
+  // sandbox delivery on 2026-09-02, not read off the spec:
+  //   /abdm-callback/api/v3/hip/patient/care-context/discover
+  { suffix: '/hip/patient/care-context/discover', handler: handleDiscover },
 ];
 
 serve(async (req) => {
@@ -56,6 +61,9 @@ serve(async (req) => {
   }
 
   const requestId = crypto.randomUUID();
+  // ABDM's own id for this delivery. Several `on-*` replies must echo it, and
+  // it is only ever available here — the body does not carry it.
+  const abdmRequestId = req.headers.get('REQUEST-ID');
   const path = new URL(req.url).pathname;
   const cfg = getAbdmConfig();
   const admin = createAdminClient();
@@ -88,7 +96,7 @@ serve(async (req) => {
 
   // Acknowledge immediately; ABDM's callback timeout is short and the work
   // (matching, registration, the outbound reply) can outlive it.
-  void route.handler({ admin, cfg, requestId, hipId, body }).catch((e) => {
+  void route.handler({ admin, cfg, requestId, abdmRequestId, hipId, body }).catch((e) => {
     console.error(`[abdm-cb][${requestId}] ${path} handler failed:`, e instanceof Error ? e.message : e);
   });
 

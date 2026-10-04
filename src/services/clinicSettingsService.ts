@@ -3,6 +3,67 @@ import { ClinicSetting, PublicBookingPolicy } from '../types';
 import { getCurrentProfile } from './profileService';
 import type { DatabaseClinicSetting } from '../lib/supabase';
 
+// A clinic_settings row can predate the app writing this column, and the
+// working_hours JSONB is nullable, so every read has to be able to land on a
+// usable week. Callers render Object.entries() over this directly.
+export const DEFAULT_WORKING_HOURS: ClinicSetting['workingHours'] = {
+  monday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
+  tuesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
+  wednesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
+  thursday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
+  friday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
+  saturday: { isOpen: true, startTime: '09:00', endTime: '14:00' },
+  sunday: { isOpen: false, startTime: '09:00', endTime: '18:00' }
+};
+
+const DAY_KEYS = Object.keys(DEFAULT_WORKING_HOURS);
+
+// Accepts whatever the column holds (null, a stray array, a half-filled week)
+// and returns a complete week with every day present and well-formed.
+export const normalizeWorkingHours = (value: unknown): ClinicSetting['workingHours'] => {
+  const source =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const normalized: ClinicSetting['workingHours'] = {};
+
+  for (const day of DAY_KEYS) {
+    const raw = source[day];
+    const fallback = DEFAULT_WORKING_HOURS[day];
+
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      normalized[day] = { ...fallback };
+      continue;
+    }
+
+    const entry = raw as Record<string, unknown>;
+    normalized[day] = {
+      isOpen: typeof entry.isOpen === 'boolean' ? entry.isOpen : fallback.isOpen,
+      startTime: typeof entry.startTime === 'string' ? entry.startTime : fallback.startTime,
+      endTime: typeof entry.endTime === 'string' ? entry.endTime : fallback.endTime,
+      breakStart: typeof entry.breakStart === 'string' ? entry.breakStart : undefined,
+      breakEnd: typeof entry.breakEnd === 'string' ? entry.breakEnd : undefined
+    };
+  }
+
+  // Keep any extra day-shaped keys the clinic may have saved.
+  for (const [day, raw] of Object.entries(source)) {
+    if (normalized[day] || !raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry.startTime !== 'string' || typeof entry.endTime !== 'string') continue;
+    normalized[day] = {
+      isOpen: entry.isOpen === true,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+      breakStart: typeof entry.breakStart === 'string' ? entry.breakStart : undefined,
+      breakEnd: typeof entry.breakEnd === 'string' ? entry.breakEnd : undefined
+    };
+  }
+
+  return normalized;
+};
+
 // Convert database clinic setting to app clinic setting type
 const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicSetting => ({
   id: dbSetting.id,
@@ -18,7 +79,7 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   followUpFee: dbSetting.follow_up_fee,
   emergencyFee: dbSetting.emergency_fee,
   appointmentDuration: dbSetting.appointment_duration,
-  workingHours: dbSetting.working_hours,
+  workingHours: normalizeWorkingHours(dbSetting.working_hours),
   currency: dbSetting.currency,
   timezone: dbSetting.timezone,
   createdAt: new Date(dbSetting.created_at),
@@ -55,6 +116,10 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   publicBookingEnabled: dbSetting.public_booking_enabled ?? false,
   publicBookingPolicy: dbSetting.appointment_config ?? null,
   whatsappTemplates: dbSetting.whatsapp_templates,
+  hfrFacilityId: dbSetting.hfr_facility_id ?? null,
+  abdmHipId: dbSetting.abdm_hip_id ?? null,
+  abdmHipName: dbSetting.abdm_hip_name ?? null,
+  abdmCounterCode: dbSetting.abdm_counter_code ?? null,
 });
 
 // Convert app clinic setting to database clinic setting type
@@ -241,15 +306,7 @@ export const clinicSettingsService = {
         followUpFee: settings.followUpFee || 200,
         emergencyFee: settings.emergencyFee || 500,
         appointmentDuration: settings.appointmentDuration || 30,
-        workingHours: settings.workingHours || {
-          monday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          tuesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          wednesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          thursday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          friday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          saturday: { isOpen: true, startTime: '09:00', endTime: '14:00' },
-          sunday: { isOpen: false, startTime: '09:00', endTime: '18:00' }
-        },
+        workingHours: settings.workingHours || DEFAULT_WORKING_HOURS,
         currency: settings.currency || 'INR',
         timezone: settings.timezone || 'Asia/Kolkata',
         enableManualWhatsappSend: settings.enableManualWhatsappSend ?? true,
@@ -290,15 +347,7 @@ export const clinicSettingsService = {
         followUpFee: 200,
         emergencyFee: 500,
         appointmentDuration: 30,
-        workingHours: {
-          monday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          tuesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          wednesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          thursday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          friday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-          saturday: { isOpen: true, startTime: '09:00', endTime: '14:00' },
-          sunday: { isOpen: false, startTime: '09:00', endTime: '18:00' }
-        },
+        workingHours: DEFAULT_WORKING_HOURS,
         currency: 'INR',
         timezone: 'Asia/Kolkata',
         enableManualWhatsappSend: true,
@@ -343,7 +392,7 @@ export const clinicSettingsService = {
   // Get working hours
   async getWorkingHours(): Promise<ClinicSetting['workingHours']> {
     const settings = await this.getOrCreateClinicSettings();
-    return settings.workingHours;
+    return normalizeWorkingHours(settings.workingHours);
   },
 
   // Update working hours

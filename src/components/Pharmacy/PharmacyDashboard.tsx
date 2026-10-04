@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save } from 'lucide-react';
+import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save, ClipboardList, Truck } from 'lucide-react';
 import { MedicineWithPrice, StockMovementLog, StockAlert, MedicineMaster } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import ReturnToSupplierModal from './ReturnToSupplierModal';
 import StockAdjustmentModal from './StockAdjustmentModal';
+import { storeIndentService } from '../../services/storeIndentService';
 
 const PharmacyDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -29,14 +30,23 @@ const PharmacyDashboard: React.FC = () => {
   const [showAddMedicineModal, setShowAddMedicineModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // ward indents waiting on the main pharmacy — the "IP Pharmacy has ordered" notification
+  const [indentCounts, setIndentCounts] = useState<{ waiting: number; unseen: number }>({ waiting: 0, unseen: 0 });
 
   useEffect(() => {
     if (user) {
       loadDashboardData();
       loadAllMedicines();
       loadStockAlerts();
+      loadIndentCounts();
     }
   }, [user]);
+
+  // A ward raising an indent lights the badge up without a refresh.
+  useEffect(() => {
+    if (!user?.clinicId) return;
+    return storeIndentService.subscribe(user.clinicId, loadIndentCounts);
+  }, [user?.clinicId]);
 
   const loadDashboardData = async () => {
     try {
@@ -60,6 +70,15 @@ const PharmacyDashboard: React.FC = () => {
       setAllMedicines(medicines);
     } catch (err) {
       console.error('Error loading all medicines:', err);
+    }
+  };
+
+  const loadIndentCounts = async () => {
+    if (!user?.clinicId) return;
+    try {
+      setIndentCounts(await storeIndentService.pharmacyNotificationCounts(user.clinicId));
+    } catch (err) {
+      console.error('Error loading ward indent counts:', err);
     }
   };
 
@@ -163,6 +182,20 @@ const PharmacyDashboard: React.FC = () => {
           <p className="text-gray-600">Manage medicine inventory and stock</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Ward indents — IP Pharmacy / ward stores have ordered stock */}
+          <Link
+            to="/pharmacy/indents"
+            className="relative flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ClipboardList className="w-4 h-4" />
+            Ward Indents
+            {indentCounts.waiting > 0 && (
+              <span className={`absolute -top-2 -right-2 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ${indentCounts.unseen > 0 ? 'bg-red-500 animate-pulse' : 'bg-slate-500'}`}>
+                {indentCounts.waiting}
+              </span>
+            )}
+          </Link>
+
           {/* Stock Alerts Bell */}
           <button
             onClick={() => setShowAlertsModal(true)}
@@ -226,6 +259,29 @@ const PharmacyDashboard: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Ward indent notification — an order came in from the IP Pharmacy /
+          a ward store and is waiting to be dispatched from the main pool */}
+      {indentCounts.waiting > 0 && (
+        <Link
+          to="/pharmacy/indents"
+          className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4 hover:bg-amber-100 transition-colors"
+        >
+          <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-amber-500 text-white">
+            <Truck className="w-5 h-5" />
+          </span>
+          <div>
+            <p className="font-medium text-amber-900">
+              {indentCounts.waiting} ward indent{indentCounts.waiting === 1 ? '' : 's'} waiting to be dispatched
+              {indentCounts.unseen > 0 && ` · ${indentCounts.unseen} new`}
+            </p>
+            <p className="text-sm text-amber-800">
+              The IP Pharmacy / ward stores have ordered stock from the main pharmacy. Open to dispatch.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-amber-700 ml-auto" />
+        </Link>
+      )}
 
       {/* Summary Cards */}
       {dashboardData && (
@@ -296,6 +352,18 @@ const PharmacyDashboard: React.FC = () => {
             <div>
               <h4 className="font-medium text-gray-800">AI Invoice Processing</h4>
               <p className="text-sm text-gray-600">Upload & auto-extract invoice data</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+          </Link>
+
+          <Link
+            to="/pharmacy/indents"
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <ClipboardList className="w-6 h-6 text-amber-600" />
+            <div>
+              <h4 className="font-medium text-gray-800">Ward Indents</h4>
+              <p className="text-sm text-gray-600">Dispatch stock ordered by IP Pharmacy</p>
             </div>
             <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
           </Link>

@@ -5,6 +5,7 @@ import { Profile } from '../../types';
 import { authService } from '../../services/authService';
 import { getCurrentProfile } from '../../services/profileService';
 import { doctorAvailabilityService, DoctorAvailability } from '../../services/doctorAvailabilityService';
+import { DEFAULT_WORKING_HOURS, normalizeWorkingHours } from '../../services/clinicSettingsService';
 import { hasReceptionAccess } from '../../utils/roleAccess';
 
 const canManageClinicDoctors = (user: Profile | null | undefined) => hasReceptionAccess(user);
@@ -17,15 +18,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
 
-  const [availability, setAvailability] = useState<DoctorAvailability>({
-    monday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-    tuesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-    wednesday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-    thursday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-    friday: { isOpen: true, startTime: '09:00', endTime: '18:00', breakStart: '13:00', breakEnd: '14:00' },
-    saturday: { isOpen: true, startTime: '09:00', endTime: '14:00' },
-    sunday: { isOpen: false, startTime: '09:00', endTime: '18:00' }
-  });
+  const [availability, setAvailability] = useState<DoctorAvailability>(DEFAULT_WORKING_HOURS);
 
   useEffect(() => {
     if (user) {
@@ -92,7 +85,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
       setLoading(true);
       setError(null);
       const doctorAvailability = await doctorAvailabilityService.getDoctorAvailability(doctorId);
-      setAvailability(doctorAvailability);
+      setAvailability(normalizeWorkingHours(doctorAvailability));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load availability');
       console.error('Error loading availability:', err);
@@ -262,7 +255,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
         </div>
         
         <div className="space-y-4">
-          {Object.entries(availability).map(([day, hours]) => (
+          {Object.entries(availability || {}).map(([day, hours]) => (
             <div key={day} className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg">
               <div className="w-24">
                 <span className="font-medium text-gray-700 capitalize">{day}</span>

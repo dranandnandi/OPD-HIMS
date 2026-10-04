@@ -23,10 +23,12 @@ import {
   Clock,
   UserCog,
   BedDouble,
-  Globe
+  Globe,
+  ShieldCheck
 } from 'lucide-react';
 import { PDFSettings } from './PDFSettings';
 import PublicBookingSettings from './PublicBookingSettings';
+import AbdmSettings from './AbdmSettings';
 
 const Settings: React.FC = () => {
   const { user } = useAuth();
@@ -55,6 +57,7 @@ const Settings: React.FC = () => {
     { id: 'templates', label: 'Examination Templates', icon: Stethoscope },
     { id: 'presets', label: 'Prescription Presets', icon: Zap },
     { id: 'public-booking', label: 'Public Booking', icon: Globe },
+    { id: 'abdm', label: 'ABDM / ABHA', icon: ShieldCheck },
     { id: 'staff', label: 'Staff Roles', icon: Users },
     { id: 'master-data', label: 'Master Data', icon: Database },
     { id: 'whatsapp-ai', label: 'WhatsApp & AI', icon: MessageCircle },
@@ -494,6 +497,10 @@ const Settings: React.FC = () => {
             <div className="bg-white rounded-lg shadow-md p-6">
               <PublicBookingSettings />
             </div>
+          )}
+
+          {activeTab === 'abdm' && (
+            <AbdmSettings clinicSettings={clinicSettings} />
           )}
 
           {activeTab === 'templates' && (

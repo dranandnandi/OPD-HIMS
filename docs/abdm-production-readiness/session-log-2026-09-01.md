@@ -227,3 +227,185 @@ Unchanged from 26-08 apart from one addition:
   by emitting both spellings. One scan of that QR resolves both. Not yet done.
 - **G-14 handoff pack** and **STQC/CERT-In agency shortlisting** — both calendar
   time, both still unstarted, and the audit + VAPT gate M4.
+
+---
+
+# Addendum — M2 entry, same day
+
+M1 was smoke-tested through the UI and everything from §4 was committed and
+pushed. What follows is the start of M2.
+
+## 9. Live state, re-probed rather than read off §4
+
+Two status lines above were already stale within the day:
+
+- **`abdm_care_contexts` and `abdm_link_tokens` exist on Mumbai.**
+  `m2-prerequisites.md` §11 still says "NEEDS RUNNING". It was run.
+- **All 21 ABDM functions are deployed**, `abdm-callback` included. An unsigned
+  POST to it returns `{"error":"Rejected"}` — its own callback auth, not a
+  gateway 401 — so `verify_jwt = false` is live and the door is failing closed.
+
+Probe recipe that needs no service-role key: a POST to a deployed function
+returns 401, a non-existent one returns 404. For tables, the anon key
+distinguishes `42501` (exists, RLS denies) from `PGRST205` (no such table).
+
+## 10. ############ THE CLI IS LINKED TO THE WRONG PROJECT ############
+
+`supabase/.temp/project-ref` and `linked-project.json` both read
+**`nxbzrpmlnlvknmutyher` — the decommissioned Sydney project**, and
+`supabase projects list` marks Sydney as the linked one.
+
+So the deploy loop in §6.1 above, **as written, deploys to Sydney.** Every
+`supabase` command run from this repo without an explicit ref does.
+
+Always pass the ref:
+
+```bash
+supabase functions deploy <name> --project-ref kiezgfhonvwryxpubfvl
+```
+
+Not re-linked deliberately — an explicit ref on every command is harder to get
+wrong than a hidden state file that already pointed at the wrong project once.
+
+## 11. The UI for M2, built
+
+`abdm-register-callback` and `abdm-link-carecontext` were written on 26-08 and
+had **no caller anywhere in `src/`**. They could only ever have been driven by a
+hand-assembled curl — which, for an operation with no undo, is the wrong
+instrument.
+
+**New — `supabase/functions/abdm-care-context-status/index.ts`.** Read-only:
+what a link attempt *would* announce, what is already recorded, whether a link
+token is cached. Writes nothing, calls ABDM nothing.
+
+Kept as its own function rather than a mode on `abdm-link-carecontext`, and the
+reason is the whole point: that function's contract is that calling it changes
+something permanently. A read behind the same door invites a UI that renders a
+page by calling the endpoint that announces care contexts to the national
+registry.
+
+**New — Settings → ABDM / ABHA** (`src/components/Settings/AbdmSettings.tsx`):
+
+1. ABDM's identity for this clinic, read-only. It is ABDM's record, not ours.
+2. The callback URL, prefilled from this deployment and diffed against it, with
+   the bridge-wide warning and the doubling trap stated on screen rather than
+   in a comment nobody reads at the moment they press the button.
+3. The scan-and-share counter QR, with print.
+
+**New — `src/components/Visits/VisitAbhaLinkPanel.tsx`**, on `VisitDetails`,
+only for patients who actually hold an ABHA. It names the ABHA address, shows
+the patient-facing label of every care context that would be announced, says
+whether a link token is cached, and puts all of that *in front of* a confirm
+step that states the link cannot be undone. A 202 is reported as "ABDM
+accepted", never as "shared" — the callback is what makes it true.
+
+Also: `visitService` now carries `abha_*` through on the joined patient, so a
+visit can tell whether ABDM applies without a round trip per visit opened.
+
+`vite build` passes. The new files add no TypeScript errors of their own (the
+repo's ~1200 pre-existing ones are a broken `Database` generic, unrelated).
+
+## 12. Next actions, revised
+
+1. **Deploy the new function** — with the explicit `--project-ref` from §10.
+2. ~~**Confirm the bridge's callback URL.**~~ **DONE 2026-09-01**, from the new
+   Settings panel — and it appears to have been the first time it was ever set.
+
+   ```
+   PATCH {gateway}/gateway/v3/bridge/url   -> { "registered": true, "env": "sandbox" }
+   url        https://clinic.anprohealthtech.com/functions/v1/abdm-callback
+   bridge     SBXID_027467
+   requestId  431f3ebf-609b-454c-850d-4f86e0c5f8d2
+   ```
+
+   This proves ABDM **accepted** the URL. It does not prove ABDM **delivers** to
+   it — only an inbound callback does that, which is why 3 below comes next and
+   not after something rate-limited.
+3. **Scan-and-share as the pre-flight, before anything rate-limited.** A patient
+   scanning the counter QR produces an inbound callback that costs no quota and
+   can be repeated. It proves registration, ABDM's signature verification and
+   dispatcher routing in one go. **No ABDM callback has ever been verified
+   end-to-end here** — every M1 flow is request/response — so `on-generate-token`
+   would otherwise be the first one ever, at the exact moment a mistake is
+   expensive. It also settles the `Category` field and the `hipId`/`hipid`
+   casing question left open in §8.
+4. **Then the care-context link**, on a deliberately chosen patient. Permanent.
+5. **Fidelius reference vector.** The spike proved the chain round-trips on
+   Deno; it has never been run against a Fidelius CLI vector. Until it is,
+   "M2/M3 stay on Edge Functions" is a plan, not a fact.
+6. **The remaining six HI types.** ImmunizationRecord and WellnessRecord have no
+   source data in the app at all — a product decision before a coding one.
+
+---
+
+# 2026-09-02 — first live callback exchange
+
+## 13. Discovery works, in both directions
+
+`abdm-callback` verified an inbound ABDM JWT, matched the patient, and ABDM
+accepted our reply. **This is the first complete callback round trip this
+integration has ever done** — every M1 flow is request/response.
+
+The path ABDM actually uses, observed rather than read off the spec:
+
+```
+/abdm-callback/api/v3/hip/patient/care-context/discover
+```
+
+`handleDiscover` (`_shared/callbacks/discover.ts`) answers on
+`/user-initiated-linking/v3/patient/care-context/on-discover`.
+
+## 14. ############ THE SPEC'S hiType ENUM IS WRONG ############
+
+The M2 document §5.3.3 documents the discovery hiType enum as **UPPERCASE**
+and **without `Invoice`**. Sending exactly that is rejected:
+
+```
+ABDM-9999 "Invalid HIType, it must be in Prescription,DiagnosticReport,
+OPConsultation,DischargeSummary,ImmunizationRecord,HealthDocumentRecord,
+WellnessRecord,Invoice"
+```
+
+The real enum is **CamelCase and includes Invoice** — which is
+character-for-character our own `HiType` union, so the value now passes
+through unchanged.
+
+Confirmed against sandbox 2026-09-02. **Believe the gateway, not the document.**
+This is the third time a written ABDM constraint has failed to hold on the live
+system (after the 15-char `hipName` cap and the facility-validation gate).
+
+**Resolved:** the 1–20 care-context cap is **per patient entry, not per reply.**
+A reply carrying 29 across two entries (20 OPConsultation + 9 Prescription) was
+accepted 202 and rendered in the PHR. The per-entry cap in `discover.ts` is the
+correct place for it.
+
+**PHR rendering note.** The sandbox PHR lists one row per care context but
+labels each with the *patient* entry's `referenceNumber` and `display` — so the
+patient sees our internal patient UUID repeated 29 times, and the per-context
+`display` ("OPD Consultation - 2026-08-28") is never shown. Our payload is
+spec-correct; this is the PHR's rendering. Worth revisiting whether
+`patient.referenceNumber` should carry something less internal than a UUID,
+since it is evidently patient-visible.
+
+## 15. `abha-link-patient` audited success without writing
+
+Two `abha_link` audit rows from 26-08 read `success` while **no patient row in
+the database carried an ABHA at all**.
+
+Cause: **PostgREST reports no error when an UPDATE matches zero rows.** The
+consent artefact is inserted first (deliberately), then the patient UPDATE runs
+with `.eq(id).eq(clinic_id)`. If that matched nothing, `error` was null, the
+function returned `{ linked: true }`, and the audit recorded success — while
+the two records disagreed permanently. The only symptom was "no patient
+matched" in a discovery callback, two weeks later and three layers away.
+
+Now reads back with `.select('id')` and throws if nothing changed. **Any
+Supabase UPDATE whose success matters needs this** — there are others in this
+codebase that do not have it.
+
+Re-linking through the UI on 2026-09-02 worked and is verified in the row:
+patient `da0f5762-96c0-46a6-9d7a-bd89e465b14f`, `91526851700066@sbx`, bare-digit
+ABHA number, consent recorded.
+
+The composed ABHA card and QR also rendered from the verified profile — that is
+**CRT_ABHA_114/115 evidence**, worth capturing for the functional test sheet.

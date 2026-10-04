@@ -51,18 +51,26 @@ const BillModal: React.FC<BillModalProps> = ({
   const canEditBills = () => {
     if (isReadOnly) return false;
     if (!user) return false;
-    return user.roleName === 'admin' ||
-      user.roleName === 'super_admin' ||
+    const roleName = user.roleName?.toLowerCase();
+    return roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      user.permissions.includes('all') ||
       user.permissions.includes('edit_bills') ||
       user.permissions.includes('manage_billing');
   };
 
   const canManageRefunds = () => {
     if (!user) return false;
+    // roleName is free text typed in User Management ("Admin", "Super Admin"),
+    // so it must be lowercased like every other role check in the app. Without
+    // this an admin could open Edit Bill (canEditBills lowercases) but saw the
+    // Refund Activity panel with no approve/reject/pay actions on it.
+    const roleName = user.roleName?.toLowerCase();
     const permissions = user.permissions || [];
     return (
-      user.roleName === 'admin' ||
-      user.roleName === 'super_admin' ||
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      permissions.includes('all') ||
       permissions.includes('manage_billing') ||
       permissions.includes('manage_finance') ||
       permissions.includes('approve_refunds')
@@ -108,7 +116,18 @@ const BillModal: React.FC<BillModalProps> = ({
     ? refundedAmountFromRequests
     : bill?.totalRefundedAmount || 0;
 
-  const refundableBalance = Math.max((bill?.paidAmount || 0) - refundedAmount, 0);
+  // Money already committed to requests that have not been paid out yet. It is
+  // not available to request again, so the panel must not advertise it — the
+  // old figure showed the full paid amount while several pending requests were
+  // already queued against it.
+  const openRequestTotal = refundRequests
+    .filter((r) => r.status === 'draft' || r.status === 'pending_approval' || r.status === 'approved')
+    .reduce((sum, r) => sum + r.totalAmount, 0);
+
+  const refundableBalance = Math.max(
+    (bill?.paidAmount || 0) - refundedAmount - openRequestTotal,
+    0
+  );
 
   const refundRequestStatusClasses: Record<RefundRequest['status'], string> = {
     draft: 'bg-gray-100 text-gray-700 border border-gray-200',
@@ -1368,8 +1387,7 @@ const BillModal: React.FC<BillModalProps> = ({
                       const paid = parseFloat(e.target.value) || 0;
                       handlePaidAmountChange(paid);
                     }}
-                    className={`w - full px - 3 py - 2 border border - gray - 300 rounded - lg focus: ring - 2 focus: ring - blue - 500 focus: border - transparent ${fullPayment ? 'bg-gray-100 cursor-not-allowed' : ''
-                      } `}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${fullPayment ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   />
                   <div className="flex items-center gap-2">
                     <input
@@ -1471,7 +1489,7 @@ const BillModal: React.FC<BillModalProps> = ({
                     {refundRequests.map((request) => (
                       <div
                         key={request.id}
-                        className={`rounded - lg p - 3 text - sm flex flex - col gap - 1 ${refundRequestStatusClasses[request.status]} `}
+                        className={`rounded-lg p-3 text-sm flex flex-col gap-1 ${refundRequestStatusClasses[request.status]}`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold capitalize">{formatRefundRequestStatus(request.status)}</span>
@@ -1507,7 +1525,7 @@ const BillModal: React.FC<BillModalProps> = ({
                                 </button>
                               </>
                             )}
-                            {(request.status === 'approved' || request.status === 'pending_approval') && (
+                            {request.status === 'approved' && (
                               <button
                                 type="button"
                                 onClick={() => markRefundPaid(request)}

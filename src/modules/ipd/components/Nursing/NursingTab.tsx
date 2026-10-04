@@ -3,10 +3,11 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import {
   HeartPulse, ClipboardList, StickyNote, Plus, Check, SkipForward, Droplets, UtensilsCrossed,
-  Stethoscope,
+  Stethoscope, Pencil, Trash2, X,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { nursingService, VitalsInput } from '../../services/nursingService';
+import { canAmendChart } from '../../utils/permissions';
 import { monitoringService, INTERVAL_OPTIONS, intervalLabel } from '../../services/monitoringService';
 import BloodSection from './BloodSection';
 import DietSection from './DietSection';
@@ -14,7 +15,9 @@ import DoctorOrdersSection from './DoctorOrdersSection';
 import MonitoringSection from './MonitoringSection';
 import VoiceDictation from '../Voice/VoiceDictation';
 import { notifyAlertsChanged } from '../../services/alertBus';
-import type { Admission, Vitals, NursingNote, NursingTask, MonitoringOrder } from '../../types/ipd';
+import type {
+  Admission, Vitals, NursingNote, NursingTask, MonitoringOrder, IntakeOutput,
+} from '../../types/ipd';
 
 interface Props {
   admission: Admission;
@@ -30,6 +33,7 @@ export default function NursingTab({ admission, readOnly }: Props) {
   // thing the ward needs off this chart, before charting anything themselves.
   const [section, setSection] = useState<Section>('orders');
   const [vitals, setVitals] = useState<Vitals[]>([]);
+  const [io, setIo] = useState<IntakeOutput[]>([]);
   const [notes, setNotes] = useState<NursingNote[]>([]);
   const [tasks, setTasks] = useState<NursingTask[]>([]);
   const [monitoring, setMonitoring] = useState<MonitoringOrder[]>([]);
@@ -47,12 +51,14 @@ export default function NursingTab({ admission, readOnly }: Props) {
     }
 
     try {
-      const [v, n, t] = await Promise.all([
+      const [v, io, n, t] = await Promise.all([
         nursingService.listVitals(admissionId),
+        nursingService.listIO(admissionId),
         nursingService.listNotes(admissionId),
         nursingService.listTasks(admissionId),
       ]);
       setVitals(v);
+      setIo(io);
       setNotes(n);
       setTasks(t);
       notifyAlertsChanged();
@@ -110,6 +116,7 @@ export default function NursingTab({ admission, readOnly }: Props) {
           clinicId={clinicId!}
           admissionId={admissionId}
           vitals={vitals}
+          io={io}
           monitoring={monitoring}
           tasks={tasks}
           userId={profile?.id}
@@ -160,15 +167,36 @@ const vitalFields: Array<{ key: keyof VitalsInput; label: string; step?: string 
   { key: 'blood_sugar', label: 'Sugar', step: '0.1' },
 ];
 
+/** datetime-local wants "yyyy-MM-ddTHH:mm" in LOCAL time, not an ISO string */
+const toLocalInput = (iso: string) => format(new Date(iso), "yyyy-MM-dd'T'HH:mm");
+
+/**
+ * A round charted this long after it was taken is shown with both times. The
+ * lag is real information on a ward sheet — it says the entry is a late one —
+ * and charted_at is database-set, so it cannot be tidied away.
+ */
+const LATE_CHART_MS = 10 * 60_000;
+
+const chartedLate = (v: Vitals): boolean =>
+  !!v.charted_at &&
+  new Date(v.charted_at).getTime() - new Date(v.recorded_at).getTime() >= LATE_CHART_MS;
+
 function VitalsSection({
-  clinicId, admissionId, vitals, monitoring, tasks, userId, readOnly, onChange,
+  clinicId, admissionId, vitals, io, monitoring, tasks, userId, readOnly, onChange,
 }: {
-  clinicId: string; admissionId: string; vitals: Vitals[];
+  clinicId: string; admissionId: string; vitals: Vitals[]; io: IntakeOutput[];
   monitoring: MonitoringOrder[]; tasks: NursingTask[];
   userId?: string; readOnly: boolean; onChange: () => void;
 }) {
+  const { hasPermission } = useAuth();
+  const mayAmend = canAmendChart(hasPermission);
   const [form, setForm] = useState<Record<string, string>>({});
+  // Blank means "now". A nurse charting at the bedside leaves it alone; one
+  // writing up the 06:00 round at 10:00 sets it back to 06:00 rather than
+  // letting the sheet claim the reading was taken at 10:00.
+  const [takenAt, setTakenAt] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Vitals | null>(null);
 
   const save = async () => {
     const input: VitalsInput = {};
@@ -180,9 +208,19 @@ function VitalsSection({
       toast.error('Enter at least one vital');
       return;
     }
+    if (takenAt && new Date(takenAt).getTime() > Date.now() + 60_000) {
+      toast.error('The time taken cannot be in the future');
+      return;
+    }
     setSaving(true);
     try {
-      await nursingService.recordVitals({ clinicId, admissionId, vitals: input, userId });
+      await nursingService.recordVitals({
+        clinicId,
+        admissionId,
+        vitals: input,
+        recordedAt: takenAt ? new Date(takenAt).toISOString() : undefined,
+        userId,
+      });
       // Charting the reading IS the evidence the observation was done — sign
       // off the occurrence it belongs to rather than making the nurse tick a
       // task as well.
@@ -191,11 +229,27 @@ function VitalsSection({
         .catch(() => false);
       toast.success(signed ? 'Vitals recorded — monitoring signed off' : 'Vitals recorded');
       setForm({});
+      setTakenAt('');
       onChange();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const strike = async (v: Vitals) => {
+    const reason = prompt(
+      `Strike the ${format(new Date(v.recorded_at), 'dd MMM HH:mm')} round?\n\n` +
+        'The entry goes from the chart but the correction trail keeps it. Reason:'
+    );
+    if (!reason?.trim()) return;
+    try {
+      await nursingService.deleteChartRow({ table: 'ipd_vitals', id: v.id, reason: reason.trim() });
+      toast.success('Entry struck — logged in the correction trail');
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -227,13 +281,29 @@ function VitalsSection({
               </label>
             ))}
           </div>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="mt-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg"
-          >
-            {saving ? 'Saving…' : 'Record vitals'}
-          </button>
+          <div className="mt-2 flex flex-wrap items-end gap-3">
+            <label className="text-xs text-slate-500">
+              Time taken
+              <input
+                type="datetime-local"
+                value={takenAt}
+                max={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
+                onChange={(e) => setTakenAt(e.target.value)}
+                className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+              />
+            </label>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg"
+            >
+              {saving ? 'Saving…' : 'Record vitals'}
+            </button>
+            <p className="text-xs text-slate-400 pb-1.5">
+              Leave the time blank for now. Set it back when writing up an earlier round —
+              the chart keeps both times.
+            </p>
+          </div>
         </div>
       )}
 
@@ -249,12 +319,29 @@ function VitalsSection({
               <th className="px-3 py-2">SpO₂</th>
               <th className="px-3 py-2">Pain</th>
               <th className="px-3 py-2">Sugar</th>
+              <th className="px-3 py-2">Charted by</th>
+              {mayAmend && !readOnly && <th className="px-3 py-2 w-16" />}
             </tr>
           </thead>
           <tbody>
             {vitals.map((v) => (
               <tr key={v.id} className="border-b border-slate-100">
-                <td className="px-3 py-2 whitespace-nowrap">{format(new Date(v.recorded_at), 'dd MMM HH:mm')}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {format(new Date(v.recorded_at), 'dd MMM HH:mm')}
+                  {chartedLate(v) && (
+                    <span className="block text-xs text-slate-400">
+                      charted {format(new Date(v.charted_at), 'HH:mm')}
+                    </span>
+                  )}
+                  {v.updated_at && (
+                    <span
+                      className="block text-xs text-amber-600"
+                      title={v.amendment_reason ?? undefined}
+                    >
+                      amended {format(new Date(v.updated_at), 'dd MMM HH:mm')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{v.temperature ?? '—'}</td>
                 <td className="px-3 py-2">{v.pulse ?? '—'}</td>
                 <td className="px-3 py-2">
@@ -264,13 +351,400 @@ function VitalsSection({
                 <td className="px-3 py-2">{v.spo2 ?? '—'}</td>
                 <td className="px-3 py-2">{v.pain_score ?? '—'}</td>
                 <td className="px-3 py-2">{v.blood_sugar ?? '—'}</td>
+                <td className="px-3 py-2 text-slate-500">{v.recorder?.name ?? '—'}</td>
+                {mayAmend && !readOnly && (
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <button
+                      onClick={() => setEditing(v)}
+                      title="Correct this entry"
+                      className="text-slate-400 hover:text-blue-600 mr-2"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => strike(v)}
+                      title="Strike this entry"
+                      className="text-slate-400 hover:text-red-600"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {vitals.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No vitals recorded yet</td></tr>
+              <tr>
+                <td colSpan={mayAmend && !readOnly ? 10 : 9} className="px-3 py-6 text-center text-slate-400">
+                  No vitals recorded yet
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      <IntakeOutputCard
+        clinicId={clinicId}
+        admissionId={admissionId}
+        io={io}
+        userId={userId}
+        readOnly={readOnly}
+        mayAmend={mayAmend}
+        onChange={onChange}
+      />
+
+      {editing && (
+        <AmendVitalsModal
+          entry={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            onChange();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** Routes the ward charts against, split the way the sheet prints them */
+const IO_ROUTES: Record<'intake' | 'output', string[]> = {
+  intake: ['oral', 'iv', 'ryles', 'blood'],
+  output: ['urine', 'drain', 'vomit', 'stool', 'aspirate'],
+};
+
+/**
+ * Intake / output charting. Until now nothing but voice dictation could write
+ * ipd_intake_output, so the I/O block on the Nursing Sheet had no source and
+ * printed blank. It sits under vitals because that is how the sheet reads and
+ * how the ward charts a round.
+ */
+function IntakeOutputCard({
+  clinicId, admissionId, io, userId, readOnly, mayAmend, onChange,
+}: {
+  clinicId: string; admissionId: string; io: IntakeOutput[];
+  userId?: string; readOnly: boolean; mayAmend: boolean; onChange: () => void;
+}) {
+  const [ioType, setIoType] = useState<'intake' | 'output'>('intake');
+  const [route, setRoute] = useState('oral');
+  const [volume, setVolume] = useState('');
+  const [notes, setNotes] = useState('');
+  const [at, setAt] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Today's balance is what the ward reads off this block; the whole stay is
+  // on the printed sheet.
+  const today = new Date().toDateString();
+  const forToday = io.filter((e) => new Date(e.recorded_at).toDateString() === today);
+  const intake = forToday.filter((e) => e.io_type === 'intake').reduce((s, e) => s + e.volume_ml, 0);
+  const output = forToday.filter((e) => e.io_type === 'output').reduce((s, e) => s + e.volume_ml, 0);
+
+  const save = async () => {
+    const ml = Number(volume);
+    if (!Number.isFinite(ml) || ml < 0) {
+      toast.error('Enter a volume in ml');
+      return;
+    }
+    if (at && new Date(at).getTime() > Date.now() + 60_000) {
+      toast.error('The time cannot be in the future');
+      return;
+    }
+    setSaving(true);
+    try {
+      await nursingService.recordIO({
+        clinicId,
+        admissionId,
+        ioType,
+        route,
+        volumeMl: ml,
+        notes: notes.trim() || undefined,
+        recordedAt: at ? new Date(at).toISOString() : undefined,
+        userId,
+      });
+      toast.success('Charted');
+      setVolume('');
+      setNotes('');
+      setAt('');
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const strike = async (e: IntakeOutput) => {
+    const reason = prompt('Strike this intake/output entry? Reason:');
+    if (!reason?.trim()) return;
+    try {
+      await nursingService.deleteChartRow({
+        table: 'ipd_intake_output', id: e.id, reason: reason.trim(),
+      });
+      toast.success('Entry struck — logged in the correction trail');
+      onChange();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Droplets className="w-4 h-4 text-slate-400" />
+        <h3 className="text-sm font-medium text-slate-700">Intake &amp; Output</h3>
+        <span className="text-xs text-slate-500">
+          Today — in {intake} ml · out {output} ml · balance {intake - output} ml
+        </span>
+      </div>
+
+      {!readOnly && (
+        <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3 flex flex-wrap items-end gap-2">
+          <label className="text-xs text-slate-500">
+            Type
+            <select
+              value={ioType}
+              onChange={(e) => {
+                const next = e.target.value as 'intake' | 'output';
+                setIoType(next);
+                setRoute(IO_ROUTES[next][0]);
+              }}
+              className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            >
+              <option value="intake">Intake</option>
+              <option value="output">Output</option>
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">
+            Route
+            <select
+              value={route}
+              onChange={(e) => setRoute(e.target.value)}
+              className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            >
+              {IO_ROUTES[ioType].map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">
+            Volume (ml)
+            <input
+              type="number"
+              min="0"
+              value={volume}
+              onChange={(e) => setVolume(e.target.value)}
+              className="mt-0.5 block w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-slate-500">
+            Time
+            <input
+              type="datetime-local"
+              value={at}
+              max={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
+              onChange={(e) => setAt(e.target.value)}
+              className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-slate-500 flex-1 min-w-[8rem]">
+            Notes
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="mt-0.5 block w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg"
+          >
+            {saving ? 'Saving…' : 'Chart'}
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b border-slate-200">
+              <th className="px-3 py-2">Time</th>
+              <th className="px-3 py-2">Route</th>
+              <th className="px-3 py-2">Intake</th>
+              <th className="px-3 py-2">Output</th>
+              <th className="px-3 py-2">Notes</th>
+              <th className="px-3 py-2">Charted by</th>
+              {mayAmend && !readOnly && <th className="px-3 py-2 w-10" />}
+            </tr>
+          </thead>
+          <tbody>
+            {io.map((e) => (
+              <tr key={e.id} className="border-b border-slate-100">
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {format(new Date(e.recorded_at), 'dd MMM HH:mm')}
+                  {e.charted_at &&
+                    new Date(e.charted_at).getTime() - new Date(e.recorded_at).getTime() >=
+                      LATE_CHART_MS && (
+                      <span className="block text-xs text-slate-400">
+                        charted {format(new Date(e.charted_at), 'HH:mm')}
+                      </span>
+                    )}
+                </td>
+                <td className="px-3 py-2">{e.route}</td>
+                <td className="px-3 py-2">{e.io_type === 'intake' ? `${e.volume_ml} ml` : ''}</td>
+                <td className="px-3 py-2">{e.io_type === 'output' ? `${e.volume_ml} ml` : ''}</td>
+                <td className="px-3 py-2 text-slate-500">{e.notes ?? ''}</td>
+                <td className="px-3 py-2 text-slate-500">{e.recorder?.name ?? '—'}</td>
+                {mayAmend && !readOnly && (
+                  <td className="px-3 py-2">
+                    <button
+                      onClick={() => strike(e)}
+                      title="Strike this entry"
+                      className="text-slate-400 hover:text-red-600"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {io.length === 0 && (
+              <tr>
+                <td
+                  colSpan={mayAmend && !readOnly ? 7 : 6}
+                  className="px-3 py-6 text-center text-slate-400"
+                >
+                  No intake/output charted yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Correcting a charted round. Every field is editable including the time it
+ * was taken — that is the point, a mis-keyed 06:00 as 16:00 has to be
+ * fixable — but a reason is mandatory and the change is filed in
+ * ipd_chart_amendments with the before and after rows. The database enforces
+ * both; this dialog only makes them convenient.
+ */
+function AmendVitalsModal({
+  entry, onClose, onSaved,
+}: {
+  entry: Vitals; onClose: () => void; onSaved: () => void;
+}) {
+  const [takenAt, setTakenAt] = useState(toLocalInput(entry.recorded_at));
+  const [form, setForm] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      vitalFields.map((f) => [f.key, entry[f.key] != null ? String(entry[f.key]) : ''])
+    )
+  );
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!reason.trim()) {
+      toast.error('Give a reason for the correction');
+      return;
+    }
+    if (new Date(takenAt).getTime() > Date.now() + 60_000) {
+      toast.error('The time taken cannot be in the future');
+      return;
+    }
+    const patch: Record<string, unknown> = {
+      recorded_at: new Date(takenAt).toISOString(),
+    };
+    for (const f of vitalFields) {
+      const raw = form[f.key];
+      patch[f.key] = raw === '' || raw === undefined ? null : Number(raw);
+    }
+    setSaving(true);
+    try {
+      await nursingService.amendChartRow({
+        table: 'ipd_vitals',
+        id: entry.id,
+        patch,
+        reason: reason.trim(),
+      });
+      toast.success('Entry corrected — logged in the correction trail');
+      onSaved();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium text-slate-800">Correct charted vitals</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-3">
+          Charted {format(new Date(entry.charted_at), 'dd MMM yyyy, HH:mm')}
+          {entry.recorder?.name ? ` by ${entry.recorder.name}` : ''}. That stays as it is —
+          only the reading and the time it was taken change.
+        </p>
+
+        <label className="text-xs text-slate-500 block mb-3">
+          Time taken
+          <input
+            type="datetime-local"
+            value={takenAt}
+            max={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
+            onChange={(e) => setTakenAt(e.target.value)}
+            className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+          />
+        </label>
+
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {vitalFields.map((f) => (
+            <label key={f.key} className="text-xs text-slate-500">
+              {f.label}
+              <input
+                type="number"
+                step={f.step ?? '1'}
+                value={form[f.key] ?? ''}
+                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                className="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+              />
+            </label>
+          ))}
+        </div>
+
+        <label className="text-xs text-slate-500 block">
+          Reason for the correction <span className="text-red-500">*</span>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. charted against the wrong round; BP transposed"
+            className="mt-0.5 w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-sm px-4 py-1.5 rounded-lg border border-slate-300 text-slate-600">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg"
+          >
+            {saving ? 'Saving…' : 'Save correction'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -288,15 +762,28 @@ function NotesSection({
 }) {
   const [noteType, setNoteType] = useState<NursingNote['note_type']>('nursing');
   const [text, setText] = useState('');
+  const [observedAt, setObservedAt] = useState('');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!text.trim()) return;
+    if (observedAt && new Date(observedAt).getTime() > Date.now() + 60_000) {
+      toast.error('The time observed cannot be in the future');
+      return;
+    }
     setSaving(true);
     try {
-      await nursingService.addNote({ clinicId, admissionId, noteType, note: text.trim(), userId });
+      await nursingService.addNote({
+        clinicId,
+        admissionId,
+        noteType,
+        note: text.trim(),
+        observedAt: observedAt ? new Date(observedAt).toISOString() : undefined,
+        userId,
+      });
       toast.success('Note added');
       setText('');
+      setObservedAt('');
       onChange();
     } catch (e) {
       toast.error((e as Error).message);
@@ -309,7 +796,7 @@ function NotesSection({
     <div>
       {!readOnly && (
         <div className="bg-white rounded-xl border border-slate-200 p-3 mb-3">
-          <div className="flex gap-2 mb-2">
+          <div className="flex flex-wrap items-end gap-2 mb-2">
             <select
               value={noteType}
               onChange={(e) => setNoteType(e.target.value as NursingNote['note_type'])}
@@ -319,6 +806,17 @@ function NotesSection({
                 <option key={t} value={t}>{t.replace('_', ' ')}</option>
               ))}
             </select>
+            <label className="text-xs text-slate-500">
+              Time observed
+              <input
+                type="datetime-local"
+                value={observedAt}
+                max={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
+                onChange={(e) => setObservedAt(e.target.value)}
+                className="mt-0.5 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-slate-800"
+              />
+            </label>
+            <span className="text-xs text-slate-400 pb-1.5">Blank = now</span>
           </div>
           <textarea
             value={text}
@@ -341,8 +839,17 @@ function NotesSection({
         {notes.map((n) => (
           <div key={n.id} className="bg-white rounded-xl border border-slate-200 p-3 text-sm">
             <div className="flex justify-between text-xs text-slate-400 mb-1">
-              <span className="uppercase font-medium">{n.note_type.replace('_', ' ')}</span>
-              <span>{format(new Date(n.created_at), 'dd MMM yyyy, HH:mm')}</span>
+              <span className="uppercase font-medium">
+                {n.note_type.replace('_', ' ')}
+                {n.author?.name ? ` · ${n.author.name}` : ''}
+              </span>
+              <span>
+                {format(new Date(n.created_at), 'dd MMM yyyy, HH:mm')}
+                {n.charted_at &&
+                  new Date(n.charted_at).getTime() - new Date(n.created_at).getTime() >=
+                    LATE_CHART_MS &&
+                  ` (charted ${format(new Date(n.charted_at), 'HH:mm')})`}
+              </span>
             </div>
             <p className="text-slate-700 whitespace-pre-wrap">{n.note}</p>
           </div>

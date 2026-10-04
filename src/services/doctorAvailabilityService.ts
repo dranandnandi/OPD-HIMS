@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Profile } from '../types';
 import { authService } from './authService';
-import { clinicSettingsService } from './clinicSettingsService'; // Assuming this service is clinic-aware
+import { clinicSettingsService, normalizeWorkingHours } from './clinicSettingsService'; // Assuming this service is clinic-aware
 import { appointmentService } from './appointmentService';
 import { addMinutes, format, isSameDay, isAfter, isBefore, parseISO } from 'date-fns';
 
@@ -47,14 +47,16 @@ export const doctorAvailabilityService = {
         throw new Error('Failed to fetch doctor profile');
       }
 
-      // If doctor has specific availability, use it
+      // If doctor has specific availability, use it. It is a nullable JSONB
+      // column that predates this shape, so it gets normalized rather than
+      // trusted - callers render Object.entries() over the result.
       if (doctorProfile.doctor_availability) {
-        return doctorProfile.doctor_availability;
+        return normalizeWorkingHours(doctorProfile.doctor_availability);
       }
 
       // Otherwise, fall back to clinic working hours
       const clinicWorkingHours = await clinicSettingsService.getWorkingHours();
-      return clinicWorkingHours;
+      return normalizeWorkingHours(clinicWorkingHours);
 
     } catch (error) {
       console.error('Error getting doctor availability:', error);

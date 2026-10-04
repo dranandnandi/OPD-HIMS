@@ -16,6 +16,7 @@ import {
   Pill,
   Star,
   TrendingUp,
+  PieChart,
   RefreshCw,
   LayoutDashboard,
   BedDouble,
@@ -24,8 +25,8 @@ import {
   Warehouse,
   ShieldCheck,
   Percent,
-  MessageCircle
-} from 'lucide-react';
+  MessageCircle,
+  ClipboardList, RotateCcw} from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { hasReceptionAccess } from '../../utils/roleAccess';
 import { hasModuleAccess } from '../../utils/modulePermissions';
@@ -86,6 +87,8 @@ const MobileNav: React.FC = () => {
       items: [
         { path: '/billing', icon: CreditCard, label: 'OPD Billing', perm: 'opd_billing' },
         { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', perm: 'opd_collections' },
+        { path: '/billing/refunds', icon: RotateCcw, label: 'Refund Requests', perm: 'opd_billing' },
+        { path: '/billing/income', icon: PieChart, label: 'Income Break-up', perm: 'analytics' },
       ],
     },
     {
@@ -93,6 +96,7 @@ const MobileNav: React.FC = () => {
       items: [
         { path: '/pharmacy', icon: Pill, label: 'Pharmacy', perm: 'pharmacy' },
         { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', perm: 'pharmacy' },
+        { path: '/pharmacy/indents', icon: ClipboardList, label: 'Ward Indents', perm: 'pharmacy' },
       ],
     },
     ...(!isBasic

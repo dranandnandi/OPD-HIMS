@@ -30,6 +30,8 @@ import FollowUps from './components/FollowUps/FollowUps';
 // Billing
 import BillingDashboard from './components/Billing/BillingDashboard';
 import DailyReconciliation from './components/Billing/DailyReconciliation';
+import RefundQueue from './components/Billing/RefundQueue';
+import IncomeBreakup from './components/Reports/IncomeBreakup';
 
 // Pharmacy
 import PharmacyDashboard from './components/Pharmacy/PharmacyDashboard';
@@ -37,6 +39,7 @@ import InwardStock from './components/Pharmacy/InwardStock';
 import StockReport from './components/Pharmacy/StockReport';
 import SupplierManagement from './components/Pharmacy/SupplierManagement';
 import InvoiceUpload from './components/Pharmacy/InvoiceUpload';
+import StoreIndents from './components/Pharmacy/StoreIndents';
 
 // Analytics & Reports
 import Analytics from './components/Analytics/Analytics';
@@ -508,6 +511,28 @@ const AppContent: React.FC = () => {
         </ProtectedRoute>
       } />
 
+      {/* Clinic-wide refund worklist */}
+      <Route path="/billing/refunds" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="opd_billing">
+              <RefundQueue />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Income break-up across OPD and IPD */}
+      <Route path="/billing/income" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="analytics">
+              <IncomeBreakup />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
       {/* Pharmacy */}
       <Route path="/pharmacy" element={
         <ProtectedRoute>
@@ -544,6 +569,16 @@ const AppContent: React.FC = () => {
           <AppLayout>
             <ModuleRoute perm="pharmacy">
               <SupplierManagement />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/pharmacy/indents" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="pharmacy">
+              <StoreIndents />
             </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>

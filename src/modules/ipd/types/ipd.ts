@@ -387,10 +387,26 @@ export interface IpdReport {
 
 // --- 005: Nursing --------------------------------------------------------------
 
-export interface Vitals {
+/**
+ * Charting provenance, shared by the three ward-chart tables. The clinical
+ * time (recorded_at, or created_at on a nursing note) says when it HAPPENED
+ * and may be backdated; charted_at says when it was keyed in and is set and
+ * locked by the database. See 20260902000000_ipd_chart_integrity.sql.
+ */
+export interface ChartProvenance {
+  /** when the row was entered into the system — database-set, immutable */
+  charted_at: string;
+  updated_at: string | null;
+  updated_by: string | null;
+  /** reason given for the most recent amendment */
+  amendment_reason: string | null;
+}
+
+export interface Vitals extends ChartProvenance {
   id: string;
   clinic_id: string;
   admission_id: string;
+  /** clinical time the reading was taken — may be earlier than charted_at */
   recorded_at: string;
   recorded_by: string | null;
   temperature: number | null;
@@ -404,9 +420,11 @@ export interface Vitals {
   blood_sugar: number | null;
   weight_kg: number | null;
   extra: Record<string, unknown>;
+  // joined
+  recorder?: { id: string; name: string | null } | null;
 }
 
-export interface NursingNote {
+export interface NursingNote extends ChartProvenance {
   id: string;
   clinic_id: string;
   admission_id: string;
@@ -414,7 +432,10 @@ export interface NursingNote {
   note: string;
   voice_transcript_id: string | null;
   created_by: string | null;
+  /** clinical time of the observation — may be earlier than charted_at */
   created_at: string;
+  // joined
+  author?: { id: string; name: string | null } | null;
 }
 
 export interface NursingTask {
@@ -460,15 +481,37 @@ export interface MonitoringOrder {
   created_at: string;
 }
 
-export interface IntakeOutput {
+export interface IntakeOutput extends ChartProvenance {
   id: string;
   clinic_id: string;
   admission_id: string;
+  /** clinical time the fluid was given/passed — may be earlier than charted_at */
   recorded_at: string;
+  recorded_by: string | null;
   io_type: 'intake' | 'output';
   route: string;
   volume_ml: number;
   notes: string | null;
+  // joined
+  recorder?: { id: string; name: string | null } | null;
+}
+
+/** One correction made to a charted row — append-only, written by a trigger */
+export interface ChartAmendment {
+  id: string;
+  clinic_id: string;
+  admission_id: string;
+  source_table: 'ipd_vitals' | 'ipd_intake_output' | 'ipd_nursing_notes';
+  source_id: string;
+  action: 'update' | 'delete';
+  reason: string | null;
+  before_row: Record<string, unknown>;
+  after_row: Record<string, unknown> | null;
+  changed_fields: string[];
+  amended_by: string | null;
+  amended_at: string;
+  // joined
+  amender?: { id: string; name: string | null } | null;
 }
 
 // --- 006: Medications / eMAR ----------------------------------------------------

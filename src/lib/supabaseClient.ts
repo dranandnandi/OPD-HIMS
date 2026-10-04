@@ -460,7 +460,7 @@ export interface DatabaseBill {
   total_amount: number;
   paid_amount: number;
   balance_amount: number;
-  status: 'pending' | 'partial' | 'paid' | 'overdue';
+  status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
   payment_method?: 'cash' | 'card' | 'upi' | 'cheque' | 'online';
   bill_date: string;
   due_date?: string;
@@ -468,6 +468,9 @@ export interface DatabaseBill {
   total_refunded_amount: number;
   refund_status: 'not_requested' | 'pending' | 'partial' | 'refunded';
   last_refund_at?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  cancellation_reason?: string;
   refund_notes?: string;
   pdf_url?: string; // URL to stored PDF in Supabase Storage
   created_at: string;
@@ -638,6 +641,12 @@ export interface DatabaseClinicSetting {
   public_slug?: string | null;
   public_booking_enabled?: boolean;
   appointment_config?: PublicBookingPolicy | null;
+  // ABDM identity. These mirror what ABDM/HFR holds for this facility — they
+  // are ABDM's values, not ours, so they are displayed and never edited here.
+  hfr_facility_id?: string | null;
+  abdm_hip_id?: string | null;
+  abdm_hip_name?: string | null;
+  abdm_counter_code?: string | null;
 }
 
 export interface DatabaseMedicineMaster {

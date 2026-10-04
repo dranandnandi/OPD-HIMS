@@ -48,3 +48,12 @@ b_src.txt
 b_tgt.txt
 body.json
 sign.png
+
+# Supabase CLI local link state (project ref, pooler URL, cached versions).
+# Machine-local, NOT source: a committed copy silently re-points the CLI at the
+# old project on any checkout/stash. Set it with `supabase link --project-ref`.
+supabase/.temp/
+
+# ABDM spec PDFs/DOCX — reference material, not source. ~32MB of binaries
+# that every clone would carry forever. Kept locally alongside the code.
+abdm guidlines/

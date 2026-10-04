@@ -11,6 +11,7 @@ import DispenseModal from '../Pharmacy/DispenseModal';
 import { pdfService } from '../../services/pdfService';
 import { toTitleCase } from '../../utils/stringUtils';
 import VisitAttachmentsGallery from './VisitAttachmentsGallery';
+import VisitAbhaLinkPanel from './VisitAbhaLinkPanel';
 
 const VisitDetails: React.FC = () => {
   const { visitId } = useParams<{ visitId: string }>();
@@ -498,6 +499,13 @@ const VisitDetails: React.FC = () => {
         <div className="bg-white rounded-lg shadow-md p-6">
           <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments" />
         </div>
+      )}
+
+      {/* ABDM care-context sharing. Only for patients who actually have an
+          ABHA — otherwise every visit in the clinic would carry a panel
+          explaining why it cannot be used. */}
+      {visit.patient?.abha_address && (
+        <VisitAbhaLinkPanel visitId={visit.id} patientId={visit.patientId} />
       )}
 
       {/* Associated Bills */}

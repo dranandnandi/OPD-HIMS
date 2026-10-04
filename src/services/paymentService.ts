@@ -1,5 +1,12 @@
 import { supabase } from '../lib/supabase';
-import { PaymentRecord, DailyPaymentSummary, Profile, PaymentRecordType } from '../types';
+import {
+  PaymentRecord,
+  DailyPaymentSummary,
+  CollectorCollectionRow,
+  EnhancedDailyReport,
+  Profile,
+  PaymentRecordType
+} from '../types';
 import { getCurrentProfile } from './profileService';
 import type { DatabasePaymentRecord } from '../lib/supabaseClient';
 
@@ -22,6 +29,105 @@ const convertDatabasePaymentRecord = (dbPayment: DatabasePaymentRecord, received
   approvedBy: dbPayment.approved_by,
   createdAt: new Date(dbPayment.created_at)
 });
+
+
+/**
+ * Local-midnight bounds for a calendar day, as [start, next midnight).
+ * payment_date is a timestamptz: bounding it with UTC day edges pushes every
+ * receipt taken before 05:30 IST onto the previous day's report and drops the
+ * first five and a half hours of the day from this one.
+ */
+const localDayBounds = (date: Date): { fromISO: string; toISO: string } => {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { fromISO: start.toISOString(), toISO: end.toISOString() };
+};
+
+/** Refunds are money leaving the counter, so they carry a negative sign. */
+const signedAmount = (row: { amount: number | string; record_type?: PaymentRecordType }): number =>
+  row.record_type === 'refund' ? -(Number(row.amount) || 0) : (Number(row.amount) || 0);
+
+/**
+ * PostgREST returns an embedded to-one relation as an object, but as an array
+ * when it cannot prove the relationship is to-one. Accept either.
+ */
+const profileName = (embedded: any): string => {
+  const profile = Array.isArray(embedded) ? embedded[0] : embedded;
+  return profile?.name || 'Unassigned';
+};
+
+/** Fold raw payment_records rows into a day's summary. */
+const summariseCollections = (date: Date, rows: any[]): DailyPaymentSummary => {
+  const byMethod = new Map<string, { amount: number; count: number }>();
+  const byCollector = new Map<string, CollectorCollectionRow>();
+
+  let gross = 0;
+  let refunds = 0;
+  let transactionCount = 0;
+  let refundCount = 0;
+
+  for (const row of rows) {
+    const isRefund = row.record_type === 'refund';
+    const amount = signedAmount(row);
+    const method = String(row.payment_method || 'unknown');
+
+    if (isRefund) {
+      refunds += amount;
+      refundCount += 1;
+    } else {
+      gross += amount;
+      transactionCount += 1;
+    }
+
+    const methodRow = byMethod.get(method) || { amount: 0, count: 0 };
+    methodRow.amount += amount;
+    methodRow.count += 1;
+    byMethod.set(method, methodRow);
+
+    const key = row.received_by || 'unassigned';
+    const collector = byCollector.get(key) || {
+      userId: row.received_by || null,
+      userName: profileName(row.profiles),
+      gross: 0,
+      refunds: 0,
+      net: 0,
+      count: 0,
+      byMethod: {} as { [method: string]: number }
+    };
+    if (isRefund) {
+      collector.refunds += amount;
+    } else {
+      collector.gross += amount;
+    }
+    collector.net += amount;
+    collector.count += 1;
+    collector.byMethod[method] = (collector.byMethod[method] || 0) + amount;
+    byCollector.set(key, collector);
+  }
+
+  const amountOf = (method: string): number => byMethod.get(method)?.amount || 0;
+
+  return {
+    date,
+    cash: amountOf('cash'),
+    card: amountOf('card'),
+    upi: amountOf('upi'),
+    cheque: amountOf('cheque'),
+    net_banking: amountOf('net_banking'),
+    wallet: amountOf('wallet'),
+    gross,
+    refunds,
+    total: gross + refunds,
+    transactionCount,
+    refundCount,
+    paymentBreakdown: Array.from(byMethod.entries())
+      .map(([method, value]) => ({ method, amount: value.amount, count: value.count }))
+      .sort((a, b) => b.amount - a.amount),
+    collectorBreakdown: Array.from(byCollector.values()).sort((a, b) => b.net - a.net)
+  };
+};
 
 export const paymentService = {
   // Record a payment
@@ -200,6 +306,15 @@ export const paymentService = {
   },
 
   // Get daily payment summary
+  /**
+   * A day's counter collections: net of refunds, split by method and by who
+   * took the money.
+   *
+   * Reads payment_records directly instead of the get_daily_payment_summary
+   * RPC. That helper filters record_type = 'payment', so refunds never reduced
+   * the day's figure, and it buckets on DATE(payment_date), which resolves in
+   * the server's UTC session rather than clinic-local time.
+   */
   async getDailyPaymentSummary(date: Date): Promise<DailyPaymentSummary> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
@@ -210,65 +325,28 @@ export const paymentService = {
       throw new Error('User not assigned to a clinic.');
     }
 
+    const { fromISO, toISO } = localDayBounds(date);
+
     try {
-      // Use the database function for aggregated data
-      const { data: summaryData, error } = await supabase
-        .rpc('get_daily_payment_summary', {
-          p_clinic_id: profile.clinicId,
-          p_date: date.toISOString().split('T')[0] // Convert to YYYY-MM-DD format
-        });
+      const { data: rows, error } = await supabase
+        .from('payment_records')
+        .select('id, amount, payment_method, record_type, received_by, payment_date, profiles:received_by (id, name)')
+        .eq('clinic_id', profile.clinicId)
+        .gte('payment_date', fromISO)
+        .lt('payment_date', toISO)
+        .order('payment_date', { ascending: true });
 
       if (error) {
         throw new Error(`Failed to fetch daily summary: ${error.message}`);
       }
 
-      // Initialize summary with all payment methods
-      const summary: DailyPaymentSummary = {
-        date,
-        cash: 0,
-        card: 0,
-        upi: 0,
-        cheque: 0,
-        net_banking: 0,
-        wallet: 0,
-        total: 0,
-        transactionCount: 0,
-        paymentBreakdown: []
-      };
-
-      // Process the aggregated data
-      if (summaryData) {
-        summaryData.forEach((row: any) => {
-          const method = row.payment_method as keyof DailyPaymentSummary;
-          const amount = Number(row.total_amount);
-          const count = Number(row.transaction_count);
-
-          // Update method-specific amount
-          if (method in summary && typeof summary[method] === 'number') {
-            (summary as any)[method] = amount;
-          }
-
-          // Update totals
-          summary.total += amount;
-          summary.transactionCount += count;
-
-          // Add to breakdown
-          summary.paymentBreakdown.push({
-            method: row.payment_method,
-            amount,
-            count
-          });
-        });
-      }
-
-      return summary;
+      return summariseCollections(date, (rows as any[]) || []);
     } catch (error) {
       console.error('Error fetching daily payment summary:', error);
       throw error;
     }
   },
 
-  // Get payment summary for a date range
   async getPaymentSummaryRange(startDate: Date, endDate: Date): Promise<{
     totalAmount: number;
     totalTransactions: number;
@@ -293,11 +371,10 @@ export const paymentService = {
 
       const { data: payments, error } = await supabase
         .from('payment_records')
-        .select('payment_method, amount, payment_date')
+        .select('payment_method, amount, payment_date, record_type')
         .gte('payment_date', startOfDay.toISOString())
         .lte('payment_date', endOfDay.toISOString())
-        .eq('clinic_id', profile.clinicId)
-        .eq('record_type', 'payment');
+        .eq('clinic_id', profile.clinicId);
 
       if (error) {
         throw new Error(`Failed to fetch payment range: ${error.message}`);
@@ -316,12 +393,16 @@ export const paymentService = {
       let totalTransactions = 0;
 
       // Aggregate payments by method
+      // Refunds are signed negative so the range total is net, matching the
+      // daily summaries returned alongside it.
       payments?.forEach((payment: any) => {
-        const amount = Number(payment.amount);
+        const amount = signedAmount(payment);
         totalAmount += amount;
-        totalTransactions++;
-        
-        if (methodTotals.hasOwnProperty(payment.payment_method)) {
+        if (payment.record_type !== 'refund') {
+          totalTransactions++;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(methodTotals, payment.payment_method)) {
           methodTotals[payment.payment_method] += amount;
         }
       });
@@ -348,8 +429,14 @@ export const paymentService = {
     }
   },
 
-  // Get enhanced daily report with service categories and analytics
-  async getEnhancedDailyReport(date: Date): Promise<any> {
+  /**
+   * The daily collection report behind the reconciliation screen.
+   *
+   * Bounded on clinic-local midnights and signed so refunds reduce the day,
+   * matching getDailyPaymentSummary above - the two used to disagree because
+   * one went through the RPC and the other queried UTC day edges directly.
+   */
+  async getEnhancedDailyReport(date: Date): Promise<EnhancedDailyReport> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
     }
@@ -359,28 +446,29 @@ export const paymentService = {
       throw new Error('User not assigned to a clinic.');
     }
 
-    try {
-      const dateStr = date.toISOString().split('T')[0];
+    const { fromISO, toISO } = localDayBounds(date);
 
-      // Get payment records with bill details for the day
+    try {
       const { data: paymentData, error: paymentError } = await supabase
         .from('payment_records')
         .select(`
           *,
+          profiles:received_by (id, name),
           bills (
             *,
             bill_items (*)
           )
         `)
         .eq('clinic_id', profile.clinicId)
-        .eq('record_type', 'payment')
-        .gte('payment_date', `${dateStr}T00:00:00.000Z`)
-        .lte('payment_date', `${dateStr}T23:59:59.999Z`)
+        .gte('payment_date', fromISO)
+        .lt('payment_date', toISO)
         .order('payment_date', { ascending: false });
 
       if (paymentError) throw paymentError;
 
-      // Get outstanding balances for the clinic
+      const rows = (paymentData as any[]) || [];
+
+      // Outstanding is a position, not a flow: it is as at now, not for the day.
       const { data: outstandingData, error: outstandingError } = await supabase
         .from('bills')
         .select('balance_amount')
@@ -389,78 +477,69 @@ export const paymentService = {
 
       if (outstandingError) throw outstandingError;
 
-      // Calculate totals
-      const totalCollection = paymentData?.reduce((sum, payment) => sum + Number(payment.amount), 0) || 0;
-      const transactionCount = paymentData?.length || 0;
-      const averageTransactionValue = transactionCount > 0 ? totalCollection / transactionCount : 0;
-      const outstandingBalance = outstandingData?.reduce((sum, bill) => sum + Number(bill.balance_amount), 0) || 0;
+      const summary = summariseCollections(date, rows);
+      const outstandingBalance = outstandingData?.reduce(
+        (sum, bill) => sum + Number(bill.balance_amount), 0
+      ) || 0;
 
-      // Payment method breakdown
-      const paymentMethodMap = new Map();
-      paymentData?.forEach((payment) => {
-        const method = payment.payment_method;
-        const amount = Number(payment.amount);
-        
-        if (paymentMethodMap.has(method)) {
-          const existing = paymentMethodMap.get(method);
-          paymentMethodMap.set(method, {
-            amount: existing.amount + amount,
-            count: existing.count + 1
-          });
-        } else {
-          paymentMethodMap.set(method, { amount, count: 1 });
-        }
-      });
+      // Average receipt size is a property of collections, so refunds are out
+      // of both halves of the ratio.
+      const averageTransactionValue =
+        summary.transactionCount > 0 ? summary.gross / summary.transactionCount : 0;
 
-      const paymentMethods = Array.from(paymentMethodMap.entries()).map(([method, data]) => ({
-        method,
-        amount: data.amount,
-        count: data.count,
-        percentage: totalCollection > 0 ? (data.amount / totalCollection) * 100 : 0
+      // Percentages run over gross: a net that nets to zero on a heavy refund
+      // day would otherwise produce meaningless shares.
+      const share = (amount: number): number =>
+        summary.gross > 0 ? (amount / summary.gross) * 100 : 0;
+
+      const paymentMethods = summary.paymentBreakdown.map((row) => ({
+        method: row.method,
+        amount: row.amount,
+        count: row.count,
+        percentage: share(row.amount)
       }));
 
-      // Service category breakdown
-      const categoryMap = new Map();
-      paymentData?.forEach((payment) => {
-        payment.bills?.bill_items?.forEach((item: any) => {
+      // Category mix of the BILLS collected against today, each bill counted
+      // once. Attributing a bill's items to every receipt against it counted
+      // an instalment-paid bill twice over.
+      const categoryMap = new Map<string, { amount: number; count: number }>();
+      const seenBills = new Set<string>();
+      for (const payment of rows) {
+        const bill = payment.bills;
+        if (!bill || seenBills.has(bill.id)) continue;
+        seenBills.add(bill.id);
+
+        for (const item of bill.bill_items || []) {
           const category = item.item_type || 'other';
           const amount = Number(item.total_price) || 0;
-          
-          if (categoryMap.has(category)) {
-            const existing = categoryMap.get(category);
-            categoryMap.set(category, {
-              amount: existing.amount + amount,
-              count: existing.count + 1
-            });
-          } else {
-            categoryMap.set(category, { amount, count: 1 });
-          }
-        });
-      });
-
-      const serviceCategories = Array.from(categoryMap.entries()).map(([category, data]) => ({
-        category,
-        amount: data.amount,
-        count: data.count,
-        percentage: totalCollection > 0 ? (data.amount / totalCollection) * 100 : 0
-      }));
-
-      // Hourly breakdown
-      const hourlyMap = new Map();
-      paymentData?.forEach((payment) => {
-        const hour = new Date(payment.payment_date).getHours();
-        const amount = Number(payment.amount);
-        
-        if (hourlyMap.has(hour)) {
-          const existing = hourlyMap.get(hour);
-          hourlyMap.set(hour, {
-            amount: existing.amount + amount,
-            transactions: existing.transactions + 1
-          });
-        } else {
-          hourlyMap.set(hour, { amount, transactions: 1 });
+          const existing = categoryMap.get(category) || { amount: 0, count: 0 };
+          existing.amount += amount;
+          existing.count += 1;
+          categoryMap.set(category, existing);
         }
-      });
+      }
+
+      const billedTotal = Array.from(categoryMap.values())
+        .reduce((sum, value) => sum + value.amount, 0);
+
+      const serviceCategories = Array.from(categoryMap.entries())
+        .map(([category, value]) => ({
+          category: category as EnhancedDailyReport['serviceCategories'][number]['category'],
+          amount: value.amount,
+          count: value.count,
+          percentage: billedTotal > 0 ? (value.amount / billedTotal) * 100 : 0
+        }))
+        .sort((a, b) => b.amount - a.amount);
+
+      // getHours() is local, so these buckets already match the local day above.
+      const hourlyMap = new Map<number, { amount: number; transactions: number }>();
+      for (const payment of rows) {
+        const hour = new Date(payment.payment_date).getHours();
+        const existing = hourlyMap.get(hour) || { amount: 0, transactions: 0 };
+        existing.amount += signedAmount(payment);
+        if (payment.record_type !== 'refund') existing.transactions += 1;
+        hourlyMap.set(hour, existing);
+      }
 
       const hourlyBreakdown = Array.from({ length: 24 }, (_, hour) => {
         const data = hourlyMap.get(hour) || { amount: 0, transactions: 0 };
@@ -471,19 +550,23 @@ export const paymentService = {
         };
       });
 
-      // Peak hours (top 3)
       const peakHours = Array.from(hourlyMap.entries())
-        .map(([hour, data]) => ({ hour, ...data }))
+        .map(([hour, data]) => ({ hour, amount: data.amount, count: data.transactions }))
+        .filter((entry) => entry.amount > 0)
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 3);
 
       return {
         date,
-        totalCollection,
-        transactionCount,
+        gross: summary.gross,
+        refunds: summary.refunds,
+        totalCollection: summary.total,
+        transactionCount: summary.transactionCount,
+        refundCount: summary.refundCount,
         averageTransactionValue,
         outstandingBalance,
         paymentMethods,
+        collectorBreakdown: summary.collectorBreakdown,
         serviceCategories,
         peakHours,
         hourlyBreakdown

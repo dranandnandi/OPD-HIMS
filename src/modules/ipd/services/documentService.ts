@@ -9,6 +9,7 @@ import type { GeneratedPdf } from '../../../services/pdfService';
 import type {
   Admission, IpdBill, Deposit, IpdPayment, MedicationOrder,
   DietOrder, DietChartEntry, IpdOrderItem, TreatmentPlan, Vitals,
+  IntakeOutput, NursingNote,
 } from '../types/ipd';
 
 export interface DocumentTemplate {
@@ -186,6 +187,11 @@ export const PLACEHOLDER_CATALOG: { key: string; label: string }[] = [
   { key: 'reports.list', label: 'Filed reports (pathology/radiology impressions)' },
   { key: 'consultations.list', label: 'Cross consultations & opinions' },
   { key: 'diet.current', label: 'Diet advice (current diet order)' },
+  { key: 'io.chart', label: 'Intake / output chart (all timed entries, with balance)' },
+  { key: 'medications.administered', label: 'Medication administration record (eMAR — timed, with nurse)' },
+  { key: 'notes.nursing', label: 'Nursing observations (timed, with nurse)' },
+  { key: 'tasks.done', label: 'Nursing care given (completed tasks, timed)' },
+  { key: 'plan.today', label: 'Today’s treatment plan (S/O/A/P entries with times)' },
   { key: 'notes.course', label: 'Hospital course (treatment plan + round notes)' },
   { key: 'narrative.course', label: 'Hospital course — AI narrative (falls back to round notes)' },
   { key: 'narrative.advice', label: 'Advice & follow-up — AI narrative' },
@@ -195,7 +201,7 @@ export const PLACEHOLDER_CATALOG: { key: string; label: string }[] = [
 // Bumped whenever a built-in template changes; auto-created default templates
 // below this version are upgraded in place (Studio edits bump the row version
 // past this, so customized templates are never touched).
-const DEFAULT_TEMPLATE_VERSION = 5;
+const DEFAULT_TEMPLATE_VERSION = 6;
 
 // ---------------------------------------------------------------------------
 // Default discharge summary template (created per clinic on first use;
@@ -460,37 +466,52 @@ const DEFAULT_CASE_SHEET_TEMPLATE = `${wardSheetHead('IPD CASE SHEET')}
 ${caseSheetEntry(
   `<p><b>S/B</b> Dr. {{doctor.name}}</p><p><b>Vitals:</b> {{vitals.latest}}</p>
     <p><b>C/O:</b> {{admission.reason}}</p><p><b>Diagnosis:</b> {{admission.diagnosis}}</p>`,
-  `<p>Orders:</p><ul><li></li><li></li><li></li></ul>`
+  // The day's plan of care, not a blank the round has to re-write. Entries
+  // come across timed and initialled; anything decided after printing goes in
+  // the empty blocks below.
+  `<p><b>Plan of care today:</b></p>{{plan.today}}<p>Further orders:</p><ul><li></li><li></li></ul>`
 )}
 ${caseSheetEntry('<p></p>', '<p></p>')}
 ${caseSheetEntry('<p></p>', '<p></p>')}
 `;
 
+/**
+ * Nursing Sheet — the ward's own record, drawn from what was actually charted
+ * rather than printed blank. Every block carries the clinical time and the
+ * nurse behind it; three blank rows follow each so the shift can keep writing
+ * on the printed copy.
+ */
+const blankRows = (cols: number, count = 3): string =>
+  Array.from({ length: count })
+    .map(
+      () =>
+        `<tr>${Array.from({ length: cols })
+          .map((_, i) => `<td style="border:1px solid #cbd5e1${i === 0 ? ';padding:8px 5px' : ''}"></td>`)
+          .join('')}</tr>`
+    )
+    .join('');
+
 const DEFAULT_NURSING_CHART_TEMPLATE = `${wardSheetHead('NURSING SHEET')}
 <h3>Vitals</h3>
 {{vitals.chart}}
+<table style="width:100%;border-collapse:collapse;font-size:12px">${blankRows(8)}</table>
 
 <h3>Intake &amp; Output</h3>
-<table style="width:100%;border-collapse:collapse;font-size:12px">
-  <tr>
-    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Time</th>
-    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Oral / IV intake</th>
-    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Urine</th>
-    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Drain / Other</th>
-    <th style="border:1px solid #cbd5e1;padding:3px 5px;background:#f1f5f9;text-align:left">Sign</th>
-  </tr>
-  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
-  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
-  <tr><td style="border:1px solid #cbd5e1;padding:8px 5px"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td><td style="border:1px solid #cbd5e1"></td></tr>
-</table>
+{{io.chart}}
+<table style="width:100%;border-collapse:collapse;font-size:12px">${blankRows(6)}</table>
 
 <h3>Diet</h3>
 <p>{{diet.current}}</p>
 
 <h3>Medication Administered</h3>
-{{medications.course}}
+{{medications.administered}}
 
-<h3>Nursing Observations &amp; Care Given</h3>
+<h3>Nursing Observations</h3>
+{{notes.nursing}}
+<p></p>
+
+<h3>Care Given</h3>
+{{tasks.done}}
 <p></p>
 
 <table style="width:100%;font-size:13px;margin-top:18px">
@@ -782,12 +803,7 @@ async function buildDietHtml(admissionId: string): Promise<string> {
 
 /** Date-wise treatment plan entries + doctor round/progress notes → the
     chronological hospital-course block */
-async function buildCourseNotesHtml(admissionId: string): Promise<string> {
-  const [notes, plans] = await Promise.all([
-    nursingService.listNotes(admissionId, 100).catch(() => []),
-    treatmentPlanService.list(admissionId).catch(() => []),
-  ]);
-
+function buildCourseNotesHtml(notes: NursingNote[], plans: TreatmentPlan[]): string {
   const course: Array<{ at: string; html: string }> = [
     ...notes
       .filter((n) => n.note_type === 'doctor_round' || n.note_type === 'progress')
@@ -815,60 +831,272 @@ async function buildCourseNotesHtml(admissionId: string): Promise<string> {
     .join('');
 }
 
+// ---------------------------------------------------------------------------
+// Ward chart blocks. Everything below prints a legal record, so each one shows
+// the CLINICAL time — when the reading was taken, the fluid given, the drug
+// administered — and the person behind it. Where the entry was keyed in
+// noticeably later than it happened, the lag is printed too rather than
+// quietly presenting a late entry as a bedside one.
+// ---------------------------------------------------------------------------
+
+const CELL = 'border:1px solid #cbd5e1;padding:3px 5px';
+const HEAD_CELL = `${CELL};background:#f1f5f9;text-align:left`;
+
+const fmtTime = (d: string) =>
+  new Date(d).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+
+/** Charting more than this after the event is worth showing on the sheet */
+const LATE_CHART_MS = 10 * 60_000;
+
 /**
- * Every charted vitals round as one table — this is the Nursing Sheet. Rounds
- * run oldest-first the way the ward writes them, and the trailing Sign column
- * is left blank for the nurse on duty to initial after printing.
+ * "02 Sep 06:00" — with "(charted 10:12)" appended when the row was entered
+ * appreciably after the event. charted_at is database-set and immutable, so
+ * this is the one column on the sheet nobody can have edited.
+ */
+const fmtCharted = (at: string, chartedAt?: string | null): string => {
+  const shown = fmtTime(at);
+  if (!chartedAt) return shown;
+  const lag = new Date(chartedAt).getTime() - new Date(at).getTime();
+  if (lag < LATE_CHART_MS) return shown;
+  return `${shown} (charted ${new Date(chartedAt).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit',
+  })})`;
+};
+
+/** Staff name without the honorific the ward already prints */
+const who = (p?: { name: string | null } | null): string =>
+  p?.name ? p.name.replace(/^dr\.?\s*/i, '') : '';
+
+const table = (heads: string[], rows: string): string =>
+  `<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <tr>${heads.map((h) => `<th style="${HEAD_CELL}">${h}</th>`).join('')}</tr>
+  ${rows}
+</table>`;
+
+const row = (cols: string[]): string =>
+  `<tr>${cols.map((c) => `<td style="${CELL}">${c}</td>`).join('')}</tr>`;
+
+/**
+ * Every charted vitals round as one table — the body of the Nursing Sheet.
+ * Rounds run oldest-first the way the ward writes them. The Sign column
+ * carries whoever charted the round; it stays blank (for a wet signature) only
+ * when the row has no recorded_by.
  */
 function buildVitalsChartHtml(vitals: Vitals[]): string {
   if (vitals.length === 0) {
     return '<p>[No vitals charted yet — record them under Nursing, or fill this sheet by hand]</p>';
   }
-  const cell = 'border:1px solid #cbd5e1;padding:3px 5px';
   const rows = [...vitals]
     .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
-    .map((v) => {
-      const at = new Date(v.recorded_at).toLocaleString('en-IN', {
-        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-      });
-      const bp = v.bp_systolic != null ? `${v.bp_systolic}/${v.bp_diastolic ?? '—'}` : '—';
-      const cols = [
-        at,
-        bp,
-        v.pulse != null ? String(v.pulse) : '—',
-        v.spo2 != null ? `${v.spo2}%` : '—',
-        v.temperature != null ? `${v.temperature}°C` : 'Afebrile',
-        v.resp_rate != null ? String(v.resp_rate) : '—',
-        v.blood_sugar != null ? String(v.blood_sugar) : '—',
-        '',
-      ];
-      return `<tr>${cols.map((c) => `<td style="${cell}">${esc(c)}</td>`).join('')}</tr>`;
+    .map((v) =>
+      row([
+        esc(fmtCharted(v.recorded_at, v.charted_at)),
+        esc(v.bp_systolic != null ? `${v.bp_systolic}/${v.bp_diastolic ?? '—'}` : '—'),
+        esc(v.pulse != null ? String(v.pulse) : '—'),
+        esc(v.spo2 != null ? `${v.spo2}%` : '—'),
+        esc(v.temperature != null ? `${v.temperature}°C` : 'Afebrile'),
+        esc(v.resp_rate != null ? String(v.resp_rate) : '—'),
+        esc(v.blood_sugar != null ? String(v.blood_sugar) : '—'),
+        esc(who(v.recorder)),
+      ])
+    )
+    .join('');
+  return table(
+    ['Date &amp; Time', 'BP (mmHg)', 'Pulse /min', 'SpO₂', 'Temp', 'RR /min', 'Sugar', 'Sign'],
+    rows
+  );
+}
+
+/**
+ * Charted intake and output, oldest-first, with the running balance the ward
+ * actually wants off this sheet. Intake and output land in their own columns
+ * so a shift total can be read down the page.
+ */
+function buildIoChartHtml(io: IntakeOutput[]): string {
+  if (io.length === 0) {
+    return '<p>[No intake/output charted — record it under Nursing, or fill this sheet by hand]</p>';
+  }
+  let intake = 0;
+  let output = 0;
+  const rows = [...io]
+    .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
+    .map((e) => {
+      const isIn = e.io_type === 'intake';
+      if (isIn) intake += e.volume_ml;
+      else output += e.volume_ml;
+      return row([
+        esc(fmtCharted(e.recorded_at, e.charted_at)),
+        esc(e.route.replace(/_/g, ' ')),
+        isIn ? esc(`${e.volume_ml} ml`) : '',
+        isIn ? '' : esc(`${e.volume_ml} ml`),
+        esc(String(intake - output)),
+        esc([e.notes, who(e.recorder)].filter(Boolean).join(' · ')),
+      ]);
     })
     .join('');
-  const heads = ['Date & Time', 'BP (mmHg)', 'Pulse /min', 'SpO₂', 'Temp', 'RR /min', 'Sugar', 'Sign']
-    .map((h) => `<th style="${cell};background:#f1f5f9;text-align:left">${h}</th>`)
+  const total = `<tr>
+    <td style="${CELL};background:#f8fafc" colspan="2"><b>Total</b></td>
+    <td style="${CELL};background:#f8fafc"><b>${intake} ml</b></td>
+    <td style="${CELL};background:#f8fafc"><b>${output} ml</b></td>
+    <td style="${CELL};background:#f8fafc"><b>${intake - output} ml</b></td>
+    <td style="${CELL};background:#f8fafc"></td>
+  </tr>`;
+  return table(
+    ['Date &amp; Time', 'Route', 'Intake', 'Output', 'Balance', 'Notes / Sign'],
+    rows + total
+  );
+}
+
+/**
+ * The eMAR proper: what was actually given, when, and by whom — as distinct
+ * from {{medications.course}}, which is the list of drugs ORDERED. A nursing
+ * sheet that shows only orders claims nothing about administration, which is
+ * the one thing this sheet exists to evidence.
+ */
+async function buildAdministeredMedsHtml(admissionId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('ipd_medication_administrations')
+    .select(`administered_at, status, reason,
+             nurse:profiles!ipd_medication_administrations_administered_by_fkey(name),
+             schedule:ipd_medication_schedule(
+               scheduled_at,
+               medication_order:ipd_medication_orders(medicine_name, dose, route))`)
+    .eq('admission_id', admissionId)
+    .order('administered_at', { ascending: true });
+  if (error || !data || data.length === 0) {
+    return '<p>[No doses recorded against the eMAR — enter them under Nursing &amp; Medications, or sign this sheet by hand]</p>';
+  }
+
+  const rows = (data as any[])
+    .map((a) => {
+      const order = a.schedule?.medication_order;
+      const drug = [order?.medicine_name, order?.dose, fmtRoute(order?.route ?? null)]
+        .filter(Boolean)
+        .join(' ');
+      const due = a.schedule?.scheduled_at ? fmtTime(a.schedule.scheduled_at) : '—';
+      const status =
+        a.status === 'given'
+          ? 'Given'
+          : `${a.status.charAt(0).toUpperCase()}${a.status.slice(1)}${a.reason ? ` — ${a.reason}` : ''}`;
+      return row([
+        esc(due),
+        esc(fmtTime(a.administered_at)),
+        esc(drug || '—'),
+        esc(status),
+        esc(who(a.nurse)),
+      ]);
+    })
     .join('');
-  return `<table style="width:100%;border-collapse:collapse;font-size:12px">
-  <tr>${heads}</tr>
-  ${rows}
-</table>`;
+  return table(['Due', 'Given at', 'Drug / Dose / Route', 'Status', 'Sign'], rows);
+}
+
+/**
+ * The nurse's own running observations. buildCourseNotesHtml deliberately
+ * keeps only the doctor's notes for the discharge summary's hospital course;
+ * these are the other half, and they belong on the nursing sheet.
+ */
+function buildNursingNotesHtml(notes: NursingNote[]): string {
+  const own = notes
+    .filter((n) => ['nursing', 'handover', 'procedure'].includes(n.note_type))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  if (own.length === 0) return '<p></p>';
+
+  return own
+    .map((n) => {
+      const tag = n.note_type === 'nursing' ? '' : ` <i>(${n.note_type})</i>`;
+      const sign = who(n.author);
+      return `<p style="margin:3px 0"><b>${esc(fmtCharted(n.created_at, n.charted_at))}</b>${tag} — ${esc(
+        n.note
+      )}${sign ? ` <i>— ${esc(sign)}</i>` : ''}</p>`;
+    })
+    .join('');
+}
+
+/** Nursing tasks signed off — the "care given" half of the nursing sheet */
+async function buildTasksDoneHtml(admissionId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('ipd_nursing_tasks')
+    .select('task, due_at, done_at, nurse:profiles!ipd_nursing_tasks_done_by_fkey(name)')
+    .eq('admission_id', admissionId)
+    .eq('status', 'done')
+    .not('done_at', 'is', null)
+    .order('done_at', { ascending: true });
+  if (error) return '<p></p>';
+
+  const done = (data ?? []) as any[];
+  if (done.length === 0) return '<p></p>';
+
+  const rows = done
+    .map((t) =>
+      row([
+        esc(fmtTime(t.done_at)),
+        esc(t.task),
+        esc(t.due_at ? fmtTime(t.due_at) : '—'),
+        esc(who(t.nurse)),
+      ])
+    )
+    .join('');
+  return table(['Done at', 'Care given', 'Was due', 'Sign'], rows);
+}
+
+/**
+ * Today's treatment plan, for the case sheet's first order block. The case
+ * sheet is the doctor's running order sheet, so it should open with what was
+ * actually planned today rather than making the round re-write it by hand.
+ */
+function buildTodayPlanHtml(plans: TreatmentPlan[]): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const mine = plans
+    .filter((p) => p.plan_date === today && p.status === 'active')
+    .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+  if (mine.length === 0) return '<p></p>';
+
+  return mine
+    .map((p) => {
+      const lines = ([
+        ['S', p.subjective], ['O', p.objective], ['A', p.assessment],
+        ['Plan', p.plan], ['Advice', p.advice],
+      ] as Array<[string, string | null]>)
+        .filter(([, v]) => v && v.trim())
+        .map(([label, v]) => `<i>${label}:</i> ${esc(v!)}`)
+        .join('<br/>');
+      if (!lines) return '';
+      const at = new Date(p.recorded_at).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit',
+      });
+      const doc = who(p.doctor);
+      return `<p style="margin:3px 0"><b>${esc(at)}</b>${doc ? ` <i>Dr. ${esc(doc)}</i>` : ''}<br/>${lines}</p>`;
+    })
+    .filter(Boolean)
+    .join('');
 }
 
 async function buildPlaceholderMap(admission: Admission): Promise<Record<string, string>> {
-  const [vitals, medOrders, investigations, courseNotes, reports, consultations, diet] =
-    await Promise.all([
-      nursingService.listVitals(admission.id, 60).catch(() => []),
-      supabase
-        .from('ipd_medication_orders')
-        .select('*')
-        .eq('admission_id', admission.id)
-        .then(({ data }) => (data ?? []) as MedicationOrder[]),
-      buildInvestigationsHtml(admission.id),
-      buildCourseNotesHtml(admission.id),
-      buildReportsHtml(admission.id),
-      buildConsultationsHtml(admission.id),
-      buildDietHtml(admission.id),
-    ]);
+  const [
+    vitals, io, notes, plans, medOrders,
+    investigations, reports, consultations, diet, administered, tasksDone,
+  ] = await Promise.all([
+    nursingService.listVitals(admission.id, 60).catch(() => []),
+    nursingService.listIO(admission.id, 200).catch(() => []),
+    // Fetched once here and shared: the hospital course wants the doctor's
+    // notes, the nursing sheet wants the nurse's, and both come off this list.
+    nursingService.listNotes(admission.id, 200).catch(() => []),
+    treatmentPlanService.list(admission.id).catch(() => []),
+    supabase
+      .from('ipd_medication_orders')
+      .select('*')
+      .eq('admission_id', admission.id)
+      .then(({ data }) => (data ?? []) as MedicationOrder[]),
+    buildInvestigationsHtml(admission.id),
+    buildReportsHtml(admission.id),
+    buildConsultationsHtml(admission.id),
+    buildDietHtml(admission.id),
+    buildAdministeredMedsHtml(admission.id),
+    buildTasksDoneHtml(admission.id),
+  ]);
+  const courseNotes = buildCourseNotesHtml(notes, plans);
   const latest = vitals[0];
   const latestVitals = latest
     ? [
@@ -940,12 +1168,17 @@ async function buildPlaceholderMap(admission: Admission): Promise<Record<string,
       : 'Routine',
     'vitals.latest': latestVitals,
     'vitals.chart': buildVitalsChartHtml(vitals),
+    'io.chart': buildIoChartHtml(io),
     'medications.discharge': buildDischargeMedsHtml(medOrders),
     'medications.course': buildCourseMedsHtml(medOrders),
+    'medications.administered': administered,
     'investigations.list': investigations,
     'reports.list': reports,
     'consultations.list': consultations,
     'diet.current': diet,
+    'notes.nursing': buildNursingNotesHtml(notes),
+    'tasks.done': tasksDone,
+    'plan.today': buildTodayPlanHtml(plans),
     'notes.course': courseNotes,
     // Narrative placeholders default to the mechanical output; the AI path
     // (generateDischargeNarrative) overrides these three before resolving.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { IndianRupee, FileText, Calendar, Search, Plus, Eye, Edit, RotateCcw, MessageCircle, Loader2, RefreshCw } from 'lucide-react';
+import { IndianRupee, FileText, Calendar, Search, Plus, Eye, Edit, RotateCcw, MessageCircle, Loader2, RefreshCw, Ban } from 'lucide-react';
 import { Bill, Patient } from '../../types';
 import { billingService } from '../../services/billingService';
 import { patientService } from '../../services/patientService';
@@ -39,6 +39,7 @@ const BillingDashboard: React.FC = () => {
   const [doctors, setDoctors] = useState<any[]>([]);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundBill, setRefundBill] = useState<Bill | null>(null);
+  const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
   const [whatsappBillId, setWhatsappBillId] = useState<string | null>(null);
   const [regeneratingBillId, setRegeneratingBillId] = useState<string | null>(null);
   const { sendBillMessage } = useWhatsApp({ clinicId: user?.clinicId, userId: user?.id });
@@ -94,6 +95,7 @@ const BillingDashboard: React.FC = () => {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'partial': return 'bg-blue-100 text-blue-800';
       case 'overdue': return 'bg-red-100 text-red-800';
+      case 'cancelled': return 'bg-gray-200 text-gray-600 line-through';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -114,6 +116,44 @@ const BillingDashboard: React.FC = () => {
   const formatRefundStatus = (status: Bill['refundStatus']) => status.replace(/_/g, ' ');
 
   const canRequestRefund = (bill: Bill) => bill.paidAmount - bill.totalRefundedAmount > 1 && canEditBill(bill);
+
+  // Only an admin may void a bill, and only one that holds no money — the same
+  // rules are enforced in the cancel_bill function so this is just the first
+  // line of defence. Cancelling replaces deleting: the row and its history stay.
+  const canCancelBill = (bill: Bill) => {
+    if (!user) return false;
+    if (bill.paymentStatus === 'cancelled') return false;
+    if (bill.paidAmount > 0) return false;
+    const roleName = user.roleName?.toLowerCase();
+    return (
+      roleName === 'admin' ||
+      roleName === 'super_admin' ||
+      user.permissions?.includes('all') ||
+      user.permissions?.includes('manage_billing')
+    );
+  };
+
+  const handleCancelBill = async (bill: Bill) => {
+    const reason = window.prompt(
+      `Cancel bill ${bill.billNumber}? It stays on record as cancelled and drops out of revenue.
+
+Reason:`
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert('A cancellation reason is required.');
+      return;
+    }
+    setCancellingBillId(bill.id);
+    try {
+      await billingService.cancelBill(bill.id, reason);
+      await loadData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to cancel bill.');
+    } finally {
+      setCancellingBillId(null);
+    }
+  };
 
   const handleRefundClick = (bill: Bill) => {
     setRefundBill(bill);
@@ -186,6 +226,9 @@ const BillingDashboard: React.FC = () => {
   // Check if user can edit a specific bill (additional checks can be added)
   const canEditBill = (bill: Bill) => {
     if (!canEditBills()) return false;
+    // A voided bill is a closed record — editing it would re-open amounts that
+    // have already been excluded from revenue.
+    if (bill.paymentStatus === 'cancelled') return false;
     
     // Additional checks can be added here, such as:
     // - Bill status (e.g., can't edit paid bills)
@@ -450,6 +493,7 @@ const BillingDashboard: React.FC = () => {
             <option value="pending">Pending</option>
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
+            <option value="cancelled">Cancelled</option>
           </select>
           
           <select
@@ -633,6 +677,16 @@ const BillingDashboard: React.FC = () => {
                           title="Request Refund"
                         >
                           <RotateCcw className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canCancelBill(bill) && (
+                        <button
+                          onClick={() => handleCancelBill(bill)}
+                          className="text-red-600 hover:text-red-900 disabled:text-gray-400"
+                          title="Cancel (void) this bill"
+                          disabled={cancellingBillId === bill.id}
+                        >
+                          <Ban className="w-4 h-4" />
                         </button>
                       )}
                       <button

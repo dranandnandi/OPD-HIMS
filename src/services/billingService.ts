@@ -27,6 +27,9 @@ const convertDatabaseBill = (
   refundStatus: dbBill.refund_status || 'not_requested',
   lastRefundAt: dbBill.last_refund_at ? new Date(dbBill.last_refund_at) : undefined,
   refundNotes: dbBill.refund_notes || undefined,
+  cancelledAt: dbBill.cancelled_at ? new Date(dbBill.cancelled_at) : undefined,
+  cancelledBy: dbBill.cancelled_by || undefined,
+  cancellationReason: dbBill.cancellation_reason || undefined,
   pdfUrl: dbBill.pdf_url || undefined, // Map stored PDF URL
   createdAt: new Date(dbBill.created_at),
   updatedAt: new Date(dbBill.updated_at),
@@ -589,31 +592,36 @@ export const billingService = {
     ));
   },
 
-  // Delete a bill (and all its items and payments)
-  async deleteBill(billId: string): Promise<void> {
+  /**
+   * Void a bill, keeping the row and the audit trail.
+   *
+   * This replaces a hard delete. `bills.delete()` cascaded payment_records,
+   * bill_items and refund_requests away, erasing any record that money had been
+   * collected and leaving a hole in the bill-number sequence — and it failed
+   * outright on bills tied to a lab order, which references bills(id) with no
+   * ON DELETE clause.
+   *
+   * The checks (admin only, no payments collected, no open refunds, reason
+   * required) live in the cancel_bill SECURITY DEFINER function so they cannot
+   * be bypassed by writing bills.status through the REST API.
+   */
+  async cancelBill(billId: string, reason: string): Promise<void> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
     }
 
-    const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
+    const trimmed = reason?.trim();
+    if (!trimmed) {
+      throw new Error('A cancellation reason is required.');
     }
 
-    try {
-      // Delete bill (cascade will handle bill_items and payment_records)
-      const { error } = await supabase
-        .from('bills')
-        .delete()
-        .eq('id', billId)
-        .eq('clinic_id', profile.clinicId);
+    const { error } = await supabase.rpc('cancel_bill', {
+      p_bill_id: billId,
+      p_reason: trimmed
+    });
 
-      if (error) {
-        throw new Error(`Failed to delete bill: ${error.message}`);
-      }
-    } catch (error) {
-      console.error('Error deleting bill:', error);
-      throw error;
+    if (error) {
+      throw new Error(error.message || 'Failed to cancel bill');
     }
   },
 

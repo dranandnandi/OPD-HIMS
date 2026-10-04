@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Warehouse, ArrowRight, Syringe, Upload, Check } from 'lucide-react';
+import { Plus, Warehouse, ArrowRight, Syringe, Upload, Check, ClipboardList, Truck, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
@@ -8,6 +8,15 @@ import { storeService, Store, StoreStockRow, StoreTransfer } from '../services/s
 import { medicationService, MedicineOption } from '../services/medicationService';
 import { admissionService } from '../services/admissionService';
 import type { Admission } from '../types/ipd';
+import {
+  storeIndentService,
+  indentTotals,
+  INDENT_STATUS_CLASS,
+  INDENT_STATUS_LABEL,
+  OPEN_FOR_STORE,
+  type StoreIndent,
+  type StoreIndentPriority,
+} from '../../../services/storeIndentService';
 
 export default function StoresPage() {
   const { clinicId, profile } = useAuth();
@@ -122,6 +131,8 @@ export default function StoresPage() {
               <TransferCard clinicId={clinicId!} stores={stores} defaultTo={selected} userId={profile?.id} onDone={refreshStock} />
               <UploadCard clinicId={clinicId!} store={selected} userId={profile?.id} onDone={refreshStock} />
               <ConsumeCard clinicId={clinicId!} store={selected} stock={stock} userId={profile?.id} onDone={refreshStock} />
+              <IndentCard clinicId={clinicId!} store={selected} userId={profile?.id} onDone={refreshStock} />
+              <IndentsPanel clinicId={clinicId!} store={selected} userId={profile?.id} onDone={refreshStock} />
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <h2 className="text-sm font-medium text-slate-700 mb-2">{selected.name} — stock</h2>
                 <table className="w-full text-sm">
@@ -599,6 +610,250 @@ function ConsumeCard({
         With a patient selected: deducts this store, records the dispense, and posts the charge
         at the clinic selling price — package inclusion/exclusion rules apply automatically.
       </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Indents — this store ORDERS stock from the main pharmacy instead of someone
+// pushing it. The main pharmacy is notified (Pharmacy → Ward Indents) and
+// dispatches; what it sends lands in this store's stock automatically.
+// ---------------------------------------------------------------------------
+
+interface IndentLine {
+  med: MedicineOption | null;
+  qty: string;
+}
+
+function IndentCard({
+  clinicId, store, userId, onDone,
+}: {
+  clinicId: string; store: Store; userId?: string; onDone: () => void;
+}) {
+  const [lines, setLines] = useState<IndentLine[]>([{ med: null, qty: '' }]);
+  const [priority, setPriority] = useState<StoreIndentPriority>('routine');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const setLine = (i: number, patch: Partial<IndentLine>) =>
+    setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  const send = async () => {
+    const payload = lines
+      .filter((l) => l.med && Number(l.qty) > 0)
+      .map((l) => ({ medicineId: l.med!.id, quantity: Number(l.qty) }));
+    if (payload.length === 0) {
+      toast.error('Add at least one medicine with a quantity');
+      return;
+    }
+    setBusy(true);
+    try {
+      await storeIndentService.create({
+        clinicId, storeId: store.id, lines: payload, priority,
+        notes: notes.trim() || undefined, userId,
+      });
+      toast.success('Indent sent to the main pharmacy');
+      setLines([{ med: null, qty: '' }]);
+      setNotes('');
+      setPriority('routine');
+      onDone();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <h2 className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-1.5">
+        <ClipboardList className="w-4 h-4 text-navy-600" /> Indent from Main Pharmacy
+      </h2>
+
+      <div className="space-y-2">
+        {lines.map((l, i) => (
+          <div key={i} className="flex flex-wrap gap-2 items-center">
+            <MedicinePicker
+              clinicId={clinicId}
+              value={l.med}
+              onPick={(m) => setLine(i, { med: m })}
+              placeholder="Medicine…"
+            />
+            <input
+              type="number"
+              value={l.qty}
+              onChange={(e) => setLine(i, { qty: e.target.value })}
+              placeholder="Qty"
+              className="w-20 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+            {l.med && (
+              <span className="text-xs text-slate-400">main pool: {l.med.current_stock}</span>
+            )}
+            {lines.length > 1 && (
+              <button
+                onClick={() => setLines(lines.filter((_, j) => j !== i))}
+                className="text-slate-400 hover:text-red-600"
+                title="Remove line"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => setLines([...lines, { med: null, qty: '' }])}
+        className="mt-2 text-xs text-navy-700 hover:underline flex items-center gap-1"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add another medicine
+      </button>
+
+      <div className="flex flex-wrap gap-2 items-center mt-3">
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value as StoreIndentPriority)}
+          className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+        >
+          <option value="routine">Routine</option>
+          <option value="urgent">Urgent</option>
+          <option value="stat">STAT</option>
+        </select>
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Note for the pharmacy (optional)"
+          className="flex-1 min-w-44 border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
+        />
+        <button
+          onClick={send}
+          disabled={busy}
+          className="bg-navy-700 hover:bg-navy-800 disabled:opacity-50 text-white text-sm rounded-lg px-4 py-1.5"
+        >
+          {busy ? 'Sending…' : 'Send indent'}
+        </button>
+      </div>
+      <p className="text-xs text-slate-400 mt-2">
+        Nothing moves yet — the main pharmacy sees this under Pharmacy → Ward Indents and
+        dispatches. Dispatched quantities land in {store.name} automatically.
+      </p>
+    </div>
+  );
+}
+
+function IndentsPanel({
+  clinicId, store, userId, onDone,
+}: {
+  clinicId: string; store: Store; userId?: string; onDone: () => void;
+}) {
+  const [indents, setIndents] = useState<StoreIndent[]>([]);
+  const [showAll, setShowAll] = useState(false);
+
+  const load = useCallback(() => {
+    storeIndentService
+      .list(clinicId, { storeId: store.id, statuses: showAll ? undefined : OPEN_FOR_STORE, limit: 30 })
+      .then(setIndents)
+      .catch(() => setIndents([]));
+  }, [clinicId, store.id, showAll]);
+
+  useEffect(load, [load]);
+
+  // the pharmacy dispatching shows up here without a refresh, and the store's
+  // stock has just changed, so pull that too
+  useEffect(
+    () => storeIndentService.subscribe(clinicId, () => { load(); onDone(); }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clinicId, load]
+  );
+
+  const awaitingReceipt = indents.filter((i) => i.status === 'dispatched' || i.status === 'partial');
+
+  const receive = async (indent: StoreIndent) => {
+    try {
+      await storeIndentService.markReceived(indent.id, userId);
+      toast.success(`${indent.indent_no} marked received`);
+      load();
+      onDone();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const cancel = async (indent: StoreIndent) => {
+    try {
+      await storeIndentService.cancel(indent.id, undefined, userId);
+      toast.success(`${indent.indent_no} cancelled`);
+      load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+          <Truck className="w-4 h-4 text-navy-600" /> Indents from {store.name}
+        </h2>
+        <button onClick={() => setShowAll(!showAll)} className="text-xs text-navy-700 hover:underline">
+          {showAll ? 'Show open only' : 'Show all'}
+        </button>
+      </div>
+
+      {awaitingReceipt.length > 0 && (
+        <div className="mb-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+          {awaitingReceipt.length} indent{awaitingReceipt.length === 1 ? ' has' : 's have'} been
+          dispatched by the main pharmacy — confirm receipt once the stock physically arrives.
+        </div>
+      )}
+
+      <ul className="divide-y divide-slate-100">
+        {indents.map((indent) => {
+          const totals = indentTotals(indent);
+          return (
+            <li key={indent.id} className="py-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-mono text-xs text-slate-400">{indent.indent_no}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${INDENT_STATUS_CLASS[indent.status]}`}>
+                  {INDENT_STATUS_LABEL[indent.status]}
+                </span>
+                {indent.priority !== 'routine' && (
+                  <span className="text-xs uppercase text-orange-700">{indent.priority}</span>
+                )}
+                <span className="text-slate-500 text-xs">
+                  {totals.lines} item{totals.lines === 1 ? '' : 's'} · {totals.dispatched}/{totals.requested} sent
+                </span>
+                <span className="ml-auto flex items-center gap-2">
+                  {(indent.status === 'dispatched' || indent.status === 'partial') && (
+                    <button
+                      onClick={() => receive(indent)}
+                      className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg px-2.5 py-1"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Mark received
+                    </button>
+                  )}
+                  {indent.status === 'ordered' && (
+                    <button onClick={() => cancel(indent)} className="text-xs text-slate-400 hover:text-red-600">
+                      Cancel
+                    </button>
+                  )}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {(indent.items ?? [])
+                  .map((it) => `${it.medicine?.name ?? 'Medicine'} × ${it.requested_qty}`)
+                  .join(', ')}
+                {indent.dispatch_remarks ? ` — ${indent.dispatch_remarks}` : ''}
+              </p>
+            </li>
+          );
+        })}
+        {indents.length === 0 && (
+          <li className="py-4 text-center text-slate-400 text-sm">
+            {showAll ? 'No indents raised from this store yet' : 'No open indents — raise one above'}
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

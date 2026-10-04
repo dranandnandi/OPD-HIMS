@@ -13,6 +13,7 @@ import {
   Pill,
   Star,
   TrendingUp,
+  PieChart,
   RefreshCw,
   ChevronDown,
   LayoutDashboard,
@@ -22,8 +23,8 @@ import {
   Warehouse,
   ShieldCheck,
   Percent,
-  MessageCircle
-} from 'lucide-react';
+  MessageCircle,
+  ClipboardList, RotateCcw} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { hasReceptionAccess } from '../../utils/roleAccess';
@@ -107,6 +108,8 @@ const Navigation: React.FC = () => {
       items: [
         { path: '/billing', icon: CreditCard, label: 'OPD Billing', description: 'Manage bills & payments', perm: 'opd_billing' },
         { path: '/billing/reconciliation', icon: TrendingUp, label: 'Daily Collection', description: 'Daily payment reconciliation', perm: 'opd_collections' },
+        { path: '/billing/refunds', icon: RotateCcw, label: 'Refund Requests', description: 'Approve, reject & pay out refunds', perm: 'opd_billing' },
+        { path: '/billing/income', icon: PieChart, label: 'Income Break-up', description: 'Income by head & doctor, OPD + IPD', perm: 'analytics' },
       ],
     },
     {
@@ -115,6 +118,7 @@ const Navigation: React.FC = () => {
       items: [
         { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory', perm: 'pharmacy' },
         { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing', perm: 'pharmacy' },
+        { path: '/pharmacy/indents', icon: ClipboardList, label: 'Ward Indents', description: 'Stock ordered by IP Pharmacy & ward stores', perm: 'pharmacy' },
       ],
     },
     ...(!isBasic

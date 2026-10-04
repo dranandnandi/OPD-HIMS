@@ -78,7 +78,7 @@ serve(async (req) => {
       throw new Error(`consent artefact insert failed: ${consentError.message}`);
     }
 
-    const { error: patientError } = await caller.admin
+    const { data: updated, error: patientError } = await caller.admin
       .from('patients')
       .update({
         abha_number: digits,
@@ -93,7 +93,27 @@ serve(async (req) => {
       .eq('id', patientId)
       // Defence in depth behind assertPatientInCallerClinic: even a bug above
       // cannot write across clinics.
-      .eq('clinic_id', caller.clinicId);
+      .eq('clinic_id', caller.clinicId)
+      // ############ WHY THIS SELECT IS NOT DECORATION ######################
+      //
+      // PostgREST reports NO ERROR when an UPDATE matches zero rows. Without
+      // reading back what changed, a filter that matches nothing — a deleted
+      // patient, a clinic_id that moved — returns `error: null`, this function
+      // returns `{ linked: true }`, and the audit log records SUCCESS for a
+      // write that touched nothing.
+      //
+      // That is worse than a failure: the consent artefact above IS written,
+      // so the records disagree, and the only symptom appears much later as
+      // "no patient matched" in a discovery callback.
+      // ####################################################################
+      .select('id');
+
+    if (!patientError && (updated?.length ?? 0) === 0) {
+      throw new Error(
+        `patient update matched no rows (patient ${patientId}, clinic ${caller.clinicId}) — ` +
+          'consent artefact was written but the ABHA was NOT linked',
+      );
+    }
 
     if (patientError) {
       // The unique partial index on abha_number is the guard against linking

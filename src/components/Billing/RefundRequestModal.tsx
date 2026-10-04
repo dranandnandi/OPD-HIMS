@@ -31,9 +31,6 @@ const statusColors: Record<RefundRequest['status'], string> = {
 
 const RefundRequestModal: React.FC<RefundRequestModalProps> = ({ bill, onClose, onRequestCreated }) => {
   const { user } = useAuth();
-  const refundableAmount = useMemo(() => Math.max(bill.paidAmount - bill.totalRefundedAmount, 0), [bill]);
-
-  const [amount, setAmount] = useState(refundableAmount);
   const [method, setMethod] = useState<RefundRequest['refundMethod']>('cash');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,10 +39,36 @@ const RefundRequestModal: React.FC<RefundRequestModalProps> = ({ bill, onClose, 
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Open requests hold money that cannot be requested twice — see the same
+  // netting in BillModal and the server-side cap in refundService.
+  const openRequestTotal = useMemo(
+    () => requests
+      .filter((r) => r.status === 'draft' || r.status === 'pending_approval' || r.status === 'approved')
+      .reduce((sum, r) => sum + r.totalAmount, 0),
+    [requests]
+  );
+
+  const refundableAmount = useMemo(
+    () => Math.max(bill.paidAmount - bill.totalRefundedAmount - openRequestTotal, 0),
+    [bill, openRequestTotal]
+  );
+
+  const [amount, setAmount] = useState(refundableAmount);
+
+  // The list loads after first render, so the refundable figure drops once open
+  // requests are known. Pull the typed amount down with it rather than leaving
+  // a value the server will now reject.
+  useEffect(() => {
+    setAmount((current) => (current > refundableAmount ? refundableAmount : current));
+  }, [refundableAmount]);
+
+  // roleName is free text from User Management, so lowercase it the way the
+  // rest of the app does — see canManageRefunds in BillModal.
   const canManageRefunds = Boolean(
     user && (
-      user.roleName === 'admin' ||
-      user.roleName === 'super_admin' ||
+      user.roleName?.toLowerCase() === 'admin' ||
+      user.roleName?.toLowerCase() === 'super_admin' ||
+      user.permissions?.includes('all') ||
       user.permissions?.includes('manage_billing') ||
       user.permissions?.includes('manage_finance') ||
       user.permissions?.includes('approve_refunds')
@@ -330,7 +353,7 @@ const RefundRequestModal: React.FC<RefundRequestModalProps> = ({ bill, onClose, 
                             </button>
                           </>
                         )}
-                        {(request.status === 'approved' || request.status === 'pending_approval') && (
+                        {request.status === 'approved' && (
                           <button
                             type="button"
                             onClick={() => handleMarkPaid(request)}

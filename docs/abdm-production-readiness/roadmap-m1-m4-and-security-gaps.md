@@ -73,7 +73,7 @@ Three things about the PDF you gave me change the plan:
 | Profile fetch | `supabase/functions/abdm-fetch-profile/index.ts` | Working (sandbox) |
 | Frontend service | `src/services/abhaService.ts` | Working |
 | 4-step link UI + consent | `src/components/Patients/ABHALinkModal.tsx` | Working |
-| Patient ABHA columns | `supabase/migrations/20260402_add_abha_fields.sql` | Applied |
+| Patient ABHA columns | `supabase/migrations/20260402000001_add_abha_fields.sql` | Applied |
 | Audit log table | `supabase/migrations/20260402_add_abdm_audit_log.sql` | Applied, **no RLS** (G-01) |
 
 **Coverage against M1:** roughly **25%**. One creation path, one profile read, no QR,

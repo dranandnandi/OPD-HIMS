@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, IndianRupee, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp, Clock, Users, BarChart3, PieChart } from 'lucide-react';
+import { Calendar, IndianRupee, CreditCard, Smartphone, FileText, Building, Wallet, TrendingUp, Clock, Users, BarChart3, PieChart, RotateCcw, UserCircle } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { DailyPaymentSummary } from '../../types';
 
@@ -46,6 +46,19 @@ const DailyReconciliation: React.FC = () => {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
+  };
+
+  // The report is bounded on clinic-local midnights, so the date the user
+  // picks has to be read and written in local time too - toISOString() here
+  // would show the previous day for any receipt taken before 05:30 IST.
+  const toDateInput = (date: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+
+  const fromDateInput = (value: string): Date => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
   };
 
   const formatDate = (date: Date): string => {
@@ -150,8 +163,8 @@ const DailyReconciliation: React.FC = () => {
             <input
               type="date"
               id="date"
-              value={selectedDate.toISOString().split('T')[0]}
-              onChange={(e) => setSelectedDate(new Date(e.target.value))}
+              value={toDateInput(selectedDate)}
+              onChange={(e) => setSelectedDate(fromDateInput(e.target.value))}
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
@@ -190,14 +203,34 @@ const DailyReconciliation: React.FC = () => {
               <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white col-span-full lg:col-span-1">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-blue-100 text-sm font-medium">Total Collection</p>
+                    <p className="text-blue-100 text-sm font-medium">Net Collection</p>
                     <p className="text-3xl font-bold">{formatCurrency(summary.total)}</p>
                     <p className="text-blue-100 text-sm mt-1">
-                      {summary.transactionCount} transaction{summary.transactionCount !== 1 ? 's' : ''}
+                      {summary.transactionCount} receipt{summary.transactionCount !== 1 ? 's' : ''}
                     </p>
                   </div>
                   <div className="bg-blue-400 bg-opacity-30 rounded-full p-3">
                     <TrendingUp className="w-8 h-8" />
+                  </div>
+                </div>
+                <div className="mt-4 pt-3 border-t border-blue-400 border-opacity-40 flex items-center justify-between text-sm">
+                  <div>
+                    <p className="text-blue-100">Collected</p>
+                    <p className="font-semibold">{formatCurrency(summary.gross)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-blue-100 flex items-center justify-end gap-1">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Refunded
+                    </p>
+                    <p className="font-semibold">
+                      {summary.refunds === 0 ? '-' : formatCurrency(summary.refunds)}
+                      {summary.refundCount > 0 && (
+                        <span className="text-blue-100 font-normal ml-1">
+                          ({summary.refundCount})
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -224,6 +257,67 @@ const DailyReconciliation: React.FC = () => {
               ))}
             </div>
 
+            {/* Who collected it - the counter accountability view */}
+            {summary.collectorBreakdown.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
+                  <UserCircle className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">Collected By</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Collected</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Refunded</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Receipts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {summary.collectorBreakdown.map((collector) => (
+                        <tr key={collector.userId ?? 'unassigned'} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {collector.userName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 tabular-nums">
+                            {formatCurrency(collector.gross)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right tabular-nums text-gray-500">
+                            {collector.refunds === 0 ? '-' : formatCurrency(collector.refunds)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900 tabular-nums">
+                            {formatCurrency(collector.net)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 tabular-nums">
+                            {collector.count}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                      <tr>
+                        <td className="px-6 py-3 text-sm font-semibold text-gray-900">Total</td>
+                        <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 tabular-nums">
+                          {formatCurrency(summary.gross)}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 tabular-nums">
+                          {summary.refunds === 0 ? '-' : formatCurrency(summary.refunds)}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 tabular-nums">
+                          {formatCurrency(summary.total)}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 tabular-nums">
+                          {summary.transactionCount + summary.refundCount}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Detailed Breakdown Table */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
@@ -249,7 +343,9 @@ const DailyReconciliation: React.FC = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {summary.paymentBreakdown.map((breakdown) => {
-                      const percentage = summary.total > 0 ? (breakdown.amount / summary.total) * 100 : 0;
+                      // Share of gross: on a heavy refund day a net-based share
+                      // would swing past 100% or go negative.
+                      const percentage = summary.gross > 0 ? (breakdown.amount / summary.gross) * 100 : 0;
                       return (
                         <tr key={breakdown.method} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -277,7 +373,7 @@ const DailyReconciliation: React.FC = () => {
                               <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
                                 <div
                                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                  style={{ width: `${percentage}%` }}
+                                  style={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
                                 ></div>
                               </div>
                               <span className="text-sm text-gray-600">{percentage.toFixed(1)}%</span>
@@ -296,7 +392,10 @@ const DailyReconciliation: React.FC = () => {
               <div className="bg-white rounded-lg shadow-md p-6 mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <PieChart className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">Revenue by Service Category</h3>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Service Mix of Bills Collected</h3>
+                    <p className="text-xs text-gray-500">Full value of each bill money came in against today, counted once</p>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {enhancedReport.serviceCategories.map((category: any, index: number) => {
@@ -403,7 +502,7 @@ const DailyReconciliation: React.FC = () => {
             {summary.total === 0 && (
               <div className="text-center py-12">
                 <IndianRupee className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Collections Today</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Collections</h3>
                 <p className="text-gray-600">No payments were recorded for {formatDate(selectedDate)}</p>
               </div>
             )}

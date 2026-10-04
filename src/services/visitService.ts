@@ -233,6 +233,11 @@ export const visitService = {
         emergencyContact: visit.patients.emergency_contact,
         bloodGroup: visit.patients.blood_group,
         allergies: visit.patients.allergies,
+        // Carried through so a visit can tell whether ABDM sharing applies at
+        // all, without a round trip per visit opened.
+        abha_number: visit.patients.abha_number,
+        abha_address: visit.patients.abha_address,
+        abha_consent_given: visit.patients.abha_consent_given,
         createdAt: new Date(visit.patients.created_at),
         lastVisit: visit.patients.last_visit ? new Date(visit.patients.last_visit) : undefined
       } : undefined,
@@ -348,6 +353,11 @@ export const visitService = {
         emergencyContact: visit.patients.emergency_contact,
         bloodGroup: visit.patients.blood_group,
         allergies: visit.patients.allergies,
+        // Carried through so a visit can tell whether ABDM sharing applies at
+        // all, without a round trip per visit opened.
+        abha_number: visit.patients.abha_number,
+        abha_address: visit.patients.abha_address,
+        abha_consent_given: visit.patients.abha_consent_given,
         createdAt: new Date(visit.patients.created_at),
         lastVisit: visit.patients.last_visit ? new Date(visit.patients.last_visit) : undefined
       } : undefined,
@@ -594,6 +604,11 @@ export const visitService = {
         emergencyContact: visit.patients.emergency_contact,
         bloodGroup: visit.patients.blood_group,
         allergies: visit.patients.allergies,
+        // Carried through so a visit can tell whether ABDM sharing applies at
+        // all, without a round trip per visit opened.
+        abha_number: visit.patients.abha_number,
+        abha_address: visit.patients.abha_address,
+        abha_consent_given: visit.patients.abha_consent_given,
         createdAt: new Date(visit.patients.created_at),
         lastVisit: visit.patients.last_visit ? new Date(visit.patients.last_visit) : undefined
       } : undefined,
@@ -862,6 +877,11 @@ export const visitService = {
         emergencyContact: visit.patients.emergency_contact,
         bloodGroup: visit.patients.blood_group,
         allergies: visit.patients.allergies,
+        // Carried through so a visit can tell whether ABDM sharing applies at
+        // all, without a round trip per visit opened.
+        abha_number: visit.patients.abha_number,
+        abha_address: visit.patients.abha_address,
+        abha_consent_given: visit.patients.abha_consent_given,
         createdAt: new Date(visit.patients.created_at),
         lastVisit: visit.patients.last_visit ? new Date(visit.patients.last_visit) : undefined
       } : undefined,

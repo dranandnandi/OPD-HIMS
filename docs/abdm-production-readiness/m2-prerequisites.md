@@ -425,7 +425,7 @@ ABDM mints a distinct HIP ID for each facility that links it.
 
 ## 11. M2 foundations built — 2026-08-26
 
-### Care contexts (`20260826020000_abdm_care_contexts.sql`) — NEEDS RUNNING
+### Care contexts (`20260826020000_abdm_care_contexts.sql`) — APPLIED, verified on Mumbai 2026-09-01
 
 Two tables, both service-role only:
 
