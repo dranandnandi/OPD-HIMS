@@ -6,8 +6,18 @@ import { masterDataService } from '../../services/masterDataService';
 import { getCurrentProfile } from '../../services/profileService';
 import { MedicineMaster, TestMaster, MedicineWithPrice, TestWithPrice, ClinicMedicinePrice, ClinicTestPrice } from '../../types';
 import AIMasterSettings from './AIMasterSettings';
+import { hasModuleAccess } from '../../utils/modulePermissions';
 
-const MasterDataManagement: React.FC = () => {
+interface MasterDataManagementProps {
+  /**
+   * Opened from the Pharmacy module (/pharmacy/medicines): anyone with pharmacy
+   * access may maintain medicines (rack, HSN, GST, barcode, prices) and the
+   * screen opens on the Medicines tab.
+   */
+  pharmacyMode?: boolean;
+}
+
+const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMode = false }) => {
   const { user, hasPermission } = useAuth();
   const location = useLocation();
 
@@ -17,8 +27,10 @@ const MasterDataManagement: React.FC = () => {
     hasPermission('admin') ||
     hasPermission('all');
 
+  const canManage = hasPermission('master_data_management') || (pharmacyMode && hasModuleAccess(user, 'pharmacy'));
+
   const [activeTab, setActiveTab] = useState<'ai-assistant' | 'medicines' | 'tests' | 'pricing'>(
-    (location.state as { activeTab?: 'ai-assistant' | 'medicines' | 'tests' | 'pricing' })?.activeTab || 'ai-assistant'
+    (location.state as { activeTab?: 'ai-assistant' | 'medicines' | 'tests' | 'pricing' })?.activeTab || (pharmacyMode ? 'medicines' : 'ai-assistant')
   );
   const [medicines, setMedicines] = useState<MedicineWithPrice[]>([]);
   const [tests, setTests] = useState<TestWithPrice[]>([]);
@@ -42,7 +54,7 @@ const MasterDataManagement: React.FC = () => {
   }, [location.state, activeTab]);
 
   useEffect(() => {
-    if (user && hasPermission('master_data_management')) {
+    if (user && canManage) {
       loadData();
     }
   }, [user, activeTab]);
@@ -112,7 +124,7 @@ const MasterDataManagement: React.FC = () => {
     }
   };
 
-  if (!user || !hasPermission('master_data_management')) {
+  if (!user || !canManage) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
@@ -418,6 +430,8 @@ const MedicinesTable: React.FC<{
             <th className="text-left py-3 px-4 font-medium text-gray-700">Generic Name</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Category</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Dosage Form</th>
+            <th className="text-left py-3 px-4 font-medium text-gray-700">Rack</th>
+            <th className="text-left py-3 px-4 font-medium text-gray-700">HSN / GST</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Stock Info</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Clinic Pricing</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
@@ -441,6 +455,15 @@ const MedicinesTable: React.FC<{
               <td className="py-3 px-4 text-gray-600">{medicine.genericName || '-'}</td>
               <td className="py-3 px-4 text-gray-600">{medicine.category}</td>
               <td className="py-3 px-4 text-gray-600">{medicine.dosageForm}</td>
+              <td className="py-3 px-4">
+                {medicine.rackLocation
+                  ? <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-medium">{medicine.rackLocation}</span>
+                  : <span className="text-gray-400 text-xs">—</span>}
+              </td>
+              <td className="py-3 px-4 text-gray-600 text-xs">
+                <div>{medicine.hsnCode || <span className="text-amber-600">HSN not set</span>}</div>
+                <div>GST {medicine.gstRate ?? 12}%</div>
+              </td>
               <td className="py-3 px-4 text-gray-600">
                 <div className="space-y-1">
                   <div>Stock: {medicine.currentStock}</div>
@@ -860,6 +883,11 @@ const MasterDataModal: React.FC<{
           contraindications: [],
           currentStock: 0,
           reorderLevel: 0,
+          rackLocation: '',
+          barcode: '',
+          isChronic: false,
+          hsnCode: '3004',
+          gstRate: 12,
           isActive: true
         });
       } else {
@@ -1014,6 +1042,71 @@ const MasterDataModal: React.FC<{
                     onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rack / Location</label>
+                  <input
+                    type="text"
+                    value={formData.rackLocation || ''}
+                    onChange={(e) => setFormData({ ...formData, rackLocation: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g. R2-S3 or Fridge"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Shown to the pharmacist while dispensing.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
+                  <input
+                    type="text"
+                    value={formData.hsnCode || ''}
+                    onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="3004 for most medicines"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate %</label>
+                  <select
+                    value={formData.gstRate ?? 12}
+                    onChange={(e) => setFormData({ ...formData, gstRate: parseFloat(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value={0}>0% (exempt)</option>
+                    <option value={5}>5% (life-saving / insulin / vaccines)</option>
+                    <option value={12}>12% (most medicines)</option>
+                    <option value={18}>18% (consumables, supplements)</option>
+                    <option value={28}>28%</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={formData.barcode || ''}
+                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Click here and scan the pack"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Scan once; the counter and purchase screens match on it.</p>
+                </div>
+                <div className="flex items-start gap-3 pt-7">
+                  <input
+                    id="isChronic"
+                    type="checkbox"
+                    checked={!!formData.isChronic}
+                    onChange={(e) => setFormData({ ...formData, isChronic: e.target.checked })}
+                    className="mt-1 rounded"
+                  />
+                  <label htmlFor="isChronic" className="text-sm text-gray-700">
+                    Long-term (chronic) medicine
+                    <span className="block text-xs text-gray-500">Pre-ticks the refill reminder when this is sold.</span>
+                  </label>
                 </div>
               </div>
             </>

@@ -461,10 +461,17 @@ export interface DatabaseBill {
   paid_amount: number;
   balance_amount: number;
   status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
-  payment_method?: 'cash' | 'card' | 'upi' | 'cheque' | 'online';
+  payment_method?: 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet' | 'online';
   bill_date: string;
   due_date?: string;
   notes?: string;
+  bill_type?: 'opd' | 'pharmacy' | 'ipd';
+  taxable_amount?: number;
+  discount_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  round_off?: number;
   total_refunded_amount: number;
   refund_status: 'not_requested' | 'pending' | 'partial' | 'refunded';
   last_refund_at?: string;
@@ -493,6 +500,17 @@ export interface DatabaseBillItem {
   last_refund_reason?: string;
   created_at: string;
   clinic_id?: string;
+  medicine_id?: string | null;
+  batch_id?: string | null;
+  batch_number?: string | null;
+  expiry_date?: string | null;
+  hsn_code?: string | null;
+  gst_rate?: number;
+  mrp?: number | null;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
 }
 
 export interface DatabasePaymentRecord {
@@ -591,6 +609,12 @@ export interface DatabaseClinicSetting {
   logo_url?: string;
   registration_number?: string;
   tax_id?: string;
+  gstin?: string | null;
+  gst_state_code?: string | null;
+  drug_license_number?: string | null;
+  pharmacy_gst_scheme?: 'regular' | 'composition';
+  pharmacy_prices_include_gst?: boolean;
+  pharmacy_invoice_prefix?: string;
   consultation_fee: number;
   follow_up_fee: number;
   emergency_fee: number;
@@ -665,6 +689,11 @@ export interface DatabaseMedicineMaster {
   reorder_level: number;
   batch_number?: string;
   expiry_date?: string;
+  rack_location?: string | null;
+  barcode?: string | null;
+  is_chronic?: boolean;
+  hsn_code?: string | null;
+  gst_rate?: number;
   clinic_id: string;
   is_active: boolean;
   created_at: string;
@@ -693,6 +722,9 @@ export interface DatabaseSupplier {
   phone?: string;
   email?: string;
   address?: string;
+  gstin?: string | null;
+  state_code?: string | null;
+  drug_license_number?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -708,6 +740,15 @@ export interface DatabasePharmacyInwardReceipt {
   invoice_file_url?: string;
   status: 'uploaded' | 'processing' | 'completed' | 'failed';
   remarks?: string;
+  supplier_invoice_date?: string | null;
+  is_interstate?: boolean;
+  taxable_amount?: number;
+  discount_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  round_off?: number;
+  grand_total?: number;
   created_at: string;
   clinic_id?: string;
   updated_at: string;
@@ -722,6 +763,18 @@ export interface DatabasePharmacyInwardItem {
   total_cost_price: number;
   batch_number?: string;
   expiry_date?: string;
+  batch_id?: string | null;
+  hsn_code?: string | null;
+  gst_rate?: number;
+  mrp?: number | null;
+  discount_percent?: number;
+  discount_amount?: number;
+  free_quantity?: number;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  line_total?: number;
   clinic_id?: string;
   created_at: string;
 }
@@ -737,7 +790,71 @@ export interface DatabasePharmacyDispensedItem {
   selling_price_at_dispense?: number;
   total_selling_price?: number;
   batch_number?: string;
+  batch_id?: string | null;
+  bill_id?: string | null;
+  hsn_code?: string | null;
+  gst_rate?: number;
+  mrp?: number | null;
+  discount_amount?: number;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  refunded_quantity?: number;
+  refund_request_id?: string | null;
   clinic_id?: string;
+  created_at: string;
+}
+
+export interface DatabaseMedicineBatch {
+  id: string;
+  clinic_id: string;
+  medicine_id: string;
+  batch_number: string;
+  expiry_date?: string | null;
+  mrp?: number | null;
+  purchase_rate?: number | null;
+  quantity: number;
+  supplier_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabasePharmacyDebitNote {
+  id: string;
+  clinic_id: string;
+  supplier_id: string;
+  debit_note_number: string;
+  note_date: string;
+  against_receipt_id?: string | null;
+  reason?: string | null;
+  is_interstate: boolean;
+  taxable_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  round_off: number;
+  grand_total: number;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface DatabasePharmacyDebitNoteItem {
+  id: string;
+  clinic_id: string;
+  debit_note_id: string;
+  medicine_id: string;
+  batch_id?: string | null;
+  batch_number?: string | null;
+  quantity: number;
+  unit_rate: number;
+  hsn_code?: string | null;
+  gst_rate: number;
+  taxable_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  line_total: number;
   created_at: string;
 }
 

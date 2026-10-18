@@ -95,7 +95,12 @@ const MobileNav: React.FC = () => {
       label: 'Pharmacy',
       items: [
         { path: '/pharmacy', icon: Pill, label: 'Pharmacy', perm: 'pharmacy' },
+        { path: '/pharmacy?sale=1', icon: Pill, label: 'Counter Sale', perm: 'pharmacy' },
+        { path: '/pharmacy/medicines', icon: Pill, label: 'Medicine Master', perm: 'pharmacy' },
         { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', perm: 'pharmacy' },
+        { path: '/pharmacy/purchases', icon: FileText, label: 'Purchase Register', perm: 'pharmacy' },
+        { path: '/pharmacy/gst', icon: FileText, label: 'GST Reports', perm: 'pharmacy' },
+        { path: '/pharmacy/mis', icon: BarChart3, label: 'Pharmacy MIS', perm: 'pharmacy' },
         { path: '/pharmacy/indents', icon: ClipboardList, label: 'Ward Indents', perm: 'pharmacy' },
       ],
     },

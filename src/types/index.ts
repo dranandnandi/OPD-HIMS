@@ -386,6 +386,8 @@ export interface PaymentRecord {
   createdAt: Date;
 }
 
+export type BillType = 'opd' | 'pharmacy' | 'ipd';
+
 export interface Bill {
   id: string;
   visitId: string | null;
@@ -395,7 +397,8 @@ export interface Bill {
   paidAmount: number;
   balanceAmount: number;
   paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
-  paymentMethod?: 'cash' | 'card' | 'upi' | 'cheque' | 'online';
+  // 'online' is legacy data only — payment_records' CHECK constraint rejects it
+  paymentMethod?: 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet' | 'online';
   billDate: Date;
   dueDate?: Date;
   notes?: string;
@@ -408,6 +411,14 @@ export interface Bill {
   cancellationReason?: string;
   pdfUrl?: string; // URL to the stored display PDF in Supabase Storage
   printPdfUrl?: string; // URL to grayscale print version for letterhead
+  /** 'opd' (default consultation bill), 'pharmacy' (GST tax invoice), 'ipd' */
+  billType?: BillType;
+  taxableAmount?: number;
+  discountAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  roundOff?: number;
   createdAt: Date;
   updatedAt: Date;
   billItems: BillItem[];
@@ -515,6 +526,18 @@ export interface BillItem {
   refundedAmount?: number;
   lastRefundReason?: string;
   createdAt: Date;
+  // Pharmacy / GST line detail (populated on pharmacy bills)
+  medicineId?: string;
+  batchId?: string;
+  batchNumber?: string;
+  expiryDate?: Date;
+  hsnCode?: string;
+  gstRate?: number;
+  mrp?: number;
+  taxableAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
 }
 
 export interface RefundRequest {
@@ -637,6 +660,15 @@ export interface ClinicSetting {
   logoUrl?: string;
   registrationNumber?: string;
   taxId?: string;
+  // GST identity for the pharmacy tax invoice and reports
+  gstin?: string;
+  gstStateCode?: string;
+  drugLicenseNumber?: string;
+  pharmacyGstScheme?: 'regular' | 'composition';
+  /** Selling prices (MRP) already include GST; tax is backed out. Default true. */
+  pharmacyPricesIncludeGst?: boolean;
+  /** Prefix of the pharmacy invoice series, e.g. 'PH' -> PH/26-27/00001 */
+  pharmacyInvoicePrefix?: string;
   consultationFee: number;
   followUpFee: number;
   emergencyFee: number;
@@ -778,6 +810,15 @@ export interface MedicineMaster {
   reorderLevel: number;
   batchNumber?: string;
   expiryDate?: Date;
+  /** Shelf / rack / sticker label so the pharmacist can find the SKU. */
+  rackLocation?: string;
+  /** Pack barcode (EAN-13 / GS1), scanned once and matched at the counter. */
+  barcode?: string;
+  /** Long-term medicine: refill reminder is pre-ticked when sold. */
+  isChronic?: boolean;
+  hsnCode?: string;
+  /** Default GST % for the SKU (12 for most medicines). */
+  gstRate?: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -852,6 +893,9 @@ export interface Supplier {
   phone?: string;
   email?: string;
   address?: string;
+  gstin?: string;
+  stateCode?: string;
+  drugLicenseNumber?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -862,11 +906,21 @@ export interface PharmacyInwardReceipt {
   supplierId?: string;
   invoiceNumber?: string;
   receiptDate: Date;
+  /** Date printed on the supplier's invoice (drives the GST period). */
+  supplierInvoiceDate?: Date;
   totalAmount: number;
   uploadedBy: string;
   invoiceFileUrl?: string;
   status: 'uploaded' | 'processing' | 'completed' | 'failed';
   remarks?: string;
+  isInterstate?: boolean;
+  taxableAmount?: number;
+  discountAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  roundOff?: number;
+  grandTotal?: number;
   createdAt: Date;
   updatedAt: Date;
   supplier?: Supplier;
@@ -878,25 +932,51 @@ export interface PharmacyInwardItem {
   receiptId: string;
   medicineId: string;
   quantity: number;
+  /** GST-exclusive purchase rate per unit */
   unitCostPrice: number;
   totalCostPrice: number;
   batchNumber?: string;
   expiryDate?: Date;
+  batchId?: string;
+  hsnCode?: string;
+  gstRate?: number;
+  mrp?: number;
+  discountPercent?: number;
+  /** Flat rupee discount on the line, applied after the % discount */
+  discountAmount?: number;
+  freeQuantity?: number;
+  taxableAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  lineTotal?: number;
   createdAt: Date;
   medicine?: MedicineMaster;
 }
 
 export interface PharmacyDispensedItem {
   id: string;
-  visitId: string;
+  /** Null for an over-the-counter sale (no visit). */
+  visitId?: string | null;
   prescriptionId?: string;
   medicineId: string;
   quantity: number;
   dispensedBy: string;
   dispenseDate: Date;
+  /** Unit selling price (MRP) as charged */
   sellingPriceAtDispense?: number;
   totalSellingPrice?: number;
   batchNumber?: string;
+  batchId?: string;
+  billId?: string;
+  hsnCode?: string;
+  gstRate?: number;
+  mrp?: number;
+  discountAmount?: number;
+  taxableAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   originalPrescriptionName?: string;
   isMatched?: boolean;
   refundedQuantity?: number;
@@ -904,6 +984,113 @@ export interface PharmacyDispensedItem {
   createdAt: Date;
   medicine?: MedicineMaster;
   dispensedByProfile?: Profile;
+}
+
+export interface MedicineBatch {
+  id: string;
+  clinicId: string;
+  medicineId: string;
+  batchNumber: string;
+  expiryDate?: Date;
+  mrp?: number;
+  purchaseRate?: number;
+  quantity: number;
+  supplierId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  medicine?: MedicineMaster;
+}
+
+export interface PharmacyDebitNoteItem {
+  id: string;
+  debitNoteId: string;
+  medicineId: string;
+  batchId?: string;
+  batchNumber?: string;
+  quantity: number;
+  unitRate: number;
+  hsnCode?: string;
+  gstRate: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  lineTotal: number;
+  medicine?: MedicineMaster;
+}
+
+export interface PharmacyDebitNote {
+  id: string;
+  clinicId: string;
+  supplierId: string;
+  debitNoteNumber: string;
+  noteDate: Date;
+  againstReceiptId?: string;
+  reason?: string;
+  isInterstate: boolean;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  roundOff: number;
+  grandTotal: number;
+  createdBy?: string;
+  createdAt: Date;
+  supplier?: Supplier;
+  items?: PharmacyDebitNoteItem[];
+}
+
+// --- GST report rows (from the gst_* SQL functions) ---
+export interface GstOutwardSummaryRow {
+  kind: 'sale' | 'credit_note';
+  gstRate: number;
+  invoiceCount: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalAmount: number;
+}
+
+export interface GstHsnSummaryRow {
+  hsnCode: string;
+  gstRate: number;
+  quantity: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalAmount: number;
+}
+
+export interface GstInwardRegisterRow {
+  kind: 'purchase' | 'debit_note';
+  documentId: string;
+  documentNumber?: string;
+  documentDate: Date;
+  supplierName?: string;
+  supplierGstin?: string;
+  isInterstate: boolean;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalAmount: number;
+}
+
+export interface GstOutwardRegisterRow {
+  billId: string;
+  billNumber: string;
+  billDate: Date;
+  patientName?: string;
+  status: string;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  roundOff: number;
+  totalAmount: number;
+  refundedAmount: number;
 }
 
 export interface StockMovementLog {

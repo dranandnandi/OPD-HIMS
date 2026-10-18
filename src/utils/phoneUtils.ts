@@ -92,3 +92,22 @@ export function formatPhoneForDisplay(phone: string): string {
   
   return phone;
 }
+
+/**
+ * The key patients are matched on: the last 10 digits of a phone number.
+ *
+ * Must stay in lockstep with the `patients.phone_norm` generated column
+ * (migration 20261006000000). `phone` itself is stored exactly as it was
+ * typed, so it is only ever safe to display -- comparing it is what let the
+ * same mobile number register as two patients.
+ *
+ * Returns null below 10 digits, mirroring the column: a short or placeholder
+ * number identifies nobody, and treating two of them as equal would present
+ * unrelated patients to reception as duplicates of each other.
+ */
+export function phoneMatchKey(phone: string): string | null {
+  if (!phone) return null;
+
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : null;
+}

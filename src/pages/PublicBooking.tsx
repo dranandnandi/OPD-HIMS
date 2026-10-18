@@ -20,9 +20,10 @@ import {
   addDays,
   publicBookingService,
   PublicBookingError,
-  weekdayOf,
+  isDoctorOpenOn,
   type BookingSuccess,
   type ClinicResponse,
+  type PublicDoctor,
   type PublicSlot,
 } from '../services/publicBookingService';
 import DoctorPicker from '../components/PublicBooking/DoctorPicker';
@@ -152,15 +153,15 @@ const PublicBooking: React.FC = () => {
     [data, doctorId],
   );
 
-  /** First bookable day for a doctor, honouring their weekly pattern. */
+  /** First bookable day for a doctor, honouring their weekly pattern and date overrides. */
   const firstOpenDate = useCallback(
-    (openDays: string[]): string => {
+    (doctor: PublicDoctor): string => {
       if (!data) return '';
 
       const { today, horizonDays, blackoutDates } = data.clinic;
       for (let offset = 0; offset < horizonDays; offset += 1) {
         const dateKey = addDays(today, offset);
-        if (openDays.includes(weekdayOf(dateKey)) && !blackoutDates.includes(dateKey)) {
+        if (isDoctorOpenOn(doctor, dateKey) && !blackoutDates.includes(dateKey)) {
           return dateKey;
         }
       }
@@ -207,7 +208,7 @@ const PublicBooking: React.FC = () => {
   const goToSlots = () => {
     if (!selectedDoctor) return;
 
-    if (!selectedDate) setSelectedDate(firstOpenDate(selectedDoctor.openDays));
+    if (!selectedDate) setSelectedDate(firstOpenDate(selectedDoctor));
     setBanner('');
     setStep('slot');
   };
@@ -225,7 +226,7 @@ const PublicBooking: React.FC = () => {
     setSelectedSlot('');
 
     const doctor = data?.doctors.find((entry) => entry.id === nextDoctorId);
-    setSelectedDate(doctor ? firstOpenDate(doctor.openDays) : '');
+    setSelectedDate(doctor ? firstOpenDate(doctor) : '');
   };
 
   const handleSelectType = (nextLabel: string) => {

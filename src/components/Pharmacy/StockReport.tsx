@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Clock, Package, Pill } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
-import { StockMovementLog, MedicineMaster, MedicineWithPrice } from '../../types';
+import { StockMovementLog, MedicineMaster, MedicineWithPrice, MedicineBatch } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
 
 const StockReport: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'movements' | 'low-stock' | 'expiring'>('movements');
+  const [activeTab, setActiveTab] = useState<'movements' | 'low-stock' | 'expiring' | 'batches'>('movements');
+  const [batches, setBatches] = useState<MedicineBatch[]>([]);
+  const [batchSearch, setBatchSearch] = useState('');
   const [movements, setMovements] = useState<StockMovementLog[]>([]);
   const [lowStockMedicines, setLowStockMedicines] = useState<MedicineWithPrice[]>([]);
   const [expiringMedicines, setExpiringMedicines] = useState<MedicineWithPrice[]>([]);
@@ -50,6 +52,8 @@ const StockReport: React.FC = () => {
       } else if (activeTab === 'expiring') {
         const expiringData = await pharmacyService.getExpiringMedicines(expiryDaysFilter, clinicId);
         setExpiringMedicines(expiringData);
+      } else if (activeTab === 'batches') {
+        setBatches(await pharmacyService.getBatches(undefined, true));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
@@ -257,6 +261,17 @@ const StockReport: React.FC = () => {
                   {expiringMedicines.length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab('batches')}
+              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
+                activeTab === 'batches'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              Batch-wise Stock
             </button>
           </nav>
         </div>
@@ -571,6 +586,87 @@ const StockReport: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Batch-wise Stock Tab */}
+          {activeTab === 'batches' && (() => {
+            const q = batchSearch.toLowerCase();
+            const rows = batches.filter(b =>
+              !q ||
+              b.medicine?.name.toLowerCase().includes(q) ||
+              b.batchNumber.toLowerCase().includes(q) ||
+              b.medicine?.rackLocation?.toLowerCase().includes(q)
+            );
+            const soon = new Date(); soon.setDate(soon.getDate() + 90);
+            return (
+              <div>
+                <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    Stock per batch (first expiry first). Batches are created automatically from purchase entries that carry a batch number.
+                  </p>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={batchSearch}
+                      onChange={(e) => setBatchSearch(e.target.value)}
+                      placeholder="Medicine, batch or rack"
+                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Medicine</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rack</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">MRP</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Rate</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {rows.length === 0 && (
+                        <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No batches yet. Record a purchase with a batch number to start batch tracking.</td></tr>
+                      )}
+                      {rows.map(b => {
+                        const expired = b.expiryDate && b.expiryDate < new Date();
+                        const expiring = !expired && b.expiryDate && b.expiryDate <= soon;
+                        return (
+                          <tr key={b.id} className={`hover:bg-gray-50 ${b.quantity === 0 ? 'text-gray-400' : ''}`}>
+                            <td className="px-6 py-3">
+                              <div className="text-sm font-medium">{b.medicine?.name || b.medicineId}</div>
+                              {b.medicine?.strength && <div className="text-xs text-gray-500">{b.medicine.strength}</div>}
+                            </td>
+                            <td className="px-6 py-3 text-sm">
+                              {b.medicine?.rackLocation
+                                ? <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-medium">{b.medicine.rackLocation}</span>
+                                : <span className="text-gray-400">—</span>}
+                            </td>
+                            <td className="px-6 py-3 text-sm font-mono">{b.batchNumber}</td>
+                            <td className="px-6 py-3 text-sm">
+                              {b.expiryDate ? (
+                                <span className={`px-2 py-0.5 rounded text-xs ${expired ? 'bg-red-100 text-red-800' : expiring ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                                  {format(b.expiryDate, 'MMM yyyy')}{expired ? ' · expired' : expiring ? ` · ${differenceInDays(b.expiryDate, new Date())}d` : ''}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td className="px-6 py-3 text-sm text-right font-medium">{b.quantity}</td>
+                            <td className="px-6 py-3 text-sm text-right">{b.mrp ? `₹${b.mrp.toFixed(2)}` : '—'}</td>
+                            <td className="px-6 py-3 text-sm text-right">{b.purchaseRate ? `₹${b.purchaseRate.toFixed(2)}` : '—'}</td>
+                            <td className="px-6 py-3 text-sm text-right">{b.purchaseRate ? `₹${(b.purchaseRate * b.quantity).toFixed(2)}` : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Expiring Medicines Tab */}
           {activeTab === 'expiring' && (

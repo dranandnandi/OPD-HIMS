@@ -135,17 +135,38 @@ serve(async (req) => {
     const dayName = dayNames[dateObj.getUTCDay()];
 
     const availabilitySource = doctorProfile.doctor_availability || clinicData.working_hours || {};
-    const dayAvail: DayAvailability | undefined = availabilitySource[dayName];
+    let dayAvail: DayAvailability | undefined = availabilitySource[dayName];
+
+    // A date-specific override replaces the weekly pattern for this one date:
+    // is_open=false closes the day, is_open=true substitutes its hours.
+    const { data: overrideRow } = await supabase
+      .from("doctor_availability_overrides")
+      .select("is_open, start_time, end_time, break_start, break_end")
+      .eq("clinic_id", clinicId)
+      .eq("doctor_id", doctorId)
+      .eq("override_date", date)
+      .maybeSingle();
+
+    if (overrideRow) {
+      dayAvail = {
+        isOpen: overrideRow.is_open === true,
+        startTime: overrideRow.start_time ?? "",
+        endTime: overrideRow.end_time ?? "",
+        breakStart: overrideRow.break_start ?? undefined,
+        breakEnd: overrideRow.break_end ?? undefined,
+      };
+    }
 
     if (!dayAvail || !dayAvail.isOpen) {
       console.log("[get-slots] no availability:", {
         dayName,
         usingDoctorAvailability: !!doctorProfile.doctor_availability,
+        dateOverride: !!overrideRow,
         dayConfigured: !!dayAvail,
         isOpen: dayAvail?.isOpen ?? null,
       });
       return new Response(
-        JSON.stringify({ slots: [], message: `Doctor is not available on ${dayName}` }),
+        JSON.stringify({ slots: [], message: `Doctor is not available on ${date}` }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

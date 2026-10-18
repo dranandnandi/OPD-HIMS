@@ -19,6 +19,8 @@ export interface AutoSendConfig {
   sendWindowEnd: string;
   appointmentReminderHoursBefore: number;
   followUpLeadDays: number;
+  /** Days before the medicine runs out that the refill WhatsApp goes out. */
+  refillReminderLeadDays: number;
 }
 
 export const DEFAULT_CONFIG: AutoSendConfig = {
@@ -27,7 +29,8 @@ export const DEFAULT_CONFIG: AutoSendConfig = {
   sendWindowStart: '09:00',
   sendWindowEnd: '20:00',
   appointmentReminderHoursBefore: 24,
-  followUpLeadDays: 0
+  followUpLeadDays: 0,
+  refillReminderLeadDays: 3
 };
 
 export interface QueueRow {
@@ -75,7 +78,8 @@ export function parseConfig(raw: unknown): AutoSendConfig {
       1,
       168
     ),
-    followUpLeadDays: clamp(numberOr(value.followUpLeadDays, DEFAULT_CONFIG.followUpLeadDays), 0, 30)
+    followUpLeadDays: clamp(numberOr(value.followUpLeadDays, DEFAULT_CONFIG.followUpLeadDays), 0, 30),
+    refillReminderLeadDays: clamp(numberOr(value.refillReminderLeadDays, DEFAULT_CONFIG.refillReminderLeadDays), 0, 30)
   };
 }
 

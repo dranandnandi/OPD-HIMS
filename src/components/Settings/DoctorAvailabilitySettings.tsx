@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Clock, Calendar, AlertCircle, Users } from 'lucide-react';
+import { Save, Clock, Calendar, AlertCircle, Users, Plus, Trash2, CalendarOff } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { Profile } from '../../types';
 import { authService } from '../../services/authService';
 import { getCurrentProfile } from '../../services/profileService';
-import { doctorAvailabilityService, DoctorAvailability } from '../../services/doctorAvailabilityService';
+import { doctorAvailabilityService, DoctorAvailability, AvailabilityOverride } from '../../services/doctorAvailabilityService';
 import { DEFAULT_WORKING_HOURS, normalizeWorkingHours } from '../../services/clinicSettingsService';
 import { hasReceptionAccess } from '../../utils/roleAccess';
 
@@ -20,6 +20,21 @@ const DoctorAvailabilitySettings: React.FC = () => {
 
   const [availability, setAvailability] = useState<DoctorAvailability>(DEFAULT_WORKING_HOURS);
 
+  const EMPTY_OVERRIDE_FORM = {
+    date: '',
+    closed: false,
+    startTime: '09:00',
+    endTime: '13:00',
+    breakStart: '',
+    breakEnd: '',
+    note: '',
+  };
+
+  const [overrides, setOverrides] = useState<AvailabilityOverride[]>([]);
+  const [overrideForm, setOverrideForm] = useState(EMPTY_OVERRIDE_FORM);
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
   useEffect(() => {
     if (user) {
       loadDoctors();
@@ -29,6 +44,7 @@ const DoctorAvailabilitySettings: React.FC = () => {
   useEffect(() => {
     if (selectedDoctorId) {
       loadAvailability(selectedDoctorId);
+      loadOverrides(selectedDoctorId);
     }
   }, [selectedDoctorId]);
 
@@ -92,6 +108,96 @@ const DoctorAvailabilitySettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadOverrides = async (doctorId = selectedDoctorId) => {
+    if (!doctorId) return;
+
+    try {
+      setOverrideError(null);
+      const rows = await doctorAvailabilityService.listOverrides(doctorId);
+      setOverrides(rows);
+    } catch (err) {
+      console.error('Error loading date overrides:', err);
+      setOverrideError(err instanceof Error ? err.message : 'Failed to load date overrides');
+    }
+  };
+
+  const handleAddOverride = async () => {
+    if (!selectedDoctorId) return;
+
+    setOverrideError(null);
+
+    if (!overrideForm.date) {
+      setOverrideError('Pick a date for the override.');
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (overrideForm.date < today) {
+      setOverrideError('Override date cannot be in the past.');
+      return;
+    }
+
+    if (!overrideForm.closed) {
+      if (!overrideForm.startTime || !overrideForm.endTime) {
+        setOverrideError('Set both From and To times, or mark the day as unavailable.');
+        return;
+      }
+      if (overrideForm.endTime <= overrideForm.startTime) {
+        setOverrideError('End time must be after start time.');
+        return;
+      }
+      if (
+        (overrideForm.breakStart && !overrideForm.breakEnd) ||
+        (!overrideForm.breakStart && overrideForm.breakEnd)
+      ) {
+        setOverrideError('Set both break times, or leave both empty.');
+        return;
+      }
+    }
+
+    try {
+      setOverrideSaving(true);
+      await doctorAvailabilityService.saveOverride(selectedDoctorId, {
+        date: overrideForm.date,
+        isOpen: !overrideForm.closed,
+        startTime: overrideForm.startTime,
+        endTime: overrideForm.endTime,
+        breakStart: overrideForm.breakStart || undefined,
+        breakEnd: overrideForm.breakEnd || undefined,
+        note: overrideForm.note || undefined,
+      });
+      setOverrideForm(EMPTY_OVERRIDE_FORM);
+      await loadOverrides();
+    } catch (err) {
+      console.error('Error saving date override:', err);
+      setOverrideError(err instanceof Error ? err.message : 'Failed to save date override');
+    } finally {
+      setOverrideSaving(false);
+    }
+  };
+
+  const handleDeleteOverride = async (overrideId: string) => {
+    try {
+      setOverrideError(null);
+      await doctorAvailabilityService.deleteOverride(overrideId);
+      setOverrides(prev => prev.filter(item => item.id !== overrideId));
+    } catch (err) {
+      console.error('Error deleting date override:', err);
+      setOverrideError(err instanceof Error ? err.message : 'Failed to delete date override');
+    }
+  };
+
+  const formatOverrideDate = (dateKey: string) => {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
   };
 
   const handleSave = async () => {
@@ -335,6 +441,148 @@ const DoctorAvailabilitySettings: React.FC = () => {
               </ul>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Date Overrides */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <CalendarOff className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-gray-800">Date Overrides</h3>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Change hours for a specific date without touching the weekly schedule — e.g. a Saturday
+          with morning hours only, or a full day off. Delete an override and that date goes back to
+          the weekly schedule. Past dates are cleaned up automatically.
+        </p>
+
+        {overrideError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {overrideError}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-end gap-3 p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+            <input
+              type="date"
+              value={overrideForm.date}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setOverrideForm(prev => ({ ...prev, date: e.target.value }))}
+              className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 pb-1.5">
+            <input
+              type="checkbox"
+              id="override-closed"
+              checked={overrideForm.closed}
+              onChange={(e) => setOverrideForm(prev => ({ ...prev, closed: e.target.checked }))}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="override-closed" className="text-sm text-gray-600">Unavailable all day</label>
+          </div>
+
+          {!overrideForm.closed && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
+                <input
+                  type="time"
+                  value={overrideForm.startTime}
+                  onChange={(e) => setOverrideForm(prev => ({ ...prev, startTime: e.target.value }))}
+                  className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+                <input
+                  type="time"
+                  value={overrideForm.endTime}
+                  onChange={(e) => setOverrideForm(prev => ({ ...prev, endTime: e.target.value }))}
+                  className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Break (optional)</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="time"
+                    value={overrideForm.breakStart}
+                    onChange={(e) => setOverrideForm(prev => ({ ...prev, breakStart: e.target.value }))}
+                    className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <span className="text-xs text-gray-500">to</span>
+                  <input
+                    type="time"
+                    value={overrideForm.breakEnd}
+                    onChange={(e) => setOverrideForm(prev => ({ ...prev, breakEnd: e.target.value }))}
+                    className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Note (optional)</label>
+            <input
+              type="text"
+              maxLength={120}
+              placeholder="e.g. Conference"
+              value={overrideForm.note}
+              onChange={(e) => setOverrideForm(prev => ({ ...prev, note: e.target.value }))}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <button
+            onClick={handleAddOverride}
+            disabled={overrideSaving}
+            className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" />
+            {overrideSaving ? 'Saving...' : 'Add Override'}
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {overrides.length === 0 ? (
+            <p className="text-sm text-gray-500">No upcoming overrides. The weekly schedule applies to every date.</p>
+          ) : (
+            overrides.map(override => (
+              <div
+                key={override.id}
+                className="flex items-center justify-between gap-3 p-3 border border-gray-200 rounded-lg"
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <span className="font-medium text-gray-800">{formatOverrideDate(override.date)}</span>
+                  {override.isOpen ? (
+                    <span className="text-gray-700">
+                      {override.startTime} – {override.endTime}
+                      {override.breakStart && override.breakEnd && (
+                        <span className="text-gray-500"> (break {override.breakStart}–{override.breakEnd})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                      Unavailable all day
+                    </span>
+                  )}
+                  {override.note && <span className="text-gray-500 italic">{override.note}</span>}
+                </div>
+                <button
+                  onClick={() => handleDeleteOverride(override.id)}
+                  title="Delete override (date reverts to weekly schedule)"
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

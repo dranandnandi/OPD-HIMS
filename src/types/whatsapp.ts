@@ -10,6 +10,7 @@ export type WhatsAppEventType =
   | 'prescription_ready'
   | 'test_result_ready'
   | 'follow_up_reminder'
+  | 'refill_reminder'
   | 'visit_prescription'
   | 'invoice_generated'
   | 'patient_registration';

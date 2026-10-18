@@ -20,6 +20,11 @@ const convertDatabaseMedicineMaster = (dbMedicine: DatabaseMedicineMaster): Medi
   reorderLevel: dbMedicine.reorder_level,
   batchNumber: dbMedicine.batch_number,
   expiryDate: dbMedicine.expiry_date ? new Date(dbMedicine.expiry_date) : undefined,
+  rackLocation: dbMedicine.rack_location ?? undefined,
+  barcode: dbMedicine.barcode ?? undefined,
+  isChronic: dbMedicine.is_chronic ?? false,
+  hsnCode: dbMedicine.hsn_code ?? undefined,
+  gstRate: dbMedicine.gst_rate ?? 12,
   isActive: dbMedicine.is_active,
   createdAt: new Date(dbMedicine.created_at),
   updatedAt: new Date(dbMedicine.updated_at)
@@ -56,6 +61,11 @@ const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'create
   reorder_level: medicine.reorderLevel,
   batch_number: medicine.batchNumber,
   expiry_date: medicine.expiryDate?.toISOString(),
+  rack_location: medicine.rackLocation?.trim() || null,
+  barcode: medicine.barcode?.replace(/\s+/g, '') || null,
+  is_chronic: medicine.isChronic ?? false,
+  hsn_code: medicine.hsnCode?.trim() || null,
+  gst_rate: medicine.gstRate ?? 12,
   is_active: medicine.isActive
 });
 
@@ -260,6 +270,11 @@ export const masterDataService = {
     if (medicine.reorderLevel !== undefined) dbMedicine.reorder_level = medicine.reorderLevel;
     if (medicine.batchNumber !== undefined) dbMedicine.batch_number = medicine.batchNumber;
     if (medicine.expiryDate !== undefined) dbMedicine.expiry_date = medicine.expiryDate?.toISOString();
+    if (medicine.rackLocation !== undefined) dbMedicine.rack_location = medicine.rackLocation?.trim() || null;
+    if (medicine.barcode !== undefined) dbMedicine.barcode = medicine.barcode?.replace(/\s+/g, '') || null;
+    if (medicine.isChronic !== undefined) dbMedicine.is_chronic = medicine.isChronic;
+if (medicine.hsnCode !== undefined) dbMedicine.hsn_code = medicine.hsnCode?.trim() || null;
+    if (medicine.gstRate !== undefined) dbMedicine.gst_rate = medicine.gstRate;
 
     const { data, error } = await supabase
       .from('medicines_master')

@@ -6,6 +6,9 @@ import ABHALinkModal from './ABHALinkModal';
 import ABHAVerifyModal from './ABHAVerifyModal';
 import { abhaService, ABHAProfile } from '../../services/abhaService';
 import { patientService } from '../../services/patientService';
+import { phoneMatchKey } from '../../utils/phoneUtils';
+import { Patient } from '../../types';
+import { getPatientNumber } from '../../utils/patientNumber';
 import PatientDocumentsPanel from './PatientDocumentsPanel';
 
 interface PatientModalProps {
@@ -38,12 +41,21 @@ interface PatientModalProps {
     referred_by?: string;
   }) => void;
   onClose: () => void;
+  /**
+   * Offered when another patient already holds the phone number being typed.
+   * Supplying it turns the duplicate warning into a working choice -- "this is
+   * the same person, use their record" versus "this is a relative, register
+   * them separately" -- which is the decision reception is actually making.
+   * Call sites that have nowhere to send the existing patient omit it and get
+   * the list without the action.
+   */
+  onUsePatient?: (patient: Patient) => void;
 }
 
 // `clinicId` stays in the props for existing call sites but is no longer read:
 // the ABDM functions derive the clinic from the caller's JWT, because a
 // client-supplied clinic id is forgeable (G-05).
-const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose }) => {
+const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose, onUsePatient }) => {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Two ABHA paths: 'verify' (mobile OTP, spec 7.4) is the primary one — most
@@ -53,7 +65,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
   const [unlinkError, setUnlinkError] = useState('');
-  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  const [duplicates, setDuplicates] = useState<Patient[]>([]);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [linkedABHA, setLinkedABHA] = useState<{ number: string; address?: string } | null>(
     patient?.abha_number ? { number: patient.abha_number, address: patient.abha_address } : null
@@ -98,21 +110,26 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
     }));
   };
 
-  // Warn reception if a patient with the same phone already exists (only for new registrations).
+  // Show reception who already holds this phone number (new registrations only).
+  //
+  // Naming them is the whole point. A bare "someone already uses this number"
+  // left staff to abandon the form and go searching, so the fast path was to
+  // ignore it -- and a family sharing one mobile makes the warning routine
+  // enough to ignore every time. Listing the records turns it into a decision
+  // that can be made here.
   const checkForDuplicate = async () => {
     if (patient) return; // editing an existing patient — skip
     const phone = formData.phone.trim();
-    if (phone.length < 10) {
-      setDuplicateWarning(false);
+    if (phoneMatchKey(phone) === null) {
+      setDuplicates([]);
       return;
     }
     setCheckingDuplicate(true);
     try {
-      const exists = await patientService.checkIfPatientExistsByPhone(phone);
-      setDuplicateWarning(exists);
+      setDuplicates(await patientService.findPatientsByPhone(phone));
     } catch {
       // Non-blocking: a failed lookup should never stop registration.
-      setDuplicateWarning(false);
+      setDuplicates([]);
     } finally {
       setCheckingDuplicate(false);
     }
@@ -213,7 +230,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
                 onChange={(e) => {
                   setFormData({ ...formData, phone: e.target.value });
                   setFormError(null); // Clear error when phone changes
-                  setDuplicateWarning(false); // Re-check on next blur
+                  setDuplicates([]); // Re-check on next blur
                 }}
                 onBlur={checkForDuplicate}
                 className="input-field"
@@ -221,12 +238,50 @@ const PatientModal: React.FC<PatientModalProps> = ({ patient, onSave, onClose })
               {checkingDuplicate && (
                 <p className="mt-1 text-xs text-gray-500">Checking for existing patient…</p>
               )}
-              {duplicateWarning && (
-                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-amber-800">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs">
-                    A patient with this phone number already exists in this clinic. Please search
-                    existing patients before creating a duplicate.
+              {duplicates.length > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-amber-800">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs">
+                      {duplicates.length === 1
+                        ? 'One patient already uses this number:'
+                        : `${duplicates.length} patients already use this number:`}
+                    </p>
+                  </div>
+
+                  <ul className="mt-2 space-y-1">
+                    {duplicates.map((duplicate) => (
+                      <li
+                        key={duplicate.id}
+                        className="flex items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1.5"
+                      >
+                        <span className="min-w-0 text-xs">
+                          <span className="font-medium">{toTitleCase(duplicate.name)}</span>
+                          <span className="ml-1 text-amber-700">
+                            {getPatientNumber(duplicate) && `${getPatientNumber(duplicate)} · `}
+                            {duplicate.age !== null ? `${duplicate.age}y` : 'age not recorded'}
+                            {duplicate.gender ? ` · ${duplicate.gender}` : ''}
+                          </span>
+                        </span>
+                        {onUsePatient && (
+                          <button
+                            type="button"
+                            onClick={() => onUsePatient(duplicate)}
+                            className="flex-shrink-0 rounded-md bg-amber-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-amber-700"
+                          >
+                            Use this patient
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* Sharing a mobile number is normal, so this is never a
+                      block -- only a prompt to choose deliberately. */}
+                  <p className="mt-2 text-[11px] text-amber-700">
+                    Same person? Use their existing record so their history stays together. A
+                    family member on the same number should be registered separately — continue
+                    below.
                   </p>
                 </div>
               )}

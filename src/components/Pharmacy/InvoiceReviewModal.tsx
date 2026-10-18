@@ -5,12 +5,18 @@ import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { getCurrentProfile } from '../../services/profileService';
 import { Supplier, MedicineWithPrice } from '../../types';
+import { computeGstLine, sumGstLines, GST_RATES, inr, isInterstate, stateCodeFromGstin } from '../../utils/gst';
 
 interface InvoiceData {
   invoiceInfo: {
     supplierName: string | null;
+    supplierGstin?: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    taxableAmount?: number | null;
+    cgstAmount?: number | null;
+    sgstAmount?: number | null;
+    igstAmount?: number | null;
     totalAmount: number | null;
   };
   medicines: Array<{
@@ -23,6 +29,12 @@ interface InvoiceData {
     manufacturer: string | null;
     strength: string | null;
     packSize: string | null;
+    hsnCode?: string | null;
+    gstRate?: number | null;
+    mrp?: number | null;
+    discountPercent?: number | null;
+    discountAmount?: number | null;
+    freeQuantity?: number | null;
   }>;
 }
 
@@ -54,11 +66,17 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   const [invoiceInfo, setInvoiceInfo] = useState({
     supplierId: '',
     supplierName: extractedData.invoiceInfo.supplierName || '',
+    supplierGstin: extractedData.invoiceInfo.supplierGstin || '',
     invoiceNumber: extractedData.invoiceInfo.invoiceNumber || '',
     invoiceDate: extractedData.invoiceInfo.invoiceDate || new Date().toISOString().split('T')[0],
     totalAmount: extractedData.invoiceInfo.totalAmount || 0,
+    extractedTaxable: extractedData.invoiceInfo.taxableAmount || 0,
+    extractedTax: (extractedData.invoiceInfo.cgstAmount || 0) + (extractedData.invoiceInfo.sgstAmount || 0) + (extractedData.invoiceInfo.igstAmount || 0),
     remarks: `Processed from ${fileName} with ${(confidence * 100).toFixed(1)}% confidence`
   });
+
+  // Inter-state when the supplier's state differs from the clinic's
+  const clinicState = user?.clinic?.gstStateCode || stateCodeFromGstin(user?.clinic?.gstin);
 
   const [medicineItems, setMedicineItems] = useState(
     extractedData.medicines.map((medicine, index) => ({
@@ -72,6 +90,12 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       manufacturer: medicine.manufacturer || '',
       strength: medicine.strength || '',
       packSize: medicine.packSize || '',
+      hsnCode: medicine.hsnCode || '',
+      gstRate: medicine.gstRate ?? 12,
+      mrp: medicine.mrp || 0,
+      discountPercent: medicine.discountPercent || 0,
+      discountAmount: medicine.discountAmount || 0,
+      freeQuantity: medicine.freeQuantity || 0,
       medicineId: '', // Will be set if matched to master data
       isMatched: false,
       confidence: 0.8 // Default confidence for extracted items
@@ -99,15 +123,17 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       setSuppliers(suppliersData);
       setMedicines(medicinesData);
 
-      // Auto-select supplier if name matches
-      if (invoiceInfo.supplierName) {
-        const matchedSupplier = suppliersData.find(s => 
-          s.name.toLowerCase().includes(invoiceInfo.supplierName.toLowerCase()) ||
-          invoiceInfo.supplierName.toLowerCase().includes(s.name.toLowerCase())
-        );
-        if (matchedSupplier) {
-          setInvoiceInfo(prev => ({ ...prev, supplierId: matchedSupplier.id }));
-        }
+      // Auto-select supplier: GSTIN is exact, name is fuzzy
+      const byGstin = invoiceInfo.supplierGstin
+        ? suppliersData.find(s => s.gstin && s.gstin.toUpperCase() === invoiceInfo.supplierGstin.toUpperCase())
+        : undefined;
+      const matchedSupplier = byGstin || (invoiceInfo.supplierName
+        ? suppliersData.find(s =>
+            s.name.toLowerCase().includes(invoiceInfo.supplierName.toLowerCase()) ||
+            invoiceInfo.supplierName.toLowerCase().includes(s.name.toLowerCase()))
+        : undefined);
+      if (matchedSupplier) {
+        setInvoiceInfo(prev => ({ ...prev, supplierId: matchedSupplier.id }));
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -130,6 +156,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
         return {
           ...item,
           medicineId: matchedMedicine.id,
+          hsnCode: item.hsnCode || matchedMedicine.hsnCode || '',
+          gstRate: item.gstRate ?? matchedMedicine.gstRate ?? 12,
           isMatched: true,
           confidence: 0.9
         };
@@ -158,6 +186,12 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       manufacturer: '',
       strength: '',
       packSize: '',
+      hsnCode: '',
+      gstRate: 12,
+      mrp: 0,
+      discountPercent: 0,
+      discountAmount: 0,
+      freeQuantity: 0,
       medicineId: '',
       isMatched: false,
       confidence: 1.0
@@ -185,9 +219,25 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
     setMedicineItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  const calculateTotalAmount = () => {
-    return medicineItems.reduce((sum, item) => sum + item.totalCostPrice, 0);
-  };
+  const selectedSupplier = suppliers.find(s => s.id === invoiceInfo.supplierId);
+  const interstate = isInterstate(clinicState, selectedSupplier?.stateCode || stateCodeFromGstin(selectedSupplier?.gstin));
+
+  const lineTax = (item: { quantity: number; unitCostPrice: number; discountPercent?: number; discountAmount?: number; gstRate?: number }) =>
+    computeGstLine({
+      quantity: item.quantity, unitPrice: item.unitCostPrice, discountPercent: item.discountPercent || 0,
+      discountAmount: item.discountAmount || 0, gstRate: item.gstRate ?? 12, priceIncludesGst: false, interstate
+    });
+
+  const invoiceTotals = sumGstLines(
+    medicineItems.filter(i => i.medicineName.trim() && i.quantity > 0).map(lineTax)
+  );
+
+  /** GST-inclusive grand total of the lines as reviewed */
+  const calculateTotalAmount = () => invoiceTotals.grandTotal;
+
+  // Flag when our line-by-line total drifts from what the parser read off the invoice
+  const extractedGrand = invoiceInfo.totalAmount || 0;
+  const totalMismatch = extractedGrand > 0 && Math.abs(extractedGrand - invoiceTotals.grandTotal) > 1;
 
   const handleSave = async () => {
     const profile = await getCurrentProfile();
@@ -254,7 +304,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
               };
               
               // Set clinic-specific pricing for the existing medicine
-              const sellingPrice = Math.round(item.unitCostPrice * 1.2);
+              const sellingPrice = item.mrp > 0 ? item.mrp : Math.round(item.unitCostPrice * (1 + (item.gstRate ?? 12) / 100) * 1.2);
               try {
                 await masterDataService.setClinicMedicinePrice(
                   profile.clinicId,
@@ -284,13 +334,15 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
               contraindications: [],
               currentStock: 0, // Will be updated by inward receipt
               reorderLevel: 10, // Default reorder level
+              hsnCode: item.hsnCode || '3004',
+              gstRate: item.gstRate ?? 12,
               batchNumber: item.batchNumber || null,
               expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
               isActive: true
             };
             
             // Calculate selling price (add 20% markup to cost price)
-            const sellingPrice = Math.round(item.unitCostPrice * 1.2);
+            const sellingPrice = item.mrp > 0 ? item.mrp : Math.round(item.unitCostPrice * (1 + (item.gstRate ?? 12) / 100) * 1.2);
             
             const pricingData = {
               sellingPrice: sellingPrice,
@@ -371,24 +423,47 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       const receiptData = {
         supplierId: invoiceInfo.supplierId,
         invoiceNumber: invoiceInfo.invoiceNumber,
-        receiptDate: new Date(invoiceInfo.invoiceDate),
-        totalAmount: calculateTotalAmount(),
+        receiptDate: new Date(),
+        supplierInvoiceDate: new Date(invoiceInfo.invoiceDate),
+        totalAmount: invoiceTotals.grandTotal,
         uploadedBy: user.id,
         invoiceFileUrl: '', // Could store the original file URL if needed
         status: 'completed' as const,
-        remarks: invoiceInfo.remarks
+        remarks: invoiceInfo.remarks,
+        isInterstate: interstate,
+        taxableAmount: invoiceTotals.taxable,
+        discountAmount: invoiceTotals.discount,
+        cgstAmount: invoiceTotals.cgst,
+        sgstAmount: invoiceTotals.sgst,
+        igstAmount: invoiceTotals.igst,
+        roundOff: invoiceTotals.roundOff,
+        grandTotal: invoiceTotals.grandTotal
       };
 
       // Only include items that have valid medicine IDs (either matched or newly created)
       const inwardItems = processedItems
         .filter(item => item.medicineId && item.medicineId.trim() !== '')
-        .map(item => ({
-        medicineId: item.medicineId,
-        quantity: item.quantity,
-        unitCostPrice: item.unitCostPrice,
-        batchNumber: item.batchNumber,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined
-      }));
+        .map(item => {
+          const t = lineTax(item);
+          return {
+            medicineId: item.medicineId,
+            quantity: item.quantity,
+            unitCostPrice: item.unitCostPrice,
+            batchNumber: item.batchNumber || undefined,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+            hsnCode: item.hsnCode || undefined,
+            gstRate: item.gstRate ?? 12,
+            mrp: item.mrp > 0 ? item.mrp : undefined,
+            discountPercent: item.discountPercent || 0,
+            discountAmount: item.discountAmount || 0,
+            freeQuantity: item.freeQuantity || 0,
+            taxableAmount: t.taxable,
+            cgstAmount: t.cgst,
+            sgstAmount: t.sgst,
+            igstAmount: t.igst,
+            lineTotal: t.total
+          };
+        });
       
       if (inwardItems.length === 0) {
         alert('No valid medicine items to process. Please ensure medicines are properly matched or can be created.');
@@ -550,14 +625,27 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount (₹)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Grand Total (₹, incl. GST)</label>
                 <input
                   type="number"
                   value={calculateTotalAmount()}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                  className={`w-full px-3 py-2 border rounded-lg bg-gray-50 ${totalMismatch ? 'border-amber-400' : 'border-gray-300'}`}
                 />
+                {totalMismatch && (
+                  <p className="text-xs text-amber-700 mt-1">Invoice shows ₹{extractedGrand.toFixed(2)}. Check rates, GST % and discounts.</p>
+                )}
               </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className={`px-2 py-1 rounded ${interstate ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}`}>
+                {interstate ? 'Inter-state: IGST' : 'Intra-state: CGST + SGST'}
+              </span>
+              {invoiceInfo.supplierGstin && <span className="font-mono text-gray-600">Invoice GSTIN {invoiceInfo.supplierGstin}</span>}
+              {selectedSupplier && !selectedSupplier.gstin && (
+                <span className="text-amber-700">Selected supplier has no GSTIN saved{invoiceInfo.supplierGstin ? ' — add it in Suppliers to claim input credit' : ''}.</span>
+              )}
+              <span className="text-gray-600">Taxable {inr(invoiceTotals.taxable)} · GST {inr(invoiceTotals.cgst + invoiceTotals.sgst + invoiceTotals.igst)}</span>
             </div>
           </div>
 
@@ -640,7 +728,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Unit Cost (₹) *</label>
+                      <label className="block text-xs text-gray-600 mb-1">Rate (₹, ex-GST) *</label>
                       <input
                         type="number"
                         min="0"
@@ -652,12 +740,82 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Total Cost (₹)</label>
+                      <label className="block text-xs text-gray-600 mb-1">Line Total (₹, incl. GST)</label>
                       <input
                         type="number"
-                        value={item.totalCostPrice}
+                        value={lineTax(item).total}
                         readOnly
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">MRP (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.mrp}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'mrp', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">GST %</label>
+                      <select
+                        value={item.gstRate ?? 12}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'gstRate', parseFloat(e.target.value))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">HSN</label>
+                      <input
+                        type="text"
+                        value={item.hsnCode}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'hsnCode', e.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="3004"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Disc %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={item.discountPercent}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'discountPercent', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Disc ₹</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.discountAmount}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'discountAmount', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Free Qty</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.freeQuantity}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'freeQuantity', parseInt(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
 
@@ -710,8 +868,18 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
 
           {/* Summary */}
           <div className="bg-gray-50 rounded-lg p-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mb-3">
+              <div><div className="text-gray-500">Taxable</div><div className="font-semibold">{inr(invoiceTotals.taxable)}</div></div>
+              {interstate
+                ? <div><div className="text-gray-500">IGST</div><div className="font-semibold">{inr(invoiceTotals.igst)}</div></div>
+                : <>
+                    <div><div className="text-gray-500">CGST</div><div className="font-semibold">{inr(invoiceTotals.cgst)}</div></div>
+                    <div><div className="text-gray-500">SGST</div><div className="font-semibold">{inr(invoiceTotals.sgst)}</div></div>
+                  </>}
+              <div><div className="text-gray-500">Round off</div><div className="font-semibold">{invoiceTotals.roundOff.toFixed(2)}</div></div>
+            </div>
             <div className="flex justify-between items-center">
-              <span className="text-lg font-semibold text-gray-800">Total Invoice Amount:</span>
+              <span className="text-lg font-semibold text-gray-800">Grand Total (incl. GST):</span>
               <span className="text-xl font-bold text-blue-600">₹{calculateTotalAmount().toLocaleString()}</span>
             </div>
             <div className="mt-2 text-sm text-gray-600">

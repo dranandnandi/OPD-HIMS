@@ -1,23 +1,34 @@
 import { supabase } from '../lib/supabase';
-import { 
-  Supplier, 
-  PharmacyInwardReceipt, 
-  PharmacyInwardItem, 
-  PharmacyDispensedItem, 
+import {
+  Supplier,
+  PharmacyInwardReceipt,
+  PharmacyInwardItem,
+  PharmacyDispensedItem,
   StockMovementLog,
   MedicineMaster,
   MedicineWithPrice,
-  StockAlert
+  StockAlert,
+  MedicineBatch,
+  PharmacyDebitNote,
+  PharmacyDebitNoteItem,
+  Bill
 } from '../types';
 import { getCurrentProfile } from './profileService';
 import { supabaseUrl } from '../lib/supabaseClient';
 import type {
   DatabaseSupplier,
-  DatabasePharmacyInwardReceipt, 
-  DatabasePharmacyInwardItem, 
-  DatabasePharmacyDispensedItem, 
-  DatabaseStockMovementLog 
+  DatabasePharmacyInwardReceipt,
+  DatabasePharmacyInwardItem,
+  DatabasePharmacyDispensedItem,
+  DatabaseStockMovementLog,
+  DatabaseMedicineBatch,
+  DatabasePharmacyDebitNote,
+  DatabasePharmacyDebitNoteItem
 } from '../lib/supabase';
+import { billingService, PharmacyBillInput } from './billingService';
+
+const num = (v: unknown): number => Number(v) || 0;
+const optNum = (v: unknown): number | undefined => (v === null || v === undefined ? undefined : Number(v));
 
 // Convert database supplier to app supplier type
 const convertDatabaseSupplier = (dbSupplier: DatabaseSupplier): Supplier => ({
@@ -27,6 +38,9 @@ const convertDatabaseSupplier = (dbSupplier: DatabaseSupplier): Supplier => ({
   phone: dbSupplier.phone,
   email: dbSupplier.email,
   address: dbSupplier.address,
+  gstin: dbSupplier.gstin ?? undefined,
+  stateCode: dbSupplier.state_code ?? undefined,
+  drugLicenseNumber: dbSupplier.drug_license_number ?? undefined,
   isActive: dbSupplier.is_active,
   createdAt: new Date(dbSupplier.created_at),
   updatedAt: new Date(dbSupplier.updated_at)
@@ -34,19 +48,28 @@ const convertDatabaseSupplier = (dbSupplier: DatabaseSupplier): Supplier => ({
 
 // Convert database inward receipt to app inward receipt type
 const convertDatabaseInwardReceipt = (
-  dbReceipt: DatabasePharmacyInwardReceipt, 
-  supplier?: Supplier, 
+  dbReceipt: DatabasePharmacyInwardReceipt,
+  supplier?: Supplier,
   inwardItems?: PharmacyInwardItem[]
 ): PharmacyInwardReceipt => ({
   id: dbReceipt.id,
   supplierId: dbReceipt.supplier_id,
   invoiceNumber: dbReceipt.invoice_number,
   receiptDate: new Date(dbReceipt.receipt_date),
-  totalAmount: dbReceipt.total_amount,
+  supplierInvoiceDate: dbReceipt.supplier_invoice_date ? new Date(dbReceipt.supplier_invoice_date) : undefined,
+  totalAmount: num(dbReceipt.total_amount),
   uploadedBy: dbReceipt.uploaded_by,
   invoiceFileUrl: dbReceipt.invoice_file_url,
   status: dbReceipt.status,
   remarks: dbReceipt.remarks,
+  isInterstate: dbReceipt.is_interstate ?? false,
+  taxableAmount: num(dbReceipt.taxable_amount),
+  discountAmount: num(dbReceipt.discount_amount),
+  cgstAmount: num(dbReceipt.cgst_amount),
+  sgstAmount: num(dbReceipt.sgst_amount),
+  igstAmount: num(dbReceipt.igst_amount),
+  roundOff: num(dbReceipt.round_off),
+  grandTotal: num(dbReceipt.grand_total) || num(dbReceipt.total_amount),
   createdAt: new Date(dbReceipt.created_at),
   updatedAt: new Date(dbReceipt.updated_at),
   supplier,
@@ -59,10 +82,22 @@ const convertDatabaseInwardItem = (dbItem: DatabasePharmacyInwardItem, medicine?
   receiptId: dbItem.receipt_id,
   medicineId: dbItem.medicine_id,
   quantity: dbItem.quantity,
-  unitCostPrice: dbItem.unit_cost_price,
-  totalCostPrice: dbItem.total_cost_price,
+  unitCostPrice: num(dbItem.unit_cost_price),
+  totalCostPrice: num(dbItem.total_cost_price),
   batchNumber: dbItem.batch_number,
   expiryDate: dbItem.expiry_date ? new Date(dbItem.expiry_date) : undefined,
+  batchId: dbItem.batch_id ?? undefined,
+  hsnCode: dbItem.hsn_code ?? undefined,
+  gstRate: optNum(dbItem.gst_rate),
+  mrp: optNum(dbItem.mrp),
+  discountPercent: optNum(dbItem.discount_percent),
+  discountAmount: optNum(dbItem.discount_amount),
+  freeQuantity: optNum(dbItem.free_quantity),
+  taxableAmount: optNum(dbItem.taxable_amount),
+  cgstAmount: optNum(dbItem.cgst_amount),
+  sgstAmount: optNum(dbItem.sgst_amount),
+  igstAmount: optNum(dbItem.igst_amount),
+  lineTotal: optNum(dbItem.line_total),
   createdAt: new Date(dbItem.created_at),
   medicine
 });
@@ -76,13 +111,77 @@ const convertDatabaseDispensedItem = (dbItem: DatabasePharmacyDispensedItem, med
   quantity: dbItem.quantity,
   dispensedBy: dbItem.dispensed_by,
   dispenseDate: new Date(dbItem.dispense_date),
-  sellingPriceAtDispense: dbItem.selling_price_at_dispense,
-  totalSellingPrice: dbItem.total_selling_price,
+  sellingPriceAtDispense: optNum(dbItem.selling_price_at_dispense),
+  totalSellingPrice: optNum(dbItem.total_selling_price),
   batchNumber: dbItem.batch_number,
+  batchId: dbItem.batch_id ?? undefined,
+  billId: dbItem.bill_id ?? undefined,
+  hsnCode: dbItem.hsn_code ?? undefined,
+  gstRate: optNum(dbItem.gst_rate),
+  mrp: optNum(dbItem.mrp),
+  discountAmount: optNum(dbItem.discount_amount),
+  taxableAmount: optNum(dbItem.taxable_amount),
+  cgstAmount: optNum(dbItem.cgst_amount),
+  sgstAmount: optNum(dbItem.sgst_amount),
+  igstAmount: optNum(dbItem.igst_amount),
   refundedQuantity: dbItem.refunded_quantity,
-  refundRequestId: dbItem.refund_request_id,
+  refundRequestId: dbItem.refund_request_id ?? undefined,
   createdAt: new Date(dbItem.created_at),
   medicine
+});
+
+const convertDatabaseBatch = (b: DatabaseMedicineBatch, medicine?: MedicineMaster): MedicineBatch => ({
+  id: b.id,
+  clinicId: b.clinic_id,
+  medicineId: b.medicine_id,
+  batchNumber: b.batch_number,
+  expiryDate: b.expiry_date ? new Date(b.expiry_date) : undefined,
+  mrp: optNum(b.mrp),
+  purchaseRate: optNum(b.purchase_rate),
+  quantity: b.quantity,
+  supplierId: b.supplier_id ?? undefined,
+  createdAt: new Date(b.created_at),
+  updatedAt: new Date(b.updated_at),
+  medicine
+});
+
+const convertDatabaseDebitNoteItem = (i: DatabasePharmacyDebitNoteItem, medicine?: MedicineMaster): PharmacyDebitNoteItem => ({
+  id: i.id,
+  debitNoteId: i.debit_note_id,
+  medicineId: i.medicine_id,
+  batchId: i.batch_id ?? undefined,
+  batchNumber: i.batch_number ?? undefined,
+  quantity: i.quantity,
+  unitRate: num(i.unit_rate),
+  hsnCode: i.hsn_code ?? undefined,
+  gstRate: num(i.gst_rate),
+  taxableAmount: num(i.taxable_amount),
+  cgstAmount: num(i.cgst_amount),
+  sgstAmount: num(i.sgst_amount),
+  igstAmount: num(i.igst_amount),
+  lineTotal: num(i.line_total),
+  medicine
+});
+
+const convertDatabaseDebitNote = (d: DatabasePharmacyDebitNote, supplier?: Supplier, items?: PharmacyDebitNoteItem[]): PharmacyDebitNote => ({
+  id: d.id,
+  clinicId: d.clinic_id,
+  supplierId: d.supplier_id,
+  debitNoteNumber: d.debit_note_number,
+  noteDate: new Date(d.note_date),
+  againstReceiptId: d.against_receipt_id ?? undefined,
+  reason: d.reason ?? undefined,
+  isInterstate: d.is_interstate,
+  taxableAmount: num(d.taxable_amount),
+  cgstAmount: num(d.cgst_amount),
+  sgstAmount: num(d.sgst_amount),
+  igstAmount: num(d.igst_amount),
+  roundOff: num(d.round_off),
+  grandTotal: num(d.grand_total),
+  createdBy: d.created_by ?? undefined,
+  createdAt: new Date(d.created_at),
+  supplier,
+  items
 });
 
 // Convert database stock movement log to app stock movement log type
@@ -113,6 +212,72 @@ const convertDatabaseStockAlert = (dbAlert: any, medicine?: MedicineMaster): Sto
   resolvedBy: dbAlert.resolved_by,
   medicine
 });
+
+// Shared medicine row -> MedicineWithPrice (the four list queries below all
+// select medicines_master with the clinic price joined in).
+const convertMedicineRowWithPrice = (medicine: any): MedicineWithPrice => {
+  const priceData = medicine.clinic_medicine_prices?.[0];
+  return {
+    id: medicine.id,
+    name: medicine.name,
+    genericName: medicine.generic_name,
+    brandName: medicine.brand_name,
+    category: medicine.category,
+    dosageForm: medicine.dosage_form,
+    strength: medicine.strength,
+    manufacturer: medicine.manufacturer,
+    description: medicine.description,
+    sideEffects: medicine.side_effects,
+    contraindications: medicine.contraindications,
+    currentStock: medicine.current_stock,
+    reorderLevel: medicine.reorder_level,
+    batchNumber: medicine.batch_number,
+    expiryDate: medicine.expiry_date ? new Date(medicine.expiry_date) : undefined,
+    rackLocation: medicine.rack_location ?? undefined,
+    barcode: medicine.barcode ?? undefined,
+    isChronic: medicine.is_chronic ?? false,
+    hsnCode: medicine.hsn_code ?? undefined,
+    gstRate: medicine.gst_rate ?? 12,
+    isActive: medicine.is_active,
+    createdAt: new Date(medicine.created_at),
+    updatedAt: new Date(medicine.updated_at),
+    sellingPrice: priceData?.selling_price,
+    costPrice: priceData?.cost_price
+  };
+};
+
+export type InwardReceiptInput = Omit<PharmacyInwardReceipt, 'id' | 'createdAt' | 'updatedAt' | 'supplier' | 'inwardItems'>;
+export type InwardItemInput = Omit<PharmacyInwardItem, 'id' | 'receiptId' | 'createdAt' | 'medicine' | 'totalCostPrice'>;
+export type DispenseItemInput = Omit<PharmacyDispensedItem, 'id' | 'createdAt' | 'medicine' | 'dispensedByProfile' | 'totalSellingPrice'>;
+
+export interface DebitNoteItemInput {
+  medicineId: string;
+  batchId?: string;
+  batchNumber?: string;
+  quantity: number;
+  unitRate: number;
+  hsnCode?: string;
+  gstRate: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  lineTotal: number;
+}
+
+export interface DebitNoteInput {
+  supplierId: string;
+  againstReceiptId?: string;
+  reason?: string;
+  isInterstate: boolean;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  roundOff: number;
+  grandTotal: number;
+  items: DebitNoteItemInput[];
+}
 
 export const pharmacyService = {
   // Supplier Management
@@ -155,18 +320,20 @@ export const pharmacyService = {
       .insert([{
         name: supplier.name,
         clinic_id: profile.clinicId,
-
         contact_person: supplier.contactPerson,
         phone: supplier.phone,
         email: supplier.email,
         address: supplier.address,
+        gstin: supplier.gstin?.trim().toUpperCase() || null,
+        state_code: supplier.stateCode || null,
+        drug_license_number: supplier.drugLicenseNumber?.trim() || null,
         is_active: supplier.isActive
       }])
       .select()
       .single();
 
     if (error) {
-      throw new Error('Failed to add supplier');
+      throw new Error(error.message || 'Failed to add supplier');
     }
 
     return convertDatabaseSupplier(data);
@@ -183,6 +350,9 @@ export const pharmacyService = {
     if (supplier.phone !== undefined) updateData.phone = supplier.phone;
     if (supplier.email !== undefined) updateData.email = supplier.email;
     if (supplier.address !== undefined) updateData.address = supplier.address;
+    if (supplier.gstin !== undefined) updateData.gstin = supplier.gstin?.trim().toUpperCase() || null;
+    if (supplier.stateCode !== undefined) updateData.state_code = supplier.stateCode || null;
+    if (supplier.drugLicenseNumber !== undefined) updateData.drug_license_number = supplier.drugLicenseNumber?.trim() || null;
     if (supplier.isActive !== undefined) updateData.is_active = supplier.isActive;
 
     const { data, error } = await supabase
@@ -193,7 +363,7 @@ export const pharmacyService = {
       .single();
 
     if (error) {
-      throw new Error('Failed to update supplier');
+      throw new Error(error.message || 'Failed to update supplier');
     }
 
     return convertDatabaseSupplier(data);
@@ -215,7 +385,7 @@ export const pharmacyService = {
   },
 
   // Inward Receipt Management
-  async getInwardReceipts(): Promise<PharmacyInwardReceipt[]> {
+  async getInwardReceipts(range?: { from: Date; to: Date }): Promise<PharmacyInwardReceipt[]> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
     }
@@ -225,7 +395,7 @@ export const pharmacyService = {
       throw new Error('User not assigned to a clinic.');
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('pharmacy_inward_receipts')
       .select(`
         *,
@@ -235,6 +405,14 @@ export const pharmacyService = {
       `)
       .eq('clinic_id', profile.clinicId)
       .order('receipt_date', { ascending: false });
+
+    if (range) {
+      query = query
+        .gte('receipt_date', range.from.toISOString())
+        .lte('receipt_date', range.to.toISOString());
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching inward receipts:', error);
@@ -248,9 +426,14 @@ export const pharmacyService = {
     ));
   },
 
+  /**
+   * Save a purchase. Items carry their GST split (computed in the UI with
+   * utils/gst); the header carries the invoice totals. Stock and batches are
+   * maintained by DB triggers on pharmacy_inward_items.
+   */
   async createInwardReceipt(
-    receipt: Omit<PharmacyInwardReceipt, 'id' | 'createdAt' | 'updatedAt' | 'supplier' | 'inwardItems'>,
-    items: Omit<PharmacyInwardItem, 'id' | 'receiptId' | 'createdAt' | 'medicine' | 'totalCostPrice'>[]
+    receipt: InwardReceiptInput,
+    items: InwardItemInput[]
   ): Promise<PharmacyInwardReceipt> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
@@ -276,17 +459,28 @@ export const pharmacyService = {
           supplier_id: receipt.supplierId,
           invoice_number: receipt.invoiceNumber,
           receipt_date: receipt.receiptDate.toISOString(),
-          total_amount: receipt.totalAmount,
+          supplier_invoice_date: receipt.supplierInvoiceDate
+            ? receipt.supplierInvoiceDate.toISOString().slice(0, 10)
+            : receipt.receiptDate.toISOString().slice(0, 10),
+          total_amount: receipt.grandTotal ?? receipt.totalAmount,
           uploaded_by: receipt.uploadedBy,
           invoice_file_url: receipt.invoiceFileUrl,
           status: receipt.status,
-          remarks: receipt.remarks
+          remarks: receipt.remarks,
+          is_interstate: receipt.isInterstate ?? false,
+          taxable_amount: receipt.taxableAmount ?? 0,
+          discount_amount: receipt.discountAmount ?? 0,
+          cgst_amount: receipt.cgstAmount ?? 0,
+          sgst_amount: receipt.sgstAmount ?? 0,
+          igst_amount: receipt.igstAmount ?? 0,
+          round_off: receipt.roundOff ?? 0,
+          grand_total: receipt.grandTotal ?? receipt.totalAmount
         }])
         .select()
         .single();
 
       if (receiptError) {
-        throw new Error('Failed to create inward receipt');
+        throw new Error(receiptError.message || 'Failed to create inward receipt');
       }
 
       // Insert items
@@ -297,8 +491,19 @@ export const pharmacyService = {
           medicine_id: item.medicineId && item.medicineId.trim() !== '' ? item.medicineId : null,
           quantity: item.quantity,
           unit_cost_price: item.unitCostPrice,
-          batch_number: item.batchNumber,
-          expiry_date: item.expiryDate?.toISOString()
+          batch_number: item.batchNumber?.trim() || null,
+          expiry_date: item.expiryDate ? item.expiryDate.toISOString().slice(0, 10) : null,
+          hsn_code: item.hsnCode || null,
+          gst_rate: item.gstRate ?? 0,
+          mrp: item.mrp ?? null,
+          discount_percent: item.discountPercent ?? 0,
+          discount_amount: item.discountAmount ?? 0,
+          free_quantity: item.freeQuantity ?? 0,
+          taxable_amount: item.taxableAmount ?? item.quantity * item.unitCostPrice,
+          cgst_amount: item.cgstAmount ?? 0,
+          sgst_amount: item.sgstAmount ?? 0,
+          igst_amount: item.igstAmount ?? 0,
+          line_total: item.lineTotal ?? item.quantity * item.unitCostPrice
         }));
 
         const { error: itemsError } = await supabase
@@ -306,7 +511,8 @@ export const pharmacyService = {
           .insert(itemsToInsert);
 
         if (itemsError) {
-          throw new Error('Failed to create inward items');
+          await supabase.from('pharmacy_inward_receipts').delete().eq('id', receiptData.id);
+          throw new Error(itemsError.message || 'Failed to create inward items');
         }
       }
 
@@ -338,10 +544,35 @@ export const pharmacyService = {
     }
   },
 
+  // Batches
+  /** Batches with stock for a medicine (or all), earliest expiry first — FEFO. */
+  async getBatches(medicineId?: string, includeEmpty = false): Promise<MedicineBatch[]> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+
+    let query = supabase
+      .from('medicine_batches')
+      .select('*, medicines_master (*)')
+      .eq('clinic_id', profile.clinicId)
+      .order('expiry_date', { ascending: true, nullsFirst: false });
+
+    if (medicineId) query = query.eq('medicine_id', medicineId);
+    if (!includeEmpty) query = query.gt('quantity', 0);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error('Failed to fetch batches');
+    }
+    return (data || []).map(b => convertDatabaseBatch(b, b.medicines_master));
+  },
+
   // Medicine Dispensing
-  async dispenseMedicines(
-    items: Omit<PharmacyDispensedItem, 'id' | 'createdAt' | 'medicine' | 'dispensedByProfile' | 'totalSellingPrice'>[]
-  ): Promise<PharmacyDispensedItem[]> {
+  async dispenseMedicines(items: DispenseItemInput[]): Promise<PharmacyDispensedItem[]> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
     }
@@ -353,16 +584,25 @@ export const pharmacyService = {
 
     try {
       const itemsToInsert = items.map(item => ({
-        visit_id: item.visitId,
-        prescription_id: item.prescriptionId,
+        visit_id: item.visitId || null,
+        prescription_id: item.prescriptionId || null,
         clinic_id: profile.clinicId,
-
         medicine_id: item.medicineId,
         quantity: item.quantity,
         dispensed_by: item.dispensedBy,
         dispense_date: item.dispenseDate.toISOString(),
         selling_price_at_dispense: item.sellingPriceAtDispense,
-        batch_number: item.batchNumber
+        batch_number: item.batchNumber || null,
+        batch_id: item.batchId || null,
+        bill_id: item.billId || null,
+        hsn_code: item.hsnCode || null,
+        gst_rate: item.gstRate ?? 0,
+        mrp: item.mrp ?? item.sellingPriceAtDispense ?? null,
+        discount_amount: item.discountAmount ?? 0,
+        taxable_amount: item.taxableAmount ?? 0,
+        cgst_amount: item.cgstAmount ?? 0,
+        sgst_amount: item.sgstAmount ?? 0,
+        igst_amount: item.igstAmount ?? 0
       }));
 
       const { data, error } = await supabase
@@ -375,7 +615,7 @@ export const pharmacyService = {
         `);
 
       if (error) {
-        throw new Error('Failed to dispense medicines');
+        throw new Error(error.message || 'Failed to dispense medicines');
       }
 
       return data.map(item => convertDatabaseDispensedItem(item, item.medicines_master));
@@ -383,6 +623,30 @@ export const pharmacyService = {
     } catch (error) {
       console.error('Error dispensing medicines:', error);
       throw error;
+    }
+  },
+
+  /**
+   * Dispense and raise the pharmacy tax invoice in one go. The invoice is
+   * created first so each dispensed row can point at it; if dispensing then
+   * fails (stock race), the invoice is cancelled so the series shows a void
+   * number rather than a phantom sale.
+   */
+  async dispenseAndInvoice(
+    items: DispenseItemInput[],
+    bill: PharmacyBillInput
+  ): Promise<{ dispensed: PharmacyDispensedItem[]; bill: Bill }> {
+    const createdBill = await billingService.createPharmacyBill(bill);
+    try {
+      const dispensed = await this.dispenseMedicines(items.map(i => ({ ...i, billId: createdBill.id })));
+      return { dispensed, bill: createdBill };
+    } catch (err) {
+      try {
+        await billingService.cancelBill(createdBill.id, 'Dispense failed after invoice was raised');
+      } catch (cancelErr) {
+        console.error('Could not cancel invoice after failed dispense:', cancelErr);
+      }
+      throw err;
     }
   },
 
@@ -450,40 +714,9 @@ export const pharmacyService = {
     }
 
     // Filter medicines where current_stock <= reorder_level in JavaScript
-    const lowStockMedicines = data.filter(medicine => 
-      medicine.current_stock <= medicine.reorder_level
-    );
-
-    return lowStockMedicines.map(medicine => {
-      const baseMedicine = {
-        id: medicine.id,
-        name: medicine.name,
-        genericName: medicine.generic_name,
-        brandName: medicine.brand_name,
-        category: medicine.category,
-        dosageForm: medicine.dosage_form,
-        strength: medicine.strength,
-        manufacturer: medicine.manufacturer,
-        description: medicine.description,
-        sideEffects: medicine.side_effects,
-        contraindications: medicine.contraindications,
-        currentStock: medicine.current_stock,
-        reorderLevel: medicine.reorder_level,
-        batchNumber: medicine.batch_number,
-        expiryDate: medicine.expiry_date ? new Date(medicine.expiry_date) : undefined,
-        isActive: medicine.is_active,
-        createdAt: new Date(medicine.created_at),
-        updatedAt: new Date(medicine.updated_at)
-      };
-      
-      const priceData = medicine.clinic_medicine_prices?.[0];
-      
-      return {
-        ...baseMedicine,
-        sellingPrice: priceData?.selling_price,
-        costPrice: priceData?.cost_price
-      };
-    });
+    return data
+      .filter(medicine => medicine.current_stock <= medicine.reorder_level)
+      .map(convertMedicineRowWithPrice);
   },
 
   async getExpiringMedicines(daysAhead: number = 30, clinicId?: string): Promise<MedicineWithPrice[]> {
@@ -519,36 +752,7 @@ export const pharmacyService = {
       throw new Error('Failed to fetch expiring medicines');
     }
 
-    return data.map(medicine => {
-      const baseMedicine = {
-        id: medicine.id,
-        name: medicine.name,
-        genericName: medicine.generic_name,
-        brandName: medicine.brand_name,
-        category: medicine.category,
-        dosageForm: medicine.dosage_form,
-        strength: medicine.strength,
-        manufacturer: medicine.manufacturer,
-        description: medicine.description,
-        sideEffects: medicine.side_effects,
-        contraindications: medicine.contraindications,
-        currentStock: medicine.current_stock,
-        reorderLevel: medicine.reorder_level,
-        batchNumber: medicine.batch_number,
-        expiryDate: medicine.expiry_date ? new Date(medicine.expiry_date) : undefined,
-        isActive: medicine.is_active,
-        createdAt: new Date(medicine.created_at),
-        updatedAt: new Date(medicine.updated_at)
-      };
-      
-      const priceData = medicine.clinic_medicine_prices?.[0];
-      
-      return {
-        ...baseMedicine,
-        sellingPrice: priceData?.selling_price,
-        costPrice: priceData?.cost_price
-      };
-    });
+    return data.map(convertMedicineRowWithPrice);
   },
 
   // Dashboard Analytics
@@ -571,7 +775,6 @@ export const pharmacyService = {
     try {
       const [
         allMedicines,
-        
         lowStockMedicines,
         expiringMedicines,
         { data: recentMovements }
@@ -635,36 +838,7 @@ export const pharmacyService = {
       throw new Error('Failed to fetch medicines with prices');
     }
 
-    return data.map(medicine => {
-      const baseMedicine = {
-        id: medicine.id,
-        name: medicine.name,
-        genericName: medicine.generic_name,
-        brandName: medicine.brand_name,
-        category: medicine.category,
-        dosageForm: medicine.dosage_form,
-        strength: medicine.strength,
-        manufacturer: medicine.manufacturer,
-        description: medicine.description,
-        sideEffects: medicine.side_effects,
-        contraindications: medicine.contraindications,
-        currentStock: medicine.current_stock,
-        reorderLevel: medicine.reorder_level,
-        batchNumber: medicine.batch_number,
-        expiryDate: medicine.expiry_date ? new Date(medicine.expiry_date) : undefined,
-        isActive: medicine.is_active,
-        createdAt: new Date(medicine.created_at),
-        updatedAt: new Date(medicine.updated_at)
-      };
-      
-      const priceData = medicine.clinic_medicine_prices?.[0];
-      
-      return {
-        ...baseMedicine,
-        sellingPrice: priceData?.selling_price,
-        costPrice: priceData?.cost_price
-      };
-    });
+    return data.map(convertMedicineRowWithPrice);
   },
 
   // Stock Alerts Management
@@ -762,79 +936,123 @@ export const pharmacyService = {
     }
   },
 
-  // Medicine Returns
-  async returnMedicines(
-    medicineId: string,
-    quantity: number,
-    reason: string,
-    supplierId?: string,
-    returnedBy?: string
-  ): Promise<void> {
+  // Debit notes (return to supplier)
+  async getDebitNotes(range?: { from: Date; to: Date }): Promise<PharmacyDebitNote[]> {
     if (!supabase) {
       throw new Error('Supabase client not initialized');
     }
-
     const profile = await getCurrentProfile();
     if (!profile?.clinicId) {
       throw new Error('User not assigned to a clinic.');
     }
 
-    try {
-      // Fetch current medicine stock
-      const { data: medicine, error: medicineError } = await supabase
-        .from('medicines_master')
-        .select('id, name, current_stock')
-        .eq('id', medicineId)
-        .eq('clinic_id', profile.clinicId)
-        .single();
+    let query = supabase
+      .from('pharmacy_debit_notes')
+      .select('*, suppliers (*), pharmacy_debit_note_items (*, medicines_master (*))')
+      .eq('clinic_id', profile.clinicId)
+      .order('note_date', { ascending: false });
 
-      if (medicineError || !medicine) {
-        throw new Error('Medicine not found or error fetching medicine data');
-      }
-
-      if (medicine.current_stock < quantity) {
-        throw new Error(`Insufficient stock to return. Available: ${medicine.current_stock}, Requested: ${quantity}`);
-      }
-
-      const newStockLevel = medicine.current_stock - quantity;
-
-      // Update medicine stock
-      const { error: updateError } = await supabase
-        .from('medicines_master')
-        .update({ current_stock: newStockLevel })
-        .eq('clinic_id', profile.clinicId)
-        .eq('id', medicineId);
-
-      if (updateError) {
-        throw new Error(`Failed to update medicine stock: ${updateError.message}`);
-      }
-
-      // Create stock movement log entry
-      const movementRemarks = `Return to supplier: ${reason}${supplierId ? ` (Supplier ID: ${supplierId})` : ''}`;
-      
-      const { error: logError } = await supabase
-        .from('stock_movement_log')
-        .insert([{
-          clinic_id: profile.clinicId,
-          medicine_id: medicineId,
-          movement_type: 'return',
-          quantity_change: -quantity,
-          new_stock_level: newStockLevel,
-          reference_type: 'return_to_supplier',
-          reference_id: supplierId,
-          moved_by: returnedBy,
-          movement_date: new Date().toISOString(),
-          remarks: movementRemarks
-        }]);
-
-      if (logError) {
-        throw new Error(`Failed to log stock movement: ${logError.message}`);
-      }
-
-    } catch (error) {
-      console.error('Error returning medicines:', error);
-      throw error;
+    if (range) {
+      query = query
+        .gte('note_date', range.from.toISOString().slice(0, 10))
+        .lte('note_date', range.to.toISOString().slice(0, 10));
     }
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error('Failed to fetch debit notes');
+    }
+    return (data || []).map(d => convertDatabaseDebitNote(
+      d,
+      d.suppliers ? convertDatabaseSupplier(d.suppliers) : undefined,
+      (d.pharmacy_debit_note_items || []).map((i: any) => convertDatabaseDebitNoteItem(i, i.medicines_master))
+    ));
+  },
+
+  /**
+   * Return goods to a supplier. Allocates a DN/FY/00001 number, stores the
+   * GST reversal, and the item trigger moves stock + batch + movement log.
+   */
+  async createDebitNote(input: DebitNoteInput): Promise<PharmacyDebitNote> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) {
+      throw new Error('User not assigned to a clinic.');
+    }
+    if (input.items.length === 0) {
+      throw new Error('Add at least one item to return');
+    }
+
+    const { data: noteNumber, error: numberError } = await supabase
+      .rpc('next_debit_note_number', { p_clinic_id: profile.clinicId });
+    if (numberError || !noteNumber) {
+      throw new Error(`Failed to allocate debit note number: ${numberError?.message || 'unknown error'}`);
+    }
+
+    const { data: note, error: noteError } = await supabase
+      .from('pharmacy_debit_notes')
+      .insert({
+        clinic_id: profile.clinicId,
+        supplier_id: input.supplierId,
+        debit_note_number: noteNumber,
+        against_receipt_id: input.againstReceiptId || null,
+        reason: input.reason || null,
+        is_interstate: input.isInterstate,
+        taxable_amount: input.taxableAmount,
+        cgst_amount: input.cgstAmount,
+        sgst_amount: input.sgstAmount,
+        igst_amount: input.igstAmount,
+        round_off: input.roundOff,
+        grand_total: input.grandTotal,
+        created_by: profile.id
+      })
+      .select()
+      .single();
+
+    if (noteError || !note) {
+      throw new Error(noteError?.message || 'Failed to create debit note');
+    }
+
+    const { error: itemsError } = await supabase
+      .from('pharmacy_debit_note_items')
+      .insert(input.items.map(i => ({
+        clinic_id: profile.clinicId,
+        debit_note_id: note.id,
+        medicine_id: i.medicineId,
+        batch_id: i.batchId || null,
+        batch_number: i.batchNumber || null,
+        quantity: i.quantity,
+        unit_rate: i.unitRate,
+        hsn_code: i.hsnCode || null,
+        gst_rate: i.gstRate,
+        taxable_amount: i.taxableAmount,
+        cgst_amount: i.cgstAmount,
+        sgst_amount: i.sgstAmount,
+        igst_amount: i.igstAmount,
+        line_total: i.lineTotal
+      })));
+
+    if (itemsError) {
+      // Items insert is all-or-nothing in one statement; triggers rolled back with it.
+      await supabase.from('pharmacy_debit_notes').delete().eq('id', note.id);
+      throw new Error(itemsError.message || 'Failed to save debit note items');
+    }
+
+    const { data: full, error: fetchError } = await supabase
+      .from('pharmacy_debit_notes')
+      .select('*, suppliers (*), pharmacy_debit_note_items (*, medicines_master (*))')
+      .eq('id', note.id)
+      .single();
+    if (fetchError || !full) {
+      throw new Error('Debit note saved but could not be re-read');
+    }
+    return convertDatabaseDebitNote(
+      full,
+      full.suppliers ? convertDatabaseSupplier(full.suppliers) : undefined,
+      (full.pharmacy_debit_note_items || []).map((i: any) => convertDatabaseDebitNoteItem(i, i.medicines_master))
+    );
   },
 
   // Stock Adjustments
@@ -885,7 +1103,7 @@ export const pharmacyService = {
 
       // Create stock movement log entry
       const movementRemarks = `Stock adjustment: ${reason}`;
-      
+
       const { error: logError } = await supabase
         .from('stock_movement_log')
         .insert([{

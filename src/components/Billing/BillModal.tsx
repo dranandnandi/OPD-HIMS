@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Calculator, Search, User, Download, RotateCcw, Eye, RefreshCw, MessageCircle, Printer } from 'lucide-react';
-import { Patient, BillItem, Profile, Visit, RefundRequest, AppointmentType, Appointment, ClinicSetting } from '../../types';
+import { Patient, BillItem, Profile, Visit, RefundRequest, AppointmentType, Appointment, ClinicSetting, PaymentRecord } from '../../types';
 import { getCurrentProfile } from '../../services/profileService';
 import { billingService } from '../../services/billingService';
 import { paymentService } from '../../services/paymentService';
@@ -17,6 +17,7 @@ import { pdfService } from '../../services/pdfService';
 import { WhatsAppAutoSendService } from '../../services/whatsappAutoSendService';
 import { refundService } from '../../services/refundService';
 import RefundRequestModal from './RefundRequestModal';
+import PatientModal from '../Patients/PatientModal';
 import { format } from 'date-fns';
 
 interface BillModalProps {
@@ -46,6 +47,13 @@ const BillModal: React.FC<BillModalProps> = ({
 
   // Ref to prevent double-clicking save button
   const isSavingRef = useRef(false);
+
+  // The newest 'payment' receipt against this bill, and the method the form
+  // started from. bills.payment_method was historically never written for OPD
+  // bills, so the receipts are the source of truth for what was actually paid;
+  // the original method lets save detect a correction (e.g. Cash -> UPI).
+  const latestPaymentRef = useRef<PaymentRecord | null>(null);
+  const originalPaymentMethodRef = useRef<string | null>(null);
 
   // Check if user can edit bills
   const canEditBills = () => {
@@ -81,6 +89,7 @@ const BillModal: React.FC<BillModalProps> = ({
 
   // Data states
   const [patients, setPatients] = useState<Patient[]>(patientsProp || []);
+  const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [medicines, setMedicines] = useState<any[]>([]);
   const [tests, setTests] = useState<any[]>([]);
@@ -191,8 +200,10 @@ const BillModal: React.FC<BillModalProps> = ({
   useEffect(() => {
     if (bill?.id) {
       loadRefundRequests();
+      loadBillPayments();
     } else {
       setRefundRequests([]);
+      latestPaymentRef.current = null;
     }
   }, [bill?.id]);
 
@@ -299,14 +310,41 @@ const BillModal: React.FC<BillModalProps> = ({
     }
   };
 
+  /**
+   * What this bill was actually paid with. bills.payment_method is NULL on
+   * older OPD bills (only the receipts carried the method), so fall back to
+   * the newest payment record before defaulting to cash — the old blanket
+   * 'cash' default is what made UPI bills open as "Cash" in Edit Bill and
+   * print as Cash on the PDF.
+   */
+  const resolvedPaymentMethod = () =>
+    bill?.paymentMethod || latestPaymentRef.current?.paymentMethod || 'cash';
+
+  const loadBillPayments = async () => {
+    if (!bill?.id) return;
+    try {
+      // Ordered newest-first by paymentService, so find() is the latest receipt
+      const payments = await paymentService.getBillPayments(bill.id);
+      latestPaymentRef.current =
+        payments.find(p => (p.recordType || 'payment') === 'payment') || null;
+      const method = resolvedPaymentMethod();
+      originalPaymentMethodRef.current = method;
+      setFormData(prev => ({ ...prev, paymentMethod: method }));
+    } catch (error) {
+      console.error('Error loading bill payments:', error);
+    }
+  };
+
   const initializeFromExistingBill = () => {
+    const method = resolvedPaymentMethod();
+    originalPaymentMethodRef.current = method;
     setFormData({
       billNumber: bill.billNumber,
       totalAmount: bill.totalAmount,
       paidAmount: bill.paidAmount,
       balanceAmount: bill.balanceAmount,
       paymentStatus: bill.paymentStatus,
-      paymentMethod: bill.paymentMethod || 'cash',
+      paymentMethod: method,
       billDate: new Date(bill.billDate).toISOString().split('T')[0],
       notes: bill.notes || ''
     });
@@ -581,6 +619,20 @@ const BillModal: React.FC<BillModalProps> = ({
   const handlePatientSelect = (patient: Patient) => {
     setSelectedPatient(patient);
     setSearchTerm('');
+  };
+
+  // Reception often reaches billing with a walk-in who was never registered.
+  // Register them here so the bill can be raised without leaving the modal.
+  const handleSaveNewPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'lastVisit'>) => {
+    try {
+      const newPatient = await patientService.addPatient(patientData);
+      setPatients(prev => [newPatient, ...prev]);
+      handlePatientSelect(newPatient);
+      setShowNewPatientModal(false);
+    } catch (error) {
+      console.error('Error adding patient:', error);
+      throw error; // Re-throw to let PatientModal show the message
+    }
   };
 
   const addNewItem = () => {
@@ -1048,10 +1100,19 @@ const BillModal: React.FC<BillModalProps> = ({
       if (bill) {
         setProgressStep(3);
         setSaveProgress('Updating bill...');
-        // Update bill with all changed fields
+        const selectedMethod = formData.paymentMethod as 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet';
+        const methodChanged = formData.paymentMethod !== originalPaymentMethodRef.current;
+        const recordingAdditionalPayment = formData.paidAmount > bill.paidAmount;
+
+        // Update bill with all changed fields. The method is only persisted on
+        // bills that have (or are now taking) money against them — an unpaid
+        // bill has no payment method yet.
         await billingService.updateBill(bill.id, {
           notes: formData.notes,
           totalAmount: formData.totalAmount,
+          ...(bill.paidAmount > 0 || formData.paidAmount > 0
+            ? { paymentMethod: selectedMethod }
+            : {}),
           billItems: billItems.map(item => ({
             itemType: item.itemType,
             itemName: item.itemName,
@@ -1064,16 +1125,25 @@ const BillModal: React.FC<BillModalProps> = ({
         });
 
         // Handle payment updates for existing bills
-        if (formData.paidAmount !== bill.paidAmount && formData.paidAmount > bill.paidAmount) {
+        if (recordingAdditionalPayment) {
           setProgressStep(4);
           setSaveProgress('Recording additional payment...');
           const additionalPayment = formData.paidAmount - bill.paidAmount;
           await paymentService.recordPayment({
             billId: bill.id,
             amount: additionalPayment,
-            paymentMethod: formData.paymentMethod as 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet',
+            paymentMethod: selectedMethod,
             notes: 'Additional payment',
             paymentDate: new Date()
+          });
+        } else if (methodChanged && latestPaymentRef.current) {
+          // The method was corrected (e.g. recorded as Cash, actually UPI)
+          // without new money: fix the receipt itself so the daily collection
+          // and cash reconciliation figures move with it.
+          setProgressStep(4);
+          setSaveProgress('Updating payment method...');
+          await paymentService.updatePayment(latestPaymentRef.current.id, {
+            paymentMethod: selectedMethod
           });
         }
       } else {
@@ -1144,15 +1214,25 @@ const BillModal: React.FC<BillModalProps> = ({
             <div className="space-y-4">
               <h3 className="font-medium text-gray-800">Select Patient *</h3>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search patients by no, name, or phone..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search patients by no, name, or phone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNewPatientModal(true)}
+                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add New Patient
+                </button>
               </div>
 
               {searchTerm && (
@@ -1172,7 +1252,16 @@ const BillModal: React.FC<BillModalProps> = ({
                       </button>
                     ))
                   ) : (
-                    <div className="p-3 text-center text-gray-500">No patients found</div>
+                    <div className="p-3 text-center text-gray-500">
+                      <p>No patients found matching "{searchTerm}"</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPatientModal(true)}
+                        className="mt-2 text-blue-600 hover:text-blue-700 text-sm underline"
+                      >
+                        Add "{searchTerm}" as new patient
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -1424,7 +1513,14 @@ const BillModal: React.FC<BillModalProps> = ({
                   <option value="card">Card</option>
                   <option value="upi">UPI</option>
                   <option value="cheque">Cheque</option>
-                  <option value="online">Online</option>
+                  {/* 'online' is not accepted by the payment_records CHECK
+                      constraint — recording a payment with it failed outright.
+                      Kept only as a read-only legacy value on old bills. */}
+                  <option value="net_banking">Net Banking</option>
+                  <option value="wallet">Wallet</option>
+                  {formData.paymentMethod === 'online' && (
+                    <option value="online">Online (legacy)</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -1684,6 +1780,20 @@ const BillModal: React.FC<BillModalProps> = ({
           bill={bill}
           onClose={closeRefundModal}
           onRequestCreated={handleRefundSubmitted}
+        />
+      )}
+
+      {showNewPatientModal && (
+        <PatientModal
+          patient={null}
+          onSave={handleSaveNewPatient}
+          onUsePatient={(existingPatient) => {
+            // Phone already on file -- bill against that record instead of
+            // creating a duplicate.
+            handlePatientSelect(existingPatient);
+            setShowNewPatientModal(false);
+          }}
+          onClose={() => setShowNewPatientModal(false)}
         />
       )}
     </div>

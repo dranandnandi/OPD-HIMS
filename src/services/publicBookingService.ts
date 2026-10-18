@@ -40,6 +40,17 @@ export interface PublicDoctor {
   fee: number | null;
   /** Lowercase weekday names this doctor sees patients on. */
   openDays: string[];
+  /** Date overrides: "YYYY-MM-DD" days off, trumping the weekly pattern. Optional until the edge function is redeployed. */
+  closedDates?: string[];
+  /** Date overrides: "YYYY-MM-DD" extra open days on normally closed weekdays. */
+  openDates?: string[];
+}
+
+/** Whether a doctor sees patients on a date: overrides first, weekly pattern otherwise. */
+export function isDoctorOpenOn(doctor: PublicDoctor, dateKey: string): boolean {
+  if (doctor.openDates?.includes(dateKey)) return true;
+  if (doctor.closedDates?.includes(dateKey)) return false;
+  return doctor.openDays.includes(weekdayOf(dateKey));
 }
 
 export interface ClinicResponse {

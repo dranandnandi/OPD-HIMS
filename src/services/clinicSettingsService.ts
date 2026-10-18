@@ -75,6 +75,12 @@ const convertDatabaseClinicSetting = (dbSetting: DatabaseClinicSetting): ClinicS
   logoUrl: dbSetting.logo_url,
   registrationNumber: dbSetting.registration_number,
   taxId: dbSetting.tax_id,
+  gstin: dbSetting.gstin ?? undefined,
+  gstStateCode: dbSetting.gst_state_code ?? undefined,
+  drugLicenseNumber: dbSetting.drug_license_number ?? undefined,
+  pharmacyGstScheme: dbSetting.pharmacy_gst_scheme ?? 'regular',
+  pharmacyPricesIncludeGst: dbSetting.pharmacy_prices_include_gst ?? true,
+  pharmacyInvoicePrefix: dbSetting.pharmacy_invoice_prefix ?? 'PH',
   consultationFee: dbSetting.consultation_fee,
   followUpFee: dbSetting.follow_up_fee,
   emergencyFee: dbSetting.emergency_fee,
@@ -132,6 +138,12 @@ const convertToDatabase = (setting: Omit<ClinicSetting, 'id' | 'createdAt' | 'up
   logo_url: setting.logoUrl,
   registration_number: setting.registrationNumber,
   tax_id: setting.taxId,
+  gstin: setting.gstin,
+  gst_state_code: setting.gstStateCode,
+  drug_license_number: setting.drugLicenseNumber,
+  pharmacy_gst_scheme: setting.pharmacyGstScheme,
+  pharmacy_prices_include_gst: setting.pharmacyPricesIncludeGst,
+  pharmacy_invoice_prefix: setting.pharmacyInvoicePrefix,
   consultation_fee: setting.consultationFee,
   follow_up_fee: setting.followUpFee,
   emergency_fee: setting.emergencyFee,
@@ -244,6 +256,12 @@ export const clinicSettingsService = {
     if (settings.logoUrl !== undefined) dbSettings.logo_url = settings.logoUrl;
     if (settings.registrationNumber !== undefined) dbSettings.registration_number = settings.registrationNumber;
     if (settings.taxId !== undefined) dbSettings.tax_id = settings.taxId;
+    if (settings.gstin !== undefined) dbSettings.gstin = settings.gstin?.trim().toUpperCase() || null;
+    if (settings.gstStateCode !== undefined) dbSettings.gst_state_code = settings.gstStateCode || null;
+    if (settings.drugLicenseNumber !== undefined) dbSettings.drug_license_number = settings.drugLicenseNumber?.trim() || null;
+    if (settings.pharmacyGstScheme !== undefined) dbSettings.pharmacy_gst_scheme = settings.pharmacyGstScheme;
+    if (settings.pharmacyPricesIncludeGst !== undefined) dbSettings.pharmacy_prices_include_gst = settings.pharmacyPricesIncludeGst;
+    if (settings.pharmacyInvoicePrefix !== undefined) dbSettings.pharmacy_invoice_prefix = settings.pharmacyInvoicePrefix?.trim() || 'PH';
     if (settings.consultationFee !== undefined) dbSettings.consultation_fee = settings.consultationFee;
     if (settings.followUpFee !== undefined) dbSettings.follow_up_fee = settings.followUpFee;
     if (settings.emergencyFee !== undefined) dbSettings.emergency_fee = settings.emergencyFee;

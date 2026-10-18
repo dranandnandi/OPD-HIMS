@@ -24,6 +24,7 @@ import {
   BusyInterval,
   clinicDayRangeUtc,
   dateKeyInZone,
+  DayAvailability,
   formatInZone,
   generateFreeSlots,
   parseDateKey,
@@ -269,6 +270,48 @@ function availabilityFor(
   return clinic.workingHours;
 }
 
+interface OverrideRow {
+  doctor_id?: string;
+  override_date?: string;
+  is_open: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  break_start: string | null;
+  break_end: string | null;
+}
+
+/** A doctor_availability_overrides row in the shape the slot generator eats. */
+function overrideDay(row: OverrideRow): DayAvailability {
+  return {
+    isOpen: row.is_open === true,
+    startTime: row.start_time ?? '',
+    endTime: row.end_time ?? '',
+    breakStart: row.break_start ?? undefined,
+    breakEnd: row.break_end ?? undefined,
+  };
+}
+
+/** Date-specific override for one doctor on one clinic-local date, if any. */
+async function loadOverride(
+  supabase: SupabaseClient,
+  clinicId: string,
+  doctorId: string,
+  dateKey: string,
+): Promise<DayAvailability | null> {
+  const { data, error } = await supabase
+    .from('doctor_availability_overrides')
+    .select('is_open, start_time, end_time, break_start, break_end')
+    .eq('clinic_id', clinicId)
+    .eq('doctor_id', doctorId)
+    .eq('override_date', dateKey)
+    .maybeSingle();
+
+  // Fail open to the weekly pattern: a broken override lookup must not take
+  // the booking page down.
+  if (error || !data) return null;
+  return overrideDay(data as OverrideRow);
+}
+
 async function loadBookableDoctors(supabase: SupabaseClient, clinicId: string) {
   const { data, error } = await supabase
     .from('profiles')
@@ -419,6 +462,30 @@ async function handleClinic(supabase: SupabaseClient, clinic: ResolvedClinic) {
   const doctors = await loadBookableDoctors(supabase, clinic.id);
   const types = publicAppointmentTypes(clinic);
 
+  // Date overrides within the booking horizon, so the date strip can grey out
+  // a doctor's day off (is_open=false) and un-grey an extra open date on a
+  // normally closed weekday -- without a slots request per day. Hour changes
+  // (same day, shorter hours) need nothing here; the slots call handles them.
+  const today = todayInZone(clinic.timeZone);
+  const horizonEnd = addDaysToKey(today, clinic.policy.horizonDays);
+
+  const { data: overrideRows } = await supabase
+    .from('doctor_availability_overrides')
+    .select('doctor_id, override_date, is_open')
+    .eq('clinic_id', clinic.id)
+    .gte('override_date', today)
+    .lte('override_date', horizonEnd);
+
+  const closedByDoctor = new Map<string, string[]>();
+  const openByDoctor = new Map<string, string[]>();
+  for (const row of (overrideRows ?? []) as OverrideRow[]) {
+    if (!row.doctor_id || !row.override_date) continue;
+    const bucket = row.is_open ? openByDoctor : closedByDoctor;
+    const list = bucket.get(row.doctor_id) ?? [];
+    list.push(row.override_date);
+    bucket.set(row.doctor_id, list);
+  }
+
   return json({
     status: 'ok',
     clinic: {
@@ -431,7 +498,7 @@ async function handleClinic(supabase: SupabaseClient, clinic: ResolvedClinic) {
       notice: clinic.policy.noticeText,
       language: clinic.policy.language,
       horizonDays: clinic.policy.horizonDays,
-      today: todayInZone(clinic.timeZone),
+      today,
       blackoutDates: clinic.policy.blackoutDates,
     },
     appointmentTypes: types.length > 0
@@ -463,6 +530,9 @@ async function handleClinic(supabase: SupabaseClient, clinic: ResolvedClinic) {
           openDays: Object.entries(availability)
             .filter(([, day]) => day && day.isOpen)
             .map(([weekday]) => weekday.toLowerCase()),
+          // Date overrides trump the weekly pattern on exactly these dates.
+          closedDates: closedByDoctor.get(doctor.id) ?? [],
+          openDates: openByDoctor.get(doctor.id) ?? [],
         };
       },
     ),
@@ -501,13 +571,10 @@ async function handleSlots(
   const range = clinicDayRangeUtc(dateKey, clinic.timeZone);
   if (!range) return json({ status: 'ok', slots: [] });
 
-  const busy = await loadBusyIntervals(
-    supabase,
-    doctorId,
-    range.fromIso,
-    range.toIso,
-    clinic.defaultDuration,
-  );
+  const [busy, override] = await Promise.all([
+    loadBusyIntervals(supabase, doctorId, range.fromIso, range.toIso, clinic.defaultDuration),
+    loadOverride(supabase, clinic.id, doctorId, dateKey),
+  ]);
 
   const slots = generateFreeSlots({
     dateKey,
@@ -517,6 +584,7 @@ async function handleSlots(
     busy,
     notBeforeMs: Date.now() + clinic.policy.leadTimeHours * 60 * 60_000,
     blackoutDates: clinic.policy.blackoutDates,
+    override,
   });
 
   return json({
@@ -593,13 +661,10 @@ async function handleBook(
   const range = clinicDayRangeUtc(dateKey, clinic.timeZone);
   if (!range) return json({ status: 'slot_taken' }, 200);
 
-  const busy = await loadBusyIntervals(
-    supabase,
-    doctorId,
-    range.fromIso,
-    range.toIso,
-    clinic.defaultDuration,
-  );
+  const [busy, override] = await Promise.all([
+    loadBusyIntervals(supabase, doctorId, range.fromIso, range.toIso, clinic.defaultDuration),
+    loadOverride(supabase, clinic.id, doctorId, dateKey),
+  ]);
 
   const freeSlots = generateFreeSlots({
     dateKey,
@@ -609,6 +674,7 @@ async function handleBook(
     busy,
     notBeforeMs: Date.now() + clinic.policy.leadTimeHours * 60 * 60_000,
     blackoutDates: clinic.policy.blackoutDates,
+    override,
   });
 
   const chosen = freeSlots.find((slot) => slot.startMs === startDate.getTime());
@@ -672,7 +738,7 @@ async function handleBook(
 /**
  * Find or create the patient behind a public booking.
  *
- * Matched on clinic + phone-number tail + name, deliberately *not* phone alone:
+ * Matched on clinic + `phone_norm` + name, deliberately *not* phone alone:
  * families share a mobile number, and collapsing them onto one record would
  * merge unrelated people's medical histories. A phone match with a different
  * name creates a separate patient, which reception can merge later if it really
@@ -680,6 +746,11 @@ async function handleBook(
  *
  * Nothing about a matched patient is ever returned to the caller -- otherwise
  * this becomes a lookup oracle for anyone who can guess a phone number.
+ *
+ * The phone side of the match is an equality test on `phone_norm`, the stored
+ * last-10-digit key, rather than the `ILIKE '%tail'` this used to run. Same
+ * answer, but a leading wildcard cannot use an index, so every public booking
+ * was sequentially scanning the clinic's whole patient table.
  *
  * Age and gender are written only on creation. An existing record has been
  * curated by clinic staff, and an unauthenticated form must not be able to
@@ -696,10 +767,10 @@ async function resolvePatient(
 ): Promise<{ id: string; created: boolean } | null> {
   const { data: candidates } = await supabase
     .from('patients')
-    .select('id, name, phone')
+    .select('id, name')
     .eq('clinic_id', clinicId)
     .eq('is_hidden', false)
-    .ilike('phone', `%${phone.last10}`)
+    .eq('phone_norm', phone.last10)
     .limit(25);
 
   const target = name.toLowerCase();

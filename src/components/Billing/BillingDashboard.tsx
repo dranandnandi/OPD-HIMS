@@ -506,7 +506,9 @@ Reason:`
             <option value="card">Card</option>
             <option value="upi">UPI</option>
             <option value="cheque">Cheque</option>
-            <option value="online">Online</option>
+            <option value="net_banking">Net Banking</option>
+            <option value="wallet">Wallet</option>
+            <option value="online">Online (legacy)</option>
           </select>
           
           <select

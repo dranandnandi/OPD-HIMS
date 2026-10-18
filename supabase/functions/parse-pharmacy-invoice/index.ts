@@ -44,6 +44,9 @@ serve(async (req) => {
 IMPORTANT GUIDELINES:
 - Focus on Indian pharmaceutical products and suppliers
 - Extract medicine names, quantities, prices, batch numbers, and expiry dates
+- Extract GST details: supplier GSTIN, HSN code per line, GST % per line, MRP, discount %, free/scheme quantity, and the invoice tax totals
+- "unitCostPrice" is the GST-EXCLUSIVE purchase rate per unit (the "Rate" column), NOT the MRP
+- Indian pharma invoices usually show CGST and SGST as two equal halves (e.g. 6% + 6% = 12% GST); report the combined gstRate
 - Be precise with numeric values and dates
 - If a field cannot be confidently extracted, use null
 
@@ -53,9 +56,14 @@ Extract and format the output as a valid JSON object with this exact schema:
   "raw_text": "string (all visible text)",
   "invoiceInfo": {
     "supplierName": "string|null",
-    "invoiceNumber": "string|null", 
+    "supplierGstin": "string|null (15 characters)",
+    "invoiceNumber": "string|null",
     "invoiceDate": "YYYY-MM-DD|null",
-    "totalAmount": "number|null"
+    "taxableAmount": "number|null (invoice total before GST)",
+    "cgstAmount": "number|null",
+    "sgstAmount": "number|null",
+    "igstAmount": "number|null",
+    "totalAmount": "number|null (grand total payable)"
   },
   "medicines": [
     {
@@ -64,10 +72,16 @@ Extract and format the output as a valid JSON object with this exact schema:
       "unitCostPrice": "number (required, must be positive)",
       "totalCostPrice": "number (quantity * unitCostPrice)",
       "batchNumber": "string|null",
-      "expiryDate": "YYYY-MM-DD|null",
+      "expiryDate": "YYYY-MM-DD|null (if only MM/YY is printed, use the last day of that month)",
       "manufacturer": "string|null",
       "strength": "string|null (e.g., '500mg', '10ml')",
-      "packSize": "string|null (e.g., '10 tablets', '100ml bottle')"
+      "packSize": "string|null (e.g., '10 tablets', '100ml bottle')",
+      "hsnCode": "string|null (4-8 digits, usually 3004)",
+      "gstRate": "number|null (combined GST %: 0, 5, 12, 18 or 28)",
+      "mrp": "number|null (printed MRP per unit)",
+      "discountPercent": "number|null (line discount %)",
+      "discountAmount": "number|null (flat line discount in rupees, when printed as an amount instead of %)",
+      "freeQuantity": "number|null (scheme / free units)"
     }
   ]
 }
@@ -136,8 +150,14 @@ Return only the JSON object, no additional text or formatting.`
     const cleanedData = {
       invoiceInfo: {
         supplierName: extractedData.invoiceInfo?.supplierName || null,
+        supplierGstin: typeof extractedData.invoiceInfo?.supplierGstin === 'string'
+          ? extractedData.invoiceInfo.supplierGstin.replace(/\s+/g, '').toUpperCase() : null,
         invoiceNumber: extractedData.invoiceInfo?.invoiceNumber || null,
         invoiceDate: extractedData.invoiceInfo?.invoiceDate || null,
+        taxableAmount: typeof extractedData.invoiceInfo?.taxableAmount === 'number' ? extractedData.invoiceInfo.taxableAmount : null,
+        cgstAmount: typeof extractedData.invoiceInfo?.cgstAmount === 'number' ? extractedData.invoiceInfo.cgstAmount : null,
+        sgstAmount: typeof extractedData.invoiceInfo?.sgstAmount === 'number' ? extractedData.invoiceInfo.sgstAmount : null,
+        igstAmount: typeof extractedData.invoiceInfo?.igstAmount === 'number' ? extractedData.invoiceInfo.igstAmount : null,
         totalAmount: typeof extractedData.invoiceInfo?.totalAmount === 'number' ? extractedData.invoiceInfo.totalAmount : null
       },
       medicines: Array.isArray(extractedData.medicines) ? extractedData.medicines.map((medicine: any) => ({
@@ -149,7 +169,13 @@ Return only the JSON object, no additional text or formatting.`
         expiryDate: medicine.expiryDate || null,
         manufacturer: medicine.manufacturer || null,
         strength: medicine.strength || null,
-        packSize: medicine.packSize || null
+        packSize: medicine.packSize || null,
+        hsnCode: medicine.hsnCode ? String(medicine.hsnCode).replace(/\D/g, '') || null : null,
+        gstRate: [0, 5, 12, 18, 28].includes(Number(medicine.gstRate)) ? Number(medicine.gstRate) : null,
+        mrp: typeof medicine.mrp === 'number' && medicine.mrp > 0 ? medicine.mrp : null,
+        discountPercent: typeof medicine.discountPercent === 'number' && medicine.discountPercent >= 0 ? medicine.discountPercent : null,
+        discountAmount: typeof medicine.discountAmount === 'number' && medicine.discountAmount >= 0 ? medicine.discountAmount : null,
+        freeQuantity: typeof medicine.freeQuantity === 'number' && medicine.freeQuantity >= 0 ? Math.floor(medicine.freeQuantity) : null
       })).filter((m: any) => m.medicineName && m.medicineName.trim()) : []
     }
 

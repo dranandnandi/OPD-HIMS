@@ -8,19 +8,22 @@
  * have to pull the React app's module graph into a scheduled function.
  */
 
-export type AutoEventType = 'appointment_reminder' | 'follow_up_reminder';
+export type AutoEventType = 'appointment_reminder' | 'follow_up_reminder' | 'refill_reminder';
 
 /** clinic_settings.whatsapp_templates uses its own key names for some events. */
 const TEMPLATE_KEY_MAP: Record<AutoEventType, string> = {
   appointment_reminder: 'appointment_reminder',
-  follow_up_reminder: 'follow_up_reminder'
+  follow_up_reminder: 'follow_up_reminder',
+  refill_reminder: 'refill_reminder'
 };
 
 export const DEFAULT_TEMPLATES: Record<AutoEventType, string> = {
   appointment_reminder:
     'Dear {{patientName}},\n\n⏰ Appointment Reminder\n\nYou have an appointment on {{appointmentDate}} with Dr. {{doctorName}} at {{clinicName}}.\n\nPlease arrive 10 minutes early. Reply to this message if you need to reschedule.',
   follow_up_reminder:
-    'Dear {{patientName}},\n\n🩺 Follow-up Reminder\n\nDr. {{doctorName}} advised a follow-up visit on {{followUpDate}}. Please call {{clinicPhone}} to book a convenient slot.\n\n- {{clinicName}}'
+    'Dear {{patientName}},\n\n🩺 Follow-up Reminder\n\nDr. {{doctorName}} advised a follow-up visit on {{followUpDate}}. Please call {{clinicPhone}} to book a convenient slot.\n\n- {{clinicName}}',
+  refill_reminder:
+    'Dear {{patientName}},\n\n💊 Medicine Refill Reminder\n\nYour {{medicines}} will run out around {{dueDate}}. Reply to this message or call {{clinicPhone}} and we will keep your refill ready at {{clinicName}} pharmacy.\n\n- {{clinicName}}'
 };
 
 export function renderTemplate(template: string, variables: Record<string, string>): string {

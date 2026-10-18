@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Bell, MessageSquare, DollarSign, Star, Calendar, TestTube, ClipboardList } from 'lucide-react';
+import { Save, Bell, MessageSquare, DollarSign, Star, Calendar, TestTube, ClipboardList, Pill } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../Auth/useAuth';
 import type { WhatsAppEventType, WhatsAppAutoSendRule, WhatsAppMessageTemplate } from '../../types/whatsapp';
@@ -23,6 +23,12 @@ const EVENT_TYPES: { type: WhatsAppEventType; label: string; icon: React.Element
     label: 'Follow-Up Reminder',
     icon: Bell,
     description: 'Automatically remind patients when a visit follow-up falls due (scheduled server-side)'
+  },
+  {
+    type: 'refill_reminder',
+    label: 'Medicine Refill Reminder',
+    icon: Pill,
+    description: 'Remind patients a few days before medicines sold at the pharmacy run out (scheduled server-side)'
   },
   {
     type: 'bill_created',
@@ -151,7 +157,15 @@ This is a reminder for your follow-up visit at {{clinicName}}.
 
 Please schedule an appointment at your earliest convenience.
 
-Thank you!`
+Thank you!`,
+
+  refill_reminder: `Dear {{patientName}},
+
+💊 Medicine Refill Reminder
+
+Your {{medicines}} will run out around {{dueDate}}. Reply to this message or call {{clinicPhone}} and we will keep your refill ready at {{clinicName}} pharmacy.
+
+- {{clinicName}}`
 };
 
 const WhatsAppAutoSendSettings: React.FC = () => {

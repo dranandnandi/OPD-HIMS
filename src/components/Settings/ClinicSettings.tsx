@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { INDIAN_STATE_CODES, isValidGstin, stateCodeFromGstin, indianFyLabel } from '../../utils/gst';
 import { Link } from 'react-router-dom';
 import { Save, Building, Clock, IndianRupee, Plus, Trash2, FileText, MessageSquare, Timer, TestTube, BedDouble, Mic } from 'lucide-react';
 import { ClinicSetting, AppointmentType } from '../../types';
@@ -21,6 +22,12 @@ const ClinicSettings: React.FC = () => {
     website: '',
     registrationNumber: '',
     taxId: '',
+    gstin: '',
+    gstStateCode: '',
+    drugLicenseNumber: '',
+    pharmacyGstScheme: 'regular' as 'regular' | 'composition',
+    pharmacyPricesIncludeGst: true,
+    pharmacyInvoicePrefix: 'PH',
     consultationFee: 300,
     followUpFee: 200,
     emergencyFee: 500,
@@ -98,6 +105,12 @@ const ClinicSettings: React.FC = () => {
         website: clinicSettings.website || '',
         registrationNumber: clinicSettings.registrationNumber || '',
         taxId: clinicSettings.taxId || '',
+        gstin: clinicSettings.gstin || '',
+        gstStateCode: clinicSettings.gstStateCode || '',
+        drugLicenseNumber: clinicSettings.drugLicenseNumber || '',
+        pharmacyGstScheme: clinicSettings.pharmacyGstScheme || 'regular',
+        pharmacyPricesIncludeGst: clinicSettings.pharmacyPricesIncludeGst ?? true,
+        pharmacyInvoicePrefix: clinicSettings.pharmacyInvoicePrefix || 'PH',
         consultationFee: clinicSettings.consultationFee,
         followUpFee: clinicSettings.followUpFee,
         emergencyFee: clinicSettings.emergencyFee,
@@ -342,7 +355,90 @@ const ClinicSettings: React.FC = () => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-      </div>
+
+        {/* GST identity: printed on pharmacy tax invoices and used by GST reports */}
+        <div className="mt-6 border-t border-gray-200 pt-5">
+          <h4 className="text-base font-semibold text-gray-800 mb-1">GST &amp; Pharmacy Invoice</h4>
+          <p className="text-sm text-gray-500 mb-4">Printed on every pharmacy tax invoice and used for the GST filing reports.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
+              <input
+                type="text"
+                maxLength={15}
+                value={formData.gstin}
+                onChange={(e) => {
+                  const gstin = e.target.value.toUpperCase();
+                  setFormData({ ...formData, gstin, gstStateCode: formData.gstStateCode || stateCodeFromGstin(gstin) || '' });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="24ABCDE1234F1Z5"
+              />
+              {formData.gstin && !isValidGstin(formData.gstin) && (
+                <p className="text-xs text-amber-700 mt-1">Does not look like a valid 15-character GSTIN</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">State (place of business)</label>
+              <select
+                value={formData.gstStateCode}
+                onChange={(e) => setFormData({ ...formData, gstStateCode: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Auto from GSTIN</option>
+                {INDIAN_STATE_CODES.map(s => <option key={s.code} value={s.code}>{s.code} - {s.name}</option>)}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Suppliers in another state are billed IGST instead of CGST + SGST.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Drug Licence No</label>
+              <input
+                type="text"
+                value={formData.drugLicenseNumber}
+                onChange={(e) => setFormData({ ...formData, drugLicenseNumber: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Retail drug licence (20/21)"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pharmacy Invoice Prefix</label>
+              <input
+                type="text"
+                maxLength={6}
+                value={formData.pharmacyInvoicePrefix}
+                onChange={(e) => setFormData({ ...formData, pharmacyInvoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="PH"
+              />
+              <p className="text-xs text-gray-500 mt-1">Invoices are numbered {formData.pharmacyInvoicePrefix || 'PH'}/{indianFyLabel()}/00001 and reset each financial year.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">GST Scheme</label>
+              <select
+                value={formData.pharmacyGstScheme}
+                onChange={(e) => setFormData({ ...formData, pharmacyGstScheme: e.target.value as 'regular' | 'composition' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="regular">Regular (tax invoice, charge GST, claim ITC)</option>
+                <option value="composition">Composition (bill of supply, no GST on sales)</option>
+              </select>
+            </div>
+            <div className="flex items-start gap-3 pt-7">
+              <input
+                id="pricesIncludeGst"
+                type="checkbox"
+                checked={formData.pharmacyPricesIncludeGst}
+                onChange={(e) => setFormData({ ...formData, pharmacyPricesIncludeGst: e.target.checked })}
+                className="mt-1 rounded"
+              />
+              <label htmlFor="pricesIncludeGst" className="text-sm text-gray-700">
+                Selling prices are MRP, inclusive of GST
+                <span className="block text-xs text-gray-500">Tax is backed out of the MRP on the invoice. Untick only if your price list is ex-GST.</span>
+              </label>
+            </div>
+          </div>
+        </div>
+</div>
 
       {/* Consultation Fees */}
       <div className="bg-white rounded-lg shadow-md p-6">

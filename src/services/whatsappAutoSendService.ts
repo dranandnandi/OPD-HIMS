@@ -61,7 +61,8 @@ export class WhatsAppAutoSendService {
     'invoice_generated': 'Dear {{patientName}}, your invoice #{{billNumber}} for {{totalAmount}} is ready. Download: {{pdfUrl}} - {{clinicName}}',
     'gmb_review_request': 'Thank you for visiting {{clinicName}}! We hope you are feeling better. Please share your experience: {{reviewLink}}',
     'patient_registration': 'Welcome to {{clinicName}}, {{patientName}}! You are now registered with us. For faster service, you can securely upload your ID, insurance/TPA policy and reports here: {{uploadLink}}',
-    'thank_you': 'Thank you for visiting {{clinicName}} today! We hope you feel better soon.'
+    'thank_you': 'Thank you for visiting {{clinicName}} today! We hope you feel better soon.',
+    'refill_reminder': 'Dear {{patientName}}, your {{medicines}} will run out around {{dueDate}}. Reply or call {{clinicPhone}} and we will keep your refill ready. - {{clinicName}}'
   };
 
   // Get template for event type - uses clinic_settings.whatsapp_templates with fallback
@@ -87,7 +88,8 @@ export class WhatsAppAutoSendService {
         'invoice_generated': 'invoice_generated',
         'gmb_review_request': 'thank_you',
         'patient_registration': 'patient_registration',
-        'thank_you': 'thank_you'
+        'thank_you': 'thank_you',
+        'refill_reminder': 'refill_reminder'
       };
 
       const templateKey = templateKeyMap[eventType] || eventType;

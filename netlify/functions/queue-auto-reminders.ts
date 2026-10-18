@@ -43,13 +43,13 @@ interface PatientLite {
 
 const handler: Handler = async () => {
   const supabase = getServiceClient();
-  const summary = { appointmentReminders: 0, followUpReminders: 0, clinics: 0, errors: [] as string[] };
+  const summary = { appointmentReminders: 0, followUpReminders: 0, refillReminders: 0, clinics: 0, errors: [] as string[] };
 
   const { data: rules, error: rulesError } = await supabase
     .from('whatsapp_auto_send_rules')
     .select('clinic_id, event_type, enabled')
     .eq('enabled', true)
-    .in('event_type', ['appointment_reminder', 'follow_up_reminder']);
+    .in('event_type', ['appointment_reminder', 'follow_up_reminder', 'refill_reminder']);
 
   if (rulesError) {
     console.error('[queue-reminders] failed to load rules:', rulesError.message);
@@ -85,7 +85,7 @@ const handler: Handler = async () => {
     .from('whatsapp_message_templates')
     .select('clinic_id, event_type, message_content, is_default')
     .in('clinic_id', clinicIds)
-    .in('event_type', ['appointment_reminder', 'follow_up_reminder'])
+    .in('event_type', ['appointment_reminder', 'follow_up_reminder', 'refill_reminder'])
     .order('is_default', { ascending: false });
 
   const tableTemplateByClinic = new Map<string, string>();
@@ -137,6 +137,24 @@ const handler: Handler = async () => {
         const message = err instanceof Error ? err.message : 'Unknown error';
         summary.errors.push(`${clinic.id} follow-ups: ${message}`);
         console.error(`[queue-reminders] follow-up pass failed for ${clinic.id}:`, message);
+      }
+    }
+
+    if (enabled.has('refill_reminder')) {
+      try {
+        summary.refillReminders += await queueRefillReminders({
+          supabase,
+          clinicId: clinic.id,
+          clinicName,
+          clinicPhone,
+          templates,
+          tableTemplate: tableTemplateFor('refill_reminder'),
+          config
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        summary.errors.push(`${clinic.id} refills: ${message}`);
+        console.error(`[queue-reminders] refill pass failed for ${clinic.id}:`, message);
       }
     }
   }
@@ -273,6 +291,80 @@ async function queueFollowUpReminders(args: PassArgs): Promise<number> {
   }
 
   return insertIgnoringDuplicates(supabase, rows);
+}
+
+/**
+ * Pharmacy refill reminders captured at the counter (pharmacy_refill_reminders).
+ * A row is due when its due_date is refillReminderLeadDays from today. Rows
+ * whose due date has already slipped more than a week into the past are left
+ * alone: a late "you ran out last week" message is worse than silence.
+ */
+async function queueRefillReminders(args: PassArgs): Promise<number> {
+  const { supabase, clinicId, clinicName, clinicPhone, templates, tableTemplate, config } = args;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const today = istDateString(new Date());
+  const target = istDateString(new Date(Date.now() + config.refillReminderLeadDays * dayMs));
+  const earliest = istDateString(new Date(Date.now() - 7 * dayMs));
+
+  const { data: reminders, error } = await supabase
+    .from('pharmacy_refill_reminders')
+    .select('id, patient_id, due_date, medicines, patients!inner(id, name, phone, is_hidden)')
+    .eq('clinic_id', clinicId)
+    .eq('status', 'pending')
+    .eq('patients.is_hidden', false)
+    .gte('due_date', earliest)
+    .lte('due_date', target);
+
+  if (error) throw new Error(error.message);
+  if (!reminders?.length) return 0;
+
+  const template = resolveTemplate('refill_reminder', templates, tableTemplate);
+  const rows: Record<string, unknown>[] = [];
+  const ids: string[] = [];
+
+  for (const reminder of reminders) {
+    const patient = firstOf<PatientLite>(reminder.patients);
+    if (!patient?.phone) continue;
+
+    const meds = Array.isArray(reminder.medicines) ? (reminder.medicines as Array<{ name?: string }>) : [];
+    const medicineList = meds.map((m) => m.name).filter(Boolean).join(', ') || 'medicines';
+
+    rows.push({
+      clinic_id: clinicId,
+      patient_id: patient.id,
+      phone_number: patient.phone,
+      event_type: 'refill_reminder',
+      message_content: renderTemplate(template, {
+        patientName: patient.name || 'Patient',
+        clinicName,
+        clinicPhone,
+        medicines: medicineList,
+        dueDate: formatIstDate(`${reminder.due_date}T00:00:00+05:30`)
+      }),
+      metadata: { refillReminderId: reminder.id, source: 'auto_reminder', dueDate: reminder.due_date, today },
+      status: 'pending',
+      scheduled_at: new Date().toISOString(),
+      // Least time-critical of the three reminder kinds.
+      priority: 2500,
+      dedupe_key: `refill:${reminder.id}`,
+      retry_count: 0
+    });
+    ids.push(reminder.id);
+  }
+
+  const inserted = await insertIgnoringDuplicates(supabase, rows);
+
+  if (ids.length > 0) {
+    const { error: markError } = await supabase
+      .from('pharmacy_refill_reminders')
+      .update({ status: 'queued', queued_at: new Date().toISOString() })
+      .in('id', ids)
+      .eq('status', 'pending');
+    if (markError) console.error('[queue-reminders] could not mark refills queued:', markError.message);
+  }
+
+  return inserted;
 }
 
 /**

@@ -24,7 +24,7 @@ import {
   ShieldCheck,
   Percent,
   MessageCircle,
-  ClipboardList, RotateCcw} from 'lucide-react';
+  ClipboardList, RotateCcw, BookOpen, Truck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { hasReceptionAccess } from '../../utils/roleAccess';
@@ -117,7 +117,13 @@ const Navigation: React.FC = () => {
       label: 'Pharmacy',
       items: [
         { path: '/pharmacy', icon: Pill, label: 'Pharmacy', description: 'Manage medicine inventory', perm: 'pharmacy' },
+        { path: '/pharmacy?sale=1', icon: Receipt, label: 'Counter Sale', description: 'Over-the-counter sale with GST invoice', perm: 'pharmacy' },
+        { path: '/pharmacy/medicines', icon: Pill, label: 'Medicine Master', description: 'Rack, HSN, GST rate, barcode, prices', perm: 'pharmacy' },
+        { path: '/pharmacy/inward', icon: Truck,label: 'Purchase Entry', description: 'Supplier invoice with batch, MRP & GST', perm: 'pharmacy' },
         { path: '/pharmacy/invoice-upload', icon: FileText, label: 'Invoice Upload', description: 'AI-powered invoice processing', perm: 'pharmacy' },
+        { path: '/pharmacy/purchases', icon: BookOpen, label: 'Purchase Register', description: 'Purchases, debit notes, input GST', perm: 'pharmacy' },
+        { path: '/pharmacy/gst', icon: Percent, label: 'GST Reports', description: 'Output, input credit, net payable', perm: 'pharmacy' },
+        { path: '/pharmacy/mis', icon: BarChart3, label: 'Pharmacy MIS', description: 'Sales, margin, valuation, dead & expired stock', perm: 'pharmacy' },
         { path: '/pharmacy/indents', icon: ClipboardList, label: 'Ward Indents', description: 'Stock ordered by IP Pharmacy & ward stores', perm: 'pharmacy' },
       ],
     },

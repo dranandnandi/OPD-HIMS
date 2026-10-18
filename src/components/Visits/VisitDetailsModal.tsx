@@ -400,12 +400,18 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
     return resolvedDoctor;
   };
 
-  const handleDispenseSaved = (dispensedItems?: any[]) => {
+  const handleDispenseSaved = (dispensedItems?: any[], pharmacyBill?: any) => {
     setShowDispenseModal(false);
 
-    // If items were dispensed, ask if user wants to create a bill
+    // A pharmacy tax invoice was already raised for these items — never
+    // offer to put them on the OPD bill as well (that would double-count).
+    if (pharmacyBill) {
+      return;
+    }
+
+    // "Dispense only": offer the legacy path of adding them to the OPD bill
     if (dispensedItems && dispensedItems.length > 0) {
-      const createBill = confirm('Medicines dispensed successfully! Would you like to create a bill for these items?');
+      const createBill = confirm('Medicines dispensed without a pharmacy invoice. Add these items to the OPD bill?');
       if (createBill) {
         setDispensedItemsForBilling(dispensedItems);
         setShowBillModal(true);

@@ -40,6 +40,9 @@ import StockReport from './components/Pharmacy/StockReport';
 import SupplierManagement from './components/Pharmacy/SupplierManagement';
 import InvoiceUpload from './components/Pharmacy/InvoiceUpload';
 import StoreIndents from './components/Pharmacy/StoreIndents';
+import PurchaseRegister from './components/Pharmacy/PurchaseRegister';
+import GstReports from './components/Pharmacy/GstReports';
+import PharmacyMis from './components/Pharmacy/PharmacyMis';
 
 // Analytics & Reports
 import Analytics from './components/Analytics/Analytics';
@@ -589,6 +592,47 @@ const AppContent: React.FC = () => {
           <AppLayout>
             <ModuleRoute perm="pharmacy">
               <InvoiceUpload />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/pharmacy/purchases" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="pharmacy">
+              <PurchaseRegister />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/pharmacy/gst" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="pharmacy">
+              <GstReports />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/pharmacy/mis" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="pharmacy">
+              <PharmacyMis />
+            </ModuleRoute>
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Medicine master inside the pharmacy module: rack, HSN, GST, barcode, prices */}
+      <Route path="/pharmacy/medicines" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ModuleRoute perm="pharmacy">
+              <MasterDataManagement pharmacyMode />
             </ModuleRoute>
           </AppLayout>
         </ProtectedRoute>

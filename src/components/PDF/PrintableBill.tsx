@@ -10,6 +10,15 @@ interface PrintableBillProps {
   clinicSettings: ClinicSetting;
 }
 
+// 'net_banking' -> 'Net Banking', 'upi' -> 'UPI', 'cash' -> 'Cash'
+const formatPaymentMethod = (method: string): string =>
+  method === 'upi'
+    ? 'UPI'
+    : method
+        .split('_')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+
 const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, clinicSettings }) => {
   const patientNumber = patient.patientNumber || patient.patient_number;
   const consultationItem = bill.billItems.find(
@@ -155,7 +164,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, patient, doctor, cl
             {bill.paymentMethod && (
               <div className="flex justify-between">
                 <span>Payment Method:</span>
-                <span className="font-medium capitalize">{bill.paymentMethod}</span>
+                <span className="font-medium">{formatPaymentMethod(bill.paymentMethod)}</span>
               </div>
             )}
           </div>

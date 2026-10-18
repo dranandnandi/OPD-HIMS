@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save, ClipboardList, Truck } from 'lucide-react';
+import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save, ClipboardList, Truck, Percent, BookOpen, MapPin, ShoppingCart } from 'lucide-react';
 import { MedicineWithPrice, StockMovementLog, StockAlert, MedicineMaster } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import CounterSaleModal from './CounterSaleModal';
 import { format } from 'date-fns';
 import ReturnToSupplierModal from './ReturnToSupplierModal';
 import StockAdjustmentModal from './StockAdjustmentModal';
@@ -26,6 +27,17 @@ const PharmacyDashboard: React.FC = () => {
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [refreshingAlerts, setRefreshingAlerts] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  // /pharmacy?sale=1 (sidebar "Counter Sale") opens the over-the-counter flow directly
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showCounterSale, setShowCounterSale] = useState(searchParams.get('sale') === '1');
+  const closeCounterSale = () => {
+    setShowCounterSale(false);
+    if (searchParams.get('sale')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('sale');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [showAddMedicineModal, setShowAddMedicineModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -356,6 +368,18 @@ const PharmacyDashboard: React.FC = () => {
             <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
           </Link>
 
+          <button
+            onClick={() => setShowCounterSale(true)}
+            className="flex items-center gap-3 p-4 border-2 border-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-left"
+          >
+            <ShoppingCart className="w-6 h-6 text-blue-700" />
+            <div>
+              <h4 className="font-medium text-gray-800">Counter Sale</h4>
+              <p className="text-sm text-gray-600">Over-the-counter sale with GST invoice</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+          </button>
+
           <Link
             to="/pharmacy/indents"
             className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -417,13 +441,49 @@ const PharmacyDashboard: React.FC = () => {
           </button>
 
           <Link
-            to="/settings/master-data"
+            to="/pharmacy/medicines"
             className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Pill className="w-6 h-6 text-purple-600" />
             <div>
               <h4 className="font-medium text-gray-800">Medicine Master</h4>
-              <p className="text-sm text-gray-600">Manage medicine data</p>
+              <p className="text-sm text-gray-600">Rack, HSN, GST rate, barcode per SKU</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+          </Link>
+
+          <Link
+            to="/pharmacy/purchases"
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <BookOpen className="w-6 h-6 text-teal-600" />
+            <div>
+              <h4 className="font-medium text-gray-800">Purchase Register</h4>
+              <p className="text-sm text-gray-600">Supplier invoices, debit notes, GST input</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+          </Link>
+
+          <Link
+            to="/pharmacy/gst"
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Percent className="w-6 h-6 text-blue-600" />
+            <div>
+              <h4 className="font-medium text-gray-800">GST Reports</h4>
+              <p className="text-sm text-gray-600">Output, input credit, net payable</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+          </Link>
+
+          <Link
+            to="/pharmacy/mis"
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <TrendingUp className="w-6 h-6 text-emerald-600" />
+            <div>
+              <h4 className="font-medium text-gray-800">Pharmacy MIS</h4>
+              <p className="text-sm text-gray-600">Margin, valuation, dead & expired stock</p>
             </div>
             <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
           </Link>
@@ -492,6 +552,9 @@ const PharmacyDashboard: React.FC = () => {
                   Medicine
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rack
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Current Stock
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -521,6 +584,15 @@ const PharmacyDashboard: React.FC = () => {
                         <div className="text-xs text-gray-400">Batch: {medicine.batchNumber}</div>
                       )}
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {medicine.rackLocation ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-medium">
+                        <MapPin className="w-3 h-3" />{medicine.rackLocation}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`text-sm font-medium ${
@@ -677,6 +749,17 @@ const PharmacyDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Counter Sale (no visit) */}
+      {showCounterSale && (
+        <CounterSaleModal
+          onClose={closeCounterSale}
+          onSaved={() => {
+            loadDashboardData();
+            loadAllMedicines();
+          }}
+        />
       )}
 
       {/* Return to Supplier Modal */}

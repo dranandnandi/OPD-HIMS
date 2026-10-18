@@ -47,6 +47,8 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(patient || null);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [patientSearchResults, setPatientSearchResults] = useState<Patient[]>([]);
+  const [searchingPatients, setSearchingPatients] = useState(false);
   const [showPatientSearchResults, setShowPatientSearchResults] = useState(false);
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(false);
@@ -167,12 +169,39 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
     }
   }, [showAllDoctorsAppointments]);
 
-  // Filter patients based on search term
-  const filteredPatients = patients.filter(p =>
-    p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-    p.phone.includes(patientSearchTerm) ||
-    getPatientNumber(p).includes(patientSearchTerm)
-  ).slice(0, 10); // Limit to 10 results for performance
+  // Server-side, for the reasons set out in AppointmentCalendar: filtering the
+  // downloaded `patients` array hid every patient beyond PostgREST's 1000-row
+  // cap, and compared the raw phone string so a differently-spaced number
+  // found nobody. This is the walk-in registration path, so a false "no
+  // patients found" here is a duplicate record on the spot.
+  React.useEffect(() => {
+    const term = patientSearchTerm.trim();
+
+    if (!term) {
+      setPatientSearchResults([]);
+      setSearchingPatients(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchingPatients(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const matches = await patientService.searchPatients(term, 10);
+        if (!cancelled) setPatientSearchResults(matches);
+      } catch (searchError) {
+        console.error('Error searching patients:', searchError);
+        if (!cancelled) setPatientSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchingPatients(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [patientSearchTerm]);
 
   const handlePatientSearch = (searchTerm: string) => {
     setPatientSearchTerm(searchTerm);
@@ -494,10 +523,10 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
                 {/* Search Results */}
                 {showPatientSearchResults && (
                   <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
-                    {loadingPatients ? (
-                      <div className="p-4 text-center text-gray-500">Loading patients...</div>
-                    ) : filteredPatients.length > 0 ? (
-                      filteredPatients.map(patient => (
+                    {loadingPatients || searchingPatients ? (
+                      <div className="p-4 text-center text-gray-500">Searching…</div>
+                    ) : patientSearchResults.length > 0 ? (
+                      patientSearchResults.map(patient => (
                         <button
                           key={patient.id}
                           onClick={() => handlePatientSelect(patient)}
@@ -780,6 +809,12 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
           <PatientModal
             patient={null}
             onSave={handleSaveNewPatient}
+            onUsePatient={(existingPatient) => {
+              // Already on file -- attach the visit to their record instead of
+              // opening a second one.
+              handlePatientSelect(existingPatient);
+              setShowNewPatientModal(false);
+            }}
             onClose={() => setShowNewPatientModal(false)}
           />
         )}

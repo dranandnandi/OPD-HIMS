@@ -4,7 +4,7 @@ import {
   addDays,
   describeDate,
   formatSlotLabel,
-  weekdayOf,
+  isDoctorOpenOn,
   type PublicDoctor,
   type PublicSlot,
 } from '../../services/publicBookingService';
@@ -41,10 +41,11 @@ const SlotPicker: React.FC<SlotPickerProps> = ({
 }) => {
   const dates = Array.from({ length: horizonDays }, (_, index) => addDays(today, index));
 
-  // The doctor's weekly pattern and the clinic's blackout list are both known
-  // up front, so closed days are greyed out without a request per day.
+  // The doctor's weekly pattern, their date overrides and the clinic's blackout
+  // list are all known up front, so closed days are greyed out without a
+  // request per day. A clinic blackout beats a doctor's own override.
   const isClosed = (dateKey: string) =>
-    !doctor.openDays.includes(weekdayOf(dateKey)) || blackoutDates.includes(dateKey);
+    blackoutDates.includes(dateKey) || !isDoctorOpenOn(doctor, dateKey);
 
   return (
     <div className="space-y-6">

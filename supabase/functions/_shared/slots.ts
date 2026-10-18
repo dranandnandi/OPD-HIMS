@@ -213,6 +213,14 @@ export interface GenerateSlotsOptions {
   notBeforeMs: number;
   /** Clinic-local "YYYY-MM-DD" dates on which the clinic takes no bookings. */
   blackoutDates?: string[];
+  /**
+   * Date-specific replacement for this doctor's weekly pattern on `dateKey`
+   * (a doctor_availability_overrides row). When present it wins outright:
+   * `isOpen: false` closes the day, otherwise its hours replace the weekday's.
+   * Clinic blackout dates still apply first -- a per-doctor override is not a
+   * way around a clinic holiday.
+   */
+  override?: DayAvailability | null;
 }
 
 /**
@@ -231,6 +239,7 @@ export function generateFreeSlots(options: GenerateSlotsOptions): GeneratedSlot[
     busy,
     notBeforeMs,
     blackoutDates = [],
+    override = null,
   } = options;
 
   if (blackoutDates.includes(dateKey)) return [];
@@ -240,7 +249,7 @@ export function generateFreeSlots(options: GenerateSlotsOptions): GeneratedSlot[
 
   if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return [];
 
-  const day = availability[weekdayOf(parsed.year, parsed.month, parsed.day)];
+  const day = override ?? availability[weekdayOf(parsed.year, parsed.month, parsed.day)];
   if (!day || !day.isOpen) return [];
 
   const openMinutes = parseClockMinutes(day.startTime);

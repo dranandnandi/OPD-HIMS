@@ -16,6 +16,7 @@ import AppointmentCard from './AppointmentCard';
 import ArrivedConditionModal from './ArrivedConditionModal';
 import { toTitleCase } from '../../utils/stringUtils';
 import { waitingSequenceService } from '../../services/waitingSequenceService';
+import { doctorAvailabilityService } from '../../services/doctorAvailabilityService';
 
 const getPatientNumber = (patient?: Patient | null) => patient?.patientNumber || patient?.patient_number || '';
 
@@ -705,6 +706,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [patientSearchResults, setPatientSearchResults] = useState<Patient[]>([]);
+  const [searchingPatients, setSearchingPatients] = useState(false);
   const [showPatientSearchResults, setShowPatientSearchResults] = useState(false);
   const [showQrScan, setShowQrScan] = useState(false);
   const [qrScanValue, setQrScanValue] = useState('');
@@ -798,6 +801,72 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
   });
   const [saving, setSaving] = useState(false);
 
+  // Soft availability check: warns when the chosen time falls outside the
+  // doctor's hours for that date (weekly schedule, or a date override if one
+  // exists), but never blocks the save -- reception deliberately squeezes
+  // walk-ins outside the published slots.
+  const [availabilityWarning, setAvailabilityWarning] = useState('');
+
+  useEffect(() => {
+    const { doctorId, selectedDate, selectedTime } = formData;
+    if (!doctorId || !selectedDate || !selectedTime) {
+      setAvailabilityWarning('');
+      return;
+    }
+
+    let cancelled = false;
+
+    const toMinutes = (clock: string) => {
+      const [hours, minutes] = clock.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    (async () => {
+      try {
+        const { day, overridden } = await doctorAvailabilityService.getEffectiveDayAvailability(
+          doctorId,
+          selectedDate,
+        );
+        if (cancelled) return;
+
+        const source = overridden ? 'a date override' : 'the weekly schedule';
+
+        if (!day) {
+          setAvailabilityWarning(
+            `The doctor is marked unavailable on this date (${source}). You can still save this appointment.`,
+          );
+          return;
+        }
+
+        const time = toMinutes(selectedTime);
+        const outsideHours = time < toMinutes(day.startTime) || time >= toMinutes(day.endTime);
+        const inBreak =
+          !!day.breakStart &&
+          !!day.breakEnd &&
+          time >= toMinutes(day.breakStart) &&
+          time < toMinutes(day.breakEnd);
+
+        if (outsideHours || inBreak) {
+          const hours = day.breakStart && day.breakEnd
+            ? `${day.startTime}–${day.breakStart} and ${day.breakEnd}–${day.endTime}`
+            : `${day.startTime}–${day.endTime}`;
+          setAvailabilityWarning(
+            `This time is outside the doctor's hours for this date (${hours}, from ${source}). You can still save this appointment.`,
+          );
+        } else {
+          setAvailabilityWarning('');
+        }
+      } catch {
+        // The warning is advisory; a failed lookup must not disturb the form.
+        if (!cancelled) setAvailabilityWarning('');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.doctorId, formData.selectedDate, formData.selectedTime]);
+
   useEffect(() => {
     if (showQrScan) {
       setTimeout(() => qrScanInputRef.current?.focus(), 0);
@@ -822,12 +891,46 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
   useEffect(() => () => stopCameraScan(), []);
 
-  // Filter patients based on search term
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-    patient.phone.includes(patientSearchTerm) ||
-    getPatientNumber(patient).includes(patientSearchTerm)
-  ).slice(0, 10); // Limit to 10 results for performance
+  // Patient lookup runs in the database, not over the `patients` prop.
+  //
+  // Filtering that array missed the patients it most needed to find: it only
+  // ever held the first 1000 rows PostgREST will return, so in a clinic past
+  // that size the longest-standing patients were invisible here and reception
+  // re-registered them. Matching `phone.includes(term)` also compared the raw
+  // typed string, so a number stored as "+91 98765 43210" was unfindable by
+  // its digits. Both are the same duplicate, arriving by different routes.
+  useEffect(() => {
+    const term = patientSearchTerm.trim();
+
+    if (!term) {
+      setPatientSearchResults([]);
+      setSearchingPatients(false);
+      return;
+    }
+
+    // Debounced: reception types a 10-digit number straight through, and
+    // every keystroke would otherwise be its own round trip.
+    let cancelled = false;
+    setSearchingPatients(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const matches = await patientService.searchPatients(term, 10);
+        if (!cancelled) setPatientSearchResults(matches);
+      } catch (searchError) {
+        console.error('Error searching patients:', searchError);
+        // Leave the previous results in place rather than claiming "no
+        // patients found" -- that false negative is what creates a duplicate.
+        if (!cancelled) setPatientSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchingPatients(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [patientSearchTerm]);
 
   const handlePatientSearch = (searchTerm: string) => {
     setPatientSearchTerm(searchTerm);
@@ -1004,6 +1107,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
     setShowPatientSearchResults(false);
     setQrScanStatus('');
     stopCameraScan();
+  };
+
+  // Reception started registering someone who turned out to be already on
+  // file. Book the existing record instead, so the visit joins their history
+  // rather than starting a second one.
+  const handleUseExistingPatient = async (existingPatient: Patient) => {
+    setSelectedPatient(existingPatient);
+    setShowNewPatientModal(false);
+    setPatientSearchTerm('');
+    setShowPatientSearchResults(false);
+
+    const lastDoctorId = await getLastDoctorIdForPatient(existingPatient.id).catch(() => '');
+    setFormData((currentFormData) => ({
+      ...currentFormData,
+      patientId: existingPatient.id,
+      doctorId: lastDoctorId || currentFormData.doctorId,
+    }));
   };
 
   const handleSaveNewPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'lastVisit'>) => {
@@ -1206,9 +1326,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   />
 
                 {/* Search Results */}
-                {showPatientSearchResults && filteredPatients.length > 0 && (
+                {showPatientSearchResults && patientSearchResults.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredPatients.map(patient => (
+                    {patientSearchResults.map(patient => (
                       <button
                         key={patient.id}
                         type="button"
@@ -1225,10 +1345,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   </div>
                 )}
 
-                {/* No Results */}
-                {showPatientSearchResults && patientSearchTerm && filteredPatients.length === 0 && (
+                {/* "Searching" and "not found" have to read differently: acting
+                    on a mid-flight search as though the patient does not exist
+                    is exactly how a duplicate gets created. */}
+                {showPatientSearchResults && patientSearchTerm && patientSearchResults.length === 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3">
-                    <div className="text-center text-gray-500">No patients found</div>
+                    <div className="text-center text-gray-500">
+                      {searchingPatients ? 'Searching…' : 'No patients found'}
+                    </div>
                   </div>
                 )}
                 </div>
@@ -1296,6 +1420,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
               </select>
             </div>
           </div>
+
+          {availabilityWarning && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-amber-700">{availabilityWarning}</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1429,6 +1560,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({
       <PatientModal
         patient={null}
         onSave={handleSaveNewPatient}
+        onUsePatient={handleUseExistingPatient}
         onClose={() => setShowNewPatientModal(false)}
       />
     )}

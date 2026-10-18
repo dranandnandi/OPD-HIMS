@@ -187,6 +187,21 @@ export const paymentService = {
         throw new Error(`Failed to record payment: ${error.message}`);
       }
 
+      // Mirror the method onto the bill row. Edit Bill, the billing dashboard
+      // filter and the bill PDF all read bills.payment_method, which nothing
+      // else maintains for OPD bills. A DB trigger (20261015000000) does the
+      // same server-side; this keeps the app right even before it is applied.
+      if ((options?.recordType || 'payment') === 'payment') {
+        const { error: methodError } = await supabase
+          .from('bills')
+          .update({ payment_method: payment.paymentMethod })
+          .eq('id', payment.billId)
+          .eq('clinic_id', profile.clinicId);
+        if (methodError) {
+          console.warn('Payment saved but bill payment_method sync failed:', methodError);
+        }
+      }
+
       return convertDatabasePaymentRecord(paymentRecord, paymentRecord.profiles);
     } catch (error) {
       console.error('Error recording payment:', error);
@@ -296,6 +311,19 @@ export const paymentService = {
 
       if (error) {
         throw new Error(`Failed to update payment: ${error.message}`);
+      }
+
+      // Correcting a receipt's method must also correct the bill row that the
+      // Edit Bill form, dashboard filter and PDF read.
+      if (updates.paymentMethod !== undefined && paymentRecord.record_type === 'payment') {
+        const { error: methodError } = await supabase
+          .from('bills')
+          .update({ payment_method: updates.paymentMethod })
+          .eq('id', paymentRecord.bill_id)
+          .eq('clinic_id', profile.clinicId);
+        if (methodError) {
+          console.warn('Payment updated but bill payment_method sync failed:', methodError);
+        }
       }
 
       return convertDatabasePaymentRecord(paymentRecord, paymentRecord.profiles);

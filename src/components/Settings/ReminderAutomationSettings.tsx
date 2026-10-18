@@ -19,6 +19,7 @@ interface AutoSendConfig {
   sendWindowEnd: string;
   appointmentReminderHoursBefore: number;
   followUpLeadDays: number;
+  refillReminderLeadDays: number;
 }
 
 const DEFAULT_CONFIG: AutoSendConfig = {
@@ -27,7 +28,8 @@ const DEFAULT_CONFIG: AutoSendConfig = {
   sendWindowStart: '09:00',
   sendWindowEnd: '20:00',
   appointmentReminderHoursBefore: 24,
-  followUpLeadDays: 0
+  followUpLeadDays: 0,
+  refillReminderLeadDays: 3
 };
 
 interface SendState {
@@ -173,7 +175,8 @@ const ReminderAutomationSettings: React.FC = () => {
       minGapMinutes: clamp(config.minGapMinutes, 2, 240),
       maxGapMinutes: clamp(Math.max(config.maxGapMinutes, config.minGapMinutes), 2, 240),
       appointmentReminderHoursBefore: clamp(config.appointmentReminderHoursBefore, 1, 168),
-      followUpLeadDays: clamp(config.followUpLeadDays, 0, 30)
+      followUpLeadDays: clamp(config.followUpLeadDays, 0, 30),
+      refillReminderLeadDays: clamp(config.refillReminderLeadDays ?? 3, 0, 30)
     };
 
     try {
@@ -369,6 +372,21 @@ const ReminderAutomationSettings: React.FC = () => {
             className="input-field"
           />
           <p className="text-xs text-gray-500 mt-2">0 = on the follow-up date itself.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Send medicine refill reminders this many days before the stock runs out
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={config.refillReminderLeadDays ?? 3}
+            onChange={(e) => setConfig({ ...config, refillReminderLeadDays: Number(e.target.value) })}
+            className="input-field"
+          />
+          <p className="text-xs text-gray-500 mt-2">Refill dates are captured at the pharmacy counter when the medicine is sold.</p>
         </div>
       </div>
 

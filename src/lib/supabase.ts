@@ -22,6 +22,9 @@ export type {
   DatabasePharmacyInwardReceipt,
   DatabasePharmacyInwardItem,
   DatabasePharmacyDispensedItem,
+  DatabaseMedicineBatch,
+  DatabasePharmacyDebitNote,
+  DatabasePharmacyDebitNoteItem,
   DatabaseStockMovementLog,
   DatabaseClinicMedicinePrice,
   DatabaseClinicTestPrice

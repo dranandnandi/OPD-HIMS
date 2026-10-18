@@ -275,6 +275,228 @@ const applyFullLetterhead = (
 }
 
 // Builds a QR code img tag pointing to the prescription verify page
+
+// ---------------------------------------------------------------------------
+// Pharmacy GST tax invoice (bills with billType === 'pharmacy').
+// Lines carry HSN / batch / expiry / MRP / taxable / CGST / SGST as stored on
+// bill_items; nothing is recomputed here so the PDF matches the books.
+// ---------------------------------------------------------------------------
+const amountInWords = (amount: number): string => {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
+    'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const two = (n: number): string => n < 20 ? ones[n] : `${tens[Math.floor(n / 10)]}${n % 10 ? ' ' + ones[n % 10] : ''}`;
+  const three = (n: number): string => n >= 100 ? `${ones[Math.floor(n / 100)]} Hundred${n % 100 ? ' ' + two(n % 100) : ''}` : two(n);
+  const words = (n: number): string => {
+    if (n === 0) return 'Zero';
+    const parts: string[] = [];
+    const crore = Math.floor(n / 10000000); n %= 10000000;
+    const lakh = Math.floor(n / 100000); n %= 100000;
+    const thousand = Math.floor(n / 1000); n %= 1000;
+    if (crore) parts.push(`${two(crore)} Crore`);
+    if (lakh) parts.push(`${two(lakh)} Lakh`);
+    if (thousand) parts.push(`${two(thousand)} Thousand`);
+    if (n) parts.push(three(n));
+    return parts.join(' ');
+  };
+  const rupees = Math.floor(Math.abs(amount));
+  const paise = Math.round((Math.abs(amount) - rupees) * 100);
+  return `Rupees ${words(rupees)}${paise ? ` and ${two(paise)} Paise` : ''} Only`;
+};
+
+const fmtMoney = (n: unknown): string => (Number(n) || 0).toFixed(2);
+const fmtDateIN = (d: unknown): string => {
+  if (!d) return '';
+  const date = new Date(d as string);
+  return isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+// 'net_banking' -> 'Net Banking', 'upi' -> 'UPI', 'cash' -> 'Cash'
+const fmtPaymentMethod = (method: unknown): string => {
+  const value = String(method ?? '').trim();
+  if (!value) return '';
+  if (value === 'upi') return 'UPI';
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+const fmtExpiry = (d: unknown): string => {
+  if (!d) return '-';
+  const date = new Date(d as string);
+  return isNaN(date.getTime()) ? '-' : `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(-2)}`;
+};
+
+const buildPharmacyInvoiceHtml = (args: {
+  bill: any; patient: any; doctorDisplayName: string; clinicSettings: any; printVersion: boolean; isA5: boolean;
+}): string => {
+  const { bill, patient, doctorDisplayName, clinicSettings, printVersion, isA5 } = args;
+  const items: any[] = bill.billItems || [];
+  const composition = clinicSettings?.pharmacyGstScheme === 'composition';
+  const interstate = items.some((i) => Number(i.igstAmount) > 0);
+  const title = composition ? 'BILL OF SUPPLY' : 'TAX INVOICE';
+
+  // Tax summary by rate from the stored line amounts
+  const byRate = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number }>();
+  for (const i of items) {
+    const r = Number(i.gstRate) || 0;
+    const b = byRate.get(r) || { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
+    b.taxable += Number(i.taxableAmount) || 0;
+    b.cgst += Number(i.cgstAmount) || 0;
+    b.sgst += Number(i.sgstAmount) || 0;
+    b.igst += Number(i.igstAmount) || 0;
+    byRate.set(r, b);
+  }
+  const rates = [...byRate.entries()].sort((a, b) => a[0] - b[0]);
+
+  const taxable = Number(bill.taxableAmount) || rates.reduce((s, [, b]) => s + b.taxable, 0);
+  const cgst = Number(bill.cgstAmount) || 0;
+  const sgst = Number(bill.sgstAmount) || 0;
+  const igst = Number(bill.igstAmount) || 0;
+  const discount = Number(bill.discountAmount) || 0;
+  const roundOff = Number(bill.roundOff) || 0;
+  const grand = Number(bill.totalAmount) || 0;
+  const patientNumber = patient?.patientNumber || patient?.patient_number;
+
+  const lineRows = items.map((item, index) => `
+    <tr>
+      <td class="c">${index + 1}</td>
+      <td>${escapeHtml(item.itemName)}</td>
+      <td class="c">${escapeHtml(item.hsnCode || '')}</td>
+      <td class="c">${escapeHtml(item.batchNumber || '-')}</td>
+      <td class="c">${fmtExpiry(item.expiryDate)}</td>
+      <td class="c">${item.quantity}</td>
+      <td class="r">${fmtMoney(item.mrp ?? item.unitPrice)}</td>
+      <td class="r">${Number(item.discount) ? fmtMoney(item.discount) : '-'}</td>
+      <td class="r">${fmtMoney(item.taxableAmount)}</td>
+      ${composition ? '' : interstate
+        ? `<td class="c">${Number(item.gstRate) || 0}%</td><td class="r">${fmtMoney(item.igstAmount)}</td>`
+        : `<td class="c">${(Number(item.gstRate) || 0) / 2}%</td><td class="r">${fmtMoney(item.cgstAmount)}</td>
+           <td class="c">${(Number(item.gstRate) || 0) / 2}%</td><td class="r">${fmtMoney(item.sgstAmount)}</td>`}
+      <td class="r b">${fmtMoney(item.totalPrice)}</td>
+    </tr>`).join('');
+
+  const taxHead = composition ? '' : interstate
+    ? '<th>IGST %</th><th>IGST ₹</th>'
+    : '<th>CGST %</th><th>CGST ₹</th><th>SGST %</th><th>SGST ₹</th>';
+
+  const rateSummary = composition || rates.length === 0 ? '' : `
+    <table class="rates">
+      <thead><tr><th>GST Rate</th><th>Taxable ₹</th>${interstate ? '<th>IGST ₹</th>' : '<th>CGST ₹</th><th>SGST ₹</th>'}<th>Total Tax ₹</th></tr></thead>
+      <tbody>
+        ${rates.map(([r, b]) => `<tr><td class="c">${r}%</td><td class="r">${fmtMoney(b.taxable)}</td>${interstate ? `<td class="r">${fmtMoney(b.igst)}</td>` : `<td class="r">${fmtMoney(b.cgst)}</td><td class="r">${fmtMoney(b.sgst)}</td>`}<td class="r">${fmtMoney(b.cgst + b.sgst + b.igst)}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${title} ${escapeHtml(bill.billNumber)}</title>
+  <style>
+    ${printVersion ? `html, body { filter: grayscale(100%) !important; } .custom-header, .custom-footer { display: none !important; } th { background: #ddd !important; color: #000 !important; }` : ''}
+    ${isA5 ? `@page { size: A5; margin: 0; } body { font-size: 8.5px !important; margin: 8px !important; } th, td { padding: 2px 3px !important; } h2 { font-size: 12px !important; } .totals { width: 200px !important; }` : ''}
+    body { font-family: Arial, sans-serif; margin: 18px; color: #222; font-size: 11px; line-height: 1.35; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0066FF; padding-bottom: 8px; margin-bottom: 10px; }
+    .top h2 { margin: 0 0 4px; color: #0066FF; font-size: 18px; letter-spacing: 1px; }
+    .top p { margin: 2px 0; }
+    .meta { text-align: right; }
+    .meta .no { font-family: 'Courier New', monospace; font-weight: bold; font-size: 13px; }
+    .parties { display: flex; gap: 12px; margin-bottom: 10px; }
+    .parties > div { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; background: #fafafa; }
+    .parties h3 { margin: 0 0 5px; font-size: 11px; color: #0066FF; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+    .parties p { margin: 2px 0; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #ccc; padding: 4px 5px; font-size: 10px; }
+    th { background: #0066FF; color: #fff; font-weight: 600; text-align: center; white-space: nowrap; }
+    td.c { text-align: center; } td.r { text-align: right; white-space: nowrap; } td.b { font-weight: bold; }
+    .bottom { display: flex; gap: 14px; align-items: flex-start; }
+    .bottom .left { flex: 1; }
+    .rates th { background: #e8f0fe; color: #222; }
+    .totals { width: 260px; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; background: #fafafa; }
+    .totals div { display: flex; justify-content: space-between; padding: 2px 0; }
+    .totals .grand { border-top: 2px solid #0066FF; margin-top: 5px; padding-top: 5px; font-weight: bold; font-size: 13px; }
+    .words { font-style: italic; margin: 6px 0 10px; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+    .status-paid { background: #d4edda; color: #155724; } .status-pending { background: #fff3cd; color: #856404; }
+    .status-partial { background: #cce7ff; color: #004085; } .status-cancelled { background: #f8d7da; color: #721c24; }
+    .foot { margin-top: 18px; display: flex; justify-content: space-between; font-size: 9.5px; color: #555; }
+    .sign { text-align: right; } .sign .line { margin-top: 28px; border-top: 1px solid #555; width: 180px; margin-left: auto; padding-top: 3px; }
+    .note { font-size: 9px; color: #666; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h2>${title}</h2>
+      ${clinicSettings?.gstin ? `<p><strong>GSTIN:</strong> ${escapeHtml(clinicSettings.gstin)}</p>` : ''}
+      ${clinicSettings?.drugLicenseNumber ? `<p><strong>Drug Lic. No:</strong> ${escapeHtml(clinicSettings.drugLicenseNumber)}</p>` : ''}
+      ${clinicSettings?.registrationNumber ? `<p><strong>Reg. No:</strong> ${escapeHtml(clinicSettings.registrationNumber)}</p>` : ''}
+    </div>
+    <div class="meta">
+      <p class="no">${escapeHtml(bill.billNumber)}</p>
+      <p><strong>Date:</strong> ${fmtDateIN(bill.billDate)}</p>
+      <p><span class="status status-${escapeHtml(bill.paymentStatus)}">${String(bill.paymentStatus || '').toUpperCase()}</span>
+         ${bill.paymentMethod ? `&nbsp;<span>${escapeHtml(fmtPaymentMethod(bill.paymentMethod))}</span>` : ''}</p>
+      <p><strong>Place of supply:</strong> ${escapeHtml(clinicSettings?.gstStateCode || (clinicSettings?.gstin ? String(clinicSettings.gstin).slice(0, 2) : ''))}${interstate ? ' (inter-state)' : ''}</p>
+    </div>
+  </div>
+
+  <div class="parties">
+    <div>
+      <h3>BILL TO (PATIENT)</h3>
+      <p><strong>${escapeHtml(patient?.name || '')}</strong>${patientNumber ? ` &nbsp;·&nbsp; ${escapeHtml(patientNumber)}` : ''}</p>
+      ${patient?.phone ? `<p>Phone: ${escapeHtml(patient.phone)}</p>` : ''}
+      ${patient?.age || patient?.gender ? `<p>${patient?.age ? `${escapeHtml(patient.age)} yrs` : ''}${patient?.age && patient?.gender ? ' · ' : ''}${escapeHtml(patient?.gender || '')}</p>` : ''}
+      ${patient?.address ? `<p>${escapeHtml(patient.address)}</p>` : ''}
+      <p class="note">Unregistered (B2C) recipient</p>
+    </div>
+    <div>
+      <h3>PRESCRIBED BY</h3>
+      ${doctorDisplayName ? `<p><strong>${escapeHtml(doctorDisplayName)}</strong></p>` : '<p><em>Over the counter</em></p>'}
+      ${bill.visit?.date ? `<p>Visit: ${fmtDateIN(bill.visit.date)}</p>` : ''}
+      ${bill.notes ? `<p>Note: ${escapeHtml(bill.notes)}</p>` : ''}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th style="text-align:left">Item</th><th>HSN</th><th>Batch</th><th>Exp</th><th>Qty</th><th>MRP ₹</th><th>Disc ₹</th><th>Taxable ₹</th>
+        ${taxHead}
+        <th>Total ₹</th>
+      </tr>
+    </thead>
+    <tbody>${lineRows}</tbody>
+  </table>
+
+  <div class="bottom">
+    <div class="left">
+      ${rateSummary}
+      <p class="words"><strong>Amount in words:</strong> ${amountInWords(grand)}</p>
+      ${composition ? '<p class="note">Composition taxable person, not eligible to collect tax on supplies.</p>' : ''}
+      <p class="note">Goods once sold will not be taken back without the original invoice. Medicines are dispensed against a valid prescription where required.</p>
+    </div>
+    <div class="totals">
+      ${discount > 0 ? `<div><span>Discount</span><span>- ${fmtMoney(discount)}</span></div>` : ''}
+      <div><span>Taxable value</span><span>${fmtMoney(taxable)}</span></div>
+      ${composition ? '' : interstate
+        ? `<div><span>IGST</span><span>${fmtMoney(igst)}</span></div>`
+        : `<div><span>CGST</span><span>${fmtMoney(cgst)}</span></div><div><span>SGST</span><span>${fmtMoney(sgst)}</span></div>`}
+      ${roundOff !== 0 ? `<div><span>Round off</span><span>${roundOff > 0 ? '+' : ''}${fmtMoney(roundOff)}</span></div>` : ''}
+      <div class="grand"><span>Grand Total</span><span>₹ ${fmtMoney(grand)}</span></div>
+      <div><span>Paid</span><span>${fmtMoney(bill.paidAmount)}</span></div>
+      <div><span>Balance</span><span>${fmtMoney(bill.balanceAmount)}</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>${clinicSettings?.clinicName ? `For <strong>${escapeHtml(clinicSettings.clinicName)}</strong>` : ''}<br>This is a computer-generated invoice.</div>
+    <div class="sign"><div class="line">Authorised Signatory / Pharmacist</div></div>
+  </div>
+</body>
+</html>`;
+};
+
 const buildQrHtml = (visitId: string, sizePx = 70): string => {
   const verifyUrl = `https://docpreneur.academy/verify?id=${encodeURIComponent(visitId)}`;
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verifyUrl)}`;
@@ -524,15 +746,19 @@ serve(async (req) => {
       const doctorDisplayName = resolvedDoctorName
         ? (/^dr\.?\s+/i.test(resolvedDoctorName) ? resolvedDoctorName : `Dr. ${resolvedDoctorName}`)
         : '';
+      const safeBillNumber = String(bill.billNumber || '').replace(/[^a-zA-Z0-9-]/g, '-');
+      const isPharmacyInvoice = bill.billType === 'pharmacy';
       filename = printVersion
-        ? `Print_Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
-        : `Bill_${bill.billNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+        ? `Print_${isPharmacyInvoice ? 'Invoice' : 'Bill'}_${safeBillNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+        : `${isPharmacyInvoice ? 'Invoice' : 'Bill'}_${safeBillNumber}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
       // Get invoice paper size (default A4)
       const invoicePaperSize = clinicSettings?.invoicePaperSize || 'A4';
       const isA5 = invoicePaperSize === 'A5';
 
-      htmlContent = `
+      htmlContent = isPharmacyInvoice
+        ? buildPharmacyInvoiceHtml({ bill, patient, doctorDisplayName, clinicSettings, printVersion, isA5 })
+        : `
         <!DOCTYPE html>
         <html>
         <head>
@@ -594,35 +820,43 @@ serve(async (req) => {
             ` : ''}
             /* === END A5 STYLING === */
 
-            body { font-family: Arial, sans-serif; margin: 20px; color: #333; line-height: 1.4; }
-            .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+            /* Spacing is deliberately tight: the PDF API adds its own page
+               margins plus header/footer bands, and the old 20px/15px blocks
+               pushed the summary/notes of a routine one-item bill onto a
+               second page. */
+            body { font-family: Arial, sans-serif; margin: 12px 14px; color: #333; line-height: 1.3; }
+            .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 12px; margin-bottom: 12px; }
             .header h1 { margin: 0; font-size: 24px; color: #0066FF; }
-            .header p { margin: 5px 0; font-size: 12px; }
-            .details-section { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 15px; }
-            .details-section > div { flex: 1; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: #fafafa; }
-            .details-section h3 { margin-top: 0; font-size: 14px; color: #0066FF; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; font-size: 12px; }
+            .header p { margin: 4px 0; font-size: 12px; }
+            .details-section { display: flex; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+            .details-section > div { flex: 1; border: 1px solid #e0e0e0; padding: 8px 10px; border-radius: 8px; background: #fafafa; }
+            .details-section h3 { margin-top: 0; margin-bottom: 6px; font-size: 13px; color: #0066FF; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+            .details-section p { margin: 2px 0; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+            th, td { border: 1px solid #ddd; padding: 5px 6px; text-align: left; font-size: 12px; }
             th { background: linear-gradient(135deg, #0066FF 0%, #0088FF 100%); color: white; font-weight: 600; }
             tr:nth-child(even) { background-color: #f8f9fa; }
-            .summary { width: 300px; margin-left: auto; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; background: #fafafa; }
-            .summary div { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
-            .summary .total { font-weight: bold; border-top: 2px solid #0066FF; margin-top: 10px; padding-top: 10px; font-size: 16px; }
-            .footer { text-align: center; font-size: 10px; color: #777; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px; }
-            .status { display: inline-block; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+            tr { page-break-inside: avoid; }
+            .summary { width: 300px; margin-left: auto; border: 1px solid #e0e0e0; padding: 8px 12px; border-radius: 8px; background: #fafafa; page-break-inside: avoid; }
+            .summary div { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; }
+            .summary .total { font-weight: bold; border-top: 2px solid #0066FF; margin-top: 5px; padding-top: 6px; font-size: 15px; }
+            .footer { text-align: center; font-size: 10px; color: #777; margin-top: 14px; border-top: 1px solid #eee; padding-top: 8px; }
+            .status { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; }
             .status-paid { background-color: #d4edda; color: #155724; }
             .status-pending { background-color: #fff3cd; color: #856404; }
             .status-partial { background-color: #cce7ff; color: #004085; }
             .status-overdue { background-color: #f8d7da; color: #721c24; }
-            .bill-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #0066FF; }
+            .bill-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #0066FF; }
+            .notes-section { page-break-inside: avoid; }
+            .notes-section h3 { margin: 0 0 5px; font-size: 13px; }
           </style>
         </head>
         <body>
           <div class="bill-title">
             <div>
               <h2 style="margin: 0; color: #0066FF;">📋 BILL / INVOICE</h2>
-              <p style="margin: 5px 0; font-size: 12px;"><strong>Bill No:</strong> ${bill.billNumber}</p>
-              <p style="margin: 5px 0; font-size: 12px;"><strong>Date:</strong> ${new Date(bill.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+              <p style="margin: 3px 0; font-size: 12px;"><strong>Bill No:</strong> ${bill.billNumber}</p>
+              <p style="margin: 3px 0; font-size: 12px;"><strong>Date:</strong> ${new Date(bill.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
             </div>
             <div>
               <span class="status status-${bill.paymentStatus}">${bill.paymentStatus.toUpperCase()}</span>
@@ -647,7 +881,7 @@ serve(async (req) => {
             </div>
           </div>
 
-          <h3 style="color: #0066FF; border-bottom: 2px solid #0066FF; padding-bottom: 8px;">📝 BILL DETAILS</h3>
+          <h3 class="bill-details-heading" style="color: #0066FF; border-bottom: 2px solid #0066FF; padding-bottom: 5px; margin: 10px 0 8px;">📝 BILL DETAILS</h3>
           <table>
             <thead>
               <tr>
@@ -681,13 +915,13 @@ serve(async (req) => {
             <div><span>Total Amount:</span> <span>₹${bill.totalAmount.toFixed(2)}</span></div>
             <div><span>Paid Amount:</span> <span style="color: #28a745;">₹${bill.paidAmount.toFixed(2)}</span></div>
             <div class="total"><span>Balance Due:</span> <span style="color: ${bill.balanceAmount > 0 ? '#dc3545' : '#28a745'};">₹${bill.balanceAmount.toFixed(2)}</span></div>
-            ${bill.paymentMethod ? `<div><span>Payment Method:</span> <span style="text-transform: capitalize;">${bill.paymentMethod}</span></div>` : ''}
+            ${bill.paymentMethod ? `<div><span>Payment Method:</span> <span>${escapeHtml(fmtPaymentMethod(bill.paymentMethod))}</span></div>` : ''}
           </div>
 
           ${bill.notes ? `
-          <div class="notes-section" style="margin-top: 20px;">
+          <div class="notes-section" style="margin-top: 10px;">
             <h3>NOTES</h3>
-            <p style="border: 1px solid #eee; padding: 10px; border-radius: 5px;">${bill.notes}</p>
+            <p style="border: 1px solid #eee; padding: 7px 9px; border-radius: 5px; margin: 0; font-size: 12px;">${bill.notes}</p>
           </div>
           ` : ''}
 
@@ -1773,10 +2007,25 @@ Translate now:`;
       // Print/letterhead version - use print margins
       clinicMargins = data.clinicSettings?.pdfPrintMargins || "180px 20px 150px 20px";
     } else if (type === 'bill') {
-      // Invoice display version - use invoice-specific margins if set
+      // Invoice display version - use invoice-specific margins if set.
+      //
+      // PDFSettings historically saved pdf_margins with the letterhead-print
+      // default "180px 20px 150px 20px". On a display bill rendered with the
+      // generated 58px/42px text bands that eats a third of the page and
+      // pushes a routine bill's notes onto page 2 — so, like the same legacy
+      // value in invoice_margins, it is ignored in favour of the tight
+      // default. Clinics with uploaded band artwork keep their saved margins,
+      // since those bands can genuinely need the room.
+      const pureTextBands = useBands && !hasHeaderImage && !hasFooterImage;
+      const legacyDisplayMargins =
+        String(data.clinicSettings?.pdfMargins || '').trim() === "180px 20px 150px 20px";
+      const effectiveCustomDisplayMargins =
+        hasCustomDisplayMargins && !(legacyDisplayMargins && pureTextBands);
+      // The text bands are 58px/42px tall, so 62px/46px leaves a small gap;
+      // the old 70px/55px defaults wasted another ~17px of page height.
       clinicMargins = hasCustomInvoiceMargins
             ? rawInvoiceMargins
-            : (isA5Invoice ? (fallbackHeaderFooterUsed ? "50px 10px 34px 10px" : "10px") : (hasCustomDisplayMargins ? data.clinicSettings?.pdfMargins : (fallbackHeaderFooterUsed ? "70px 20px 55px 20px" : "20px")));
+            : (isA5Invoice ? (fallbackHeaderFooterUsed ? "50px 10px 34px 10px" : "10px") : (effectiveCustomDisplayMargins ? data.clinicSettings?.pdfMargins : (fallbackHeaderFooterUsed ? "62px 18px 46px 18px" : "20px")));
     } else {
       // Visit/prescription display version
       clinicMargins = hasCustomDisplayMargins

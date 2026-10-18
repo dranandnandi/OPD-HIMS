@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, Save, X } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, Save, X, FileText } from 'lucide-react';
 import { Supplier } from '../../types';
+import { INDIAN_STATE_CODES, isValidGstin, stateCodeFromGstin } from '../../utils/gst';
 import { pharmacyService } from '../../services/pharmacyService';
 import { useAuth } from '../Auth/useAuth';
 
@@ -19,7 +20,10 @@ const SupplierManagement: React.FC = () => {
     contactPerson: '',
     phone: '',
     email: '',
-    address: ''
+    address: '',
+    gstin: '',
+    stateCode: '',
+    drugLicenseNumber: ''
   });
 
   useEffect(() => {
@@ -35,7 +39,10 @@ const SupplierManagement: React.FC = () => {
         contactPerson: selectedSupplier.contactPerson || '',
         phone: selectedSupplier.phone || '',
         email: selectedSupplier.email || '',
-        address: selectedSupplier.address || ''
+        address: selectedSupplier.address || '',
+        gstin: selectedSupplier.gstin || '',
+        stateCode: selectedSupplier.stateCode || '',
+        drugLicenseNumber: selectedSupplier.drugLicenseNumber || ''
       });
     } else {
       setFormData({
@@ -43,7 +50,10 @@ const SupplierManagement: React.FC = () => {
         contactPerson: '',
         phone: '',
         email: '',
-        address: ''
+        address: '',
+        gstin: '',
+        stateCode: '',
+        drugLicenseNumber: ''
       });
     }
   }, [selectedSupplier]);
@@ -66,7 +76,8 @@ const SupplierManagement: React.FC = () => {
     supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.contactPerson?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.phone?.includes(searchTerm) ||
-    supplier.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    supplier.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    supplier.gstin?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleSaveSupplier = async () => {
@@ -74,16 +85,22 @@ const SupplierManagement: React.FC = () => {
       alert('Supplier name is required');
       return;
     }
+    if (formData.gstin.trim() && !isValidGstin(formData.gstin)) {
+      if (!confirm('The GSTIN does not look valid (expected 15 characters like 24ABCDE1234F1Z5). Save anyway?')) return;
+    }
 
     try {
       setSaving(true);
-      
+
       const supplierData = {
         name: formData.name,
         contactPerson: formData.contactPerson || undefined,
         phone: formData.phone || undefined,
         email: formData.email || undefined,
         address: formData.address || undefined,
+        gstin: formData.gstin.trim().toUpperCase() || undefined,
+        stateCode: formData.stateCode || stateCodeFromGstin(formData.gstin) || undefined,
+        drugLicenseNumber: formData.drugLicenseNumber || undefined,
         isActive: true
       };
 
@@ -235,6 +252,16 @@ const SupplierManagement: React.FC = () => {
                           {supplier.address}
                         </div>
                       )}
+                      <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
+                        {supplier.gstin ? (
+                          <span className="font-mono px-2 py-0.5 rounded bg-green-50 text-green-800 border border-green-200">GSTIN {supplier.gstin}</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">No GSTIN — no input credit</span>
+                        )}
+                        {supplier.drugLicenseNumber && (
+                          <span className="flex items-center gap-1 text-gray-600"><FileText className="w-3 h-3" /> DL {supplier.drugLicenseNumber}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   
@@ -351,6 +378,51 @@ const SupplierManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter supplier address"
                 />
+              </div>
+
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-semibold text-gray-800 mb-3">GST &amp; Licence</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
+                    <input
+                      type="text"
+                      value={formData.gstin}
+                      onChange={(e) => {
+                        const gstin = e.target.value.toUpperCase();
+                        setFormData({ ...formData, gstin, stateCode: formData.stateCode || stateCodeFromGstin(gstin) || '' });
+                      }}
+                      maxLength={15}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="24ABCDE1234F1Z5"
+                    />
+                    {formData.gstin && !isValidGstin(formData.gstin) && (
+                      <p className="text-xs text-amber-700 mt-1">Does not look like a valid 15-character GSTIN</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">State (place of supply)</label>
+                    <select
+                      value={formData.stateCode}
+                      onChange={(e) => setFormData({ ...formData, stateCode: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Auto from GSTIN</option>
+                      {INDIAN_STATE_CODES.map(s => <option key={s.code} value={s.code}>{s.code} - {s.name}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">A different state from the clinic means IGST on purchases.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Drug Licence No</label>
+                    <input
+                      type="text"
+                      value={formData.drugLicenseNumber}
+                      onChange={(e) => setFormData({ ...formData, drugLicenseNumber: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Wholesale drug licence (20B/21B)"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
