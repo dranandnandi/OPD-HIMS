@@ -48,6 +48,10 @@ async function invokeGenerator(
   options: PdfOptions | undefined,
   label: string,
 ): Promise<GeneratedPdf> {
+  if (type === 'bill' && data.bill?.billType === 'pharmacy') {
+    const { pharmacyInvoiceService } = await import('./pharmacyInvoiceService');
+    return pharmacyInvoiceService.generate(data.bill.id, { forceRegenerate: options?.forceRegenerate });
+  }
   if (!supabase) {
     throw new Error('Supabase client not initialized');
   }

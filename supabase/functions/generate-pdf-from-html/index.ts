@@ -326,6 +326,37 @@ const fmtExpiry = (d: unknown): string => {
   return isNaN(date.getTime()) ? '-' : `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(-2)}`;
 };
 
+// Quantities are numeric(14,3): print 2 rather than 2.000, 0.5 as 0.5.
+const trimQty = (n: unknown): string => {
+  const v = Math.round((Number(n) || 0) * 1000) / 1000;
+  return Number.isInteger(v) ? String(v) : String(v);
+};
+
+/**
+ * A line's quantity in the unit it was charged in — "5 Tablet" for a broken
+ * strip, "2 Strip" for two whole ones — which is the unit the rate beside it
+ * is in, so quantity x rate is the amount. Lines saved before pack sizes
+ * existed carry no billed quantity and fall back to the bare number.
+ */
+const fmtQty = (item: any): string => {
+  const stockQty = Number(item.quantity) || 0;
+  const billedQty = item.billedQuantity != null ? Number(item.billedQuantity) : stockQty;
+  const unit = String(item.billedUnit || '').trim();
+  return unit ? `${trimQty(billedQty)} ${escapeHtml(unit)}` : trimQty(billedQty);
+};
+
+/**
+ * Pack MRP under the rate whenever the line was charged per loose unit, so
+ * the MRP that is printed on the pack is still on the invoice.
+ */
+const packNote = (item: any): string => {
+  const packSize = Number(item.packSize) || 1;
+  const mrp = Number(item.mrp) || 0;
+  const rate = Number(item.unitPrice ?? item.mrp) || 0;
+  if (packSize <= 1 || !mrp || Math.abs(mrp - rate) < 0.005) return '';
+  return `<br><span style="font-size:0.85em;color:#666">MRP ${fmtMoney(mrp)} / pack of ${trimQty(packSize)}</span>`;
+};
+
 const buildPharmacyInvoiceHtml = (args: {
   bill: any; patient: any; doctorDisplayName: string; clinicSettings: any; printVersion: boolean; isA5: boolean;
 }): string => {
@@ -364,8 +395,8 @@ const buildPharmacyInvoiceHtml = (args: {
       <td class="c">${escapeHtml(item.hsnCode || '')}</td>
       <td class="c">${escapeHtml(item.batchNumber || '-')}</td>
       <td class="c">${fmtExpiry(item.expiryDate)}</td>
-      <td class="c">${item.quantity}</td>
-      <td class="r">${fmtMoney(item.mrp ?? item.unitPrice)}</td>
+      <td class="c">${fmtQty(item)}</td>
+      <td class="r">${fmtMoney(item.unitPrice ?? item.mrp)}${packNote(item)}</td>
       <td class="r">${Number(item.discount) ? fmtMoney(item.discount) : '-'}</td>
       <td class="r">${fmtMoney(item.taxableAmount)}</td>
       ${composition ? '' : interstate
@@ -461,7 +492,7 @@ const buildPharmacyInvoiceHtml = (args: {
   <table>
     <thead>
       <tr>
-        <th>#</th><th style="text-align:left">Item</th><th>HSN</th><th>Batch</th><th>Exp</th><th>Qty</th><th>MRP ₹</th><th>Disc ₹</th><th>Taxable ₹</th>
+        <th>#</th><th style="text-align:left">Item</th><th>HSN</th><th>Batch</th><th>Exp</th><th>Qty</th><th>Rate ₹</th><th>Disc ₹</th><th>Taxable ₹</th>
         ${taxHead}
         <th>Total ₹</th>
       </tr>

@@ -54,6 +54,7 @@ export interface WhatsAppSendFileUrlInput {
   phone: string;
   fileUrl: string;
   caption?: string;
+  fileName?: string;
 }
 
 export interface WhatsAppSendReportInput {

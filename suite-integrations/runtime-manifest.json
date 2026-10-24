@@ -1,0 +1,34 @@
+[
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteAccessCore.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteAccessCore.ts",
+    "staged": "staged\\runtime\\whatsapp\\server\\suiteAccessCore.ts",
+    "beforeHash": null,
+    "afterHash": "e53fbd6978556109a0901d10e563c5e2d41fe6bf02a90e7add2b696ba5ee557f"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteTenantAccess.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteTenantAccess.ts",
+    "staged": "staged\\runtime\\whatsapp\\server\\suiteTenantAccess.ts",
+    "beforeHash": null,
+    "afterHash": "5928ee4f236f6199f208180fe94eccad24c6cec968e88627cc633a676ef805a1"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteRuntimeAccess.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteRuntimeAccess.ts",
+    "staged": "staged\\runtime\\whatsapp\\server\\suiteRuntimeAccess.ts",
+    "beforeHash": null,
+    "afterHash": "8936a4414d1cc1616022f047896a3a1c6268389a3667608a73e70ab04a38e865"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/HRChatbotService.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\HRChatbotService.ts",
+    "staged": "staged\\runtime\\whatsapp\\server\\services\\HRChatbotService.ts",
+    "beforeHash": "0857493157744dc7881566da53b0b537846cd0d6de9da3868b33fe54c6480ecb",
+    "afterHash": "3c93008d9fa80f46231543c905b275cab7f8b3950a7ad9ab70432ba080789496"
+  }
+]

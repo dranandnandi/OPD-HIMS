@@ -261,6 +261,10 @@ export interface VisitImage {
   fileSize?: number;      // Bytes, for display only
   durationSeconds?: number; // Audio/video length, for display only
   uploadedAt: string;
+  /** Original file retained when a clinic letterhead copy replaces this tile. */
+  reportSource?: Pick<VisitImage, 'url' | 'mimeType' | 'imageType' | 'label' | 'fileSize'>;
+  performingLab?: string;
+  reportGeneratedAt?: string;
 }
 
 export interface Visit {
@@ -389,6 +393,8 @@ export interface PaymentRecord {
 export type BillType = 'opd' | 'pharmacy' | 'ipd';
 
 export interface Bill {
+  /** Exact database timestamp for conditional PDF cache writes. */
+  sourceUpdatedAt?: string;
   id: string;
   visitId: string | null;
   patientId: string;
@@ -517,7 +523,15 @@ export interface BillItem {
   billId: string;
   itemType: 'consultation' | 'procedure' | 'medicine' | 'test' | 'other';
   itemName: string;
+  /** Stocked units; fractional on a loose pharmacy sale (0.5 of a strip). */
   quantity: number;
+  /** Pack size at the time of billing. */
+  packSize?: number;
+  /** Quantity as printed on the invoice, in billedUnit. */
+  billedQuantity?: number;
+  /** Unit that billedQuantity and unitPrice are both in. */
+  billedUnit?: string;
+  /** Rate per billed unit (per tablet on a loose sale, per pack otherwise). */
   unitPrice: number;
   totalPrice: number;
   discount?: number;
@@ -819,6 +833,17 @@ export interface MedicineMaster {
   hsnCode?: string;
   /** Default GST % for the SKU (12 for most medicines). */
   gstRate?: number;
+  /**
+   * Dispense units in one stocked unit: 10 for a strip of 10 tablets. Stock,
+   * purchase and MRP are all per stocked unit; 1 means the two are the same.
+   */
+  packSize?: number;
+  /** Label of the stocked, priced unit: Strip, Bottle, Vial. */
+  stockUnit?: string;
+  /** Label of the unit handed over the counter: Tablet, Capsule, ml. */
+  dispenseUnit?: string;
+  /** False for a SKU that may only leave in whole packs. */
+  allowLooseSale?: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -931,8 +956,11 @@ export interface PharmacyInwardItem {
   id: string;
   receiptId: string;
   medicineId: string;
+  /** Packs received (purchases are always whole packs). */
   quantity: number;
-  /** GST-exclusive purchase rate per unit */
+  /** Dispense units in one purchased pack, from the distributor invoice. */
+  packSize?: number;
+  /** GST-exclusive purchase rate per pack */
   unitCostPrice: number;
   totalCostPrice: number;
   batchNumber?: string;
@@ -960,10 +988,17 @@ export interface PharmacyDispensedItem {
   visitId?: string | null;
   prescriptionId?: string;
   medicineId: string;
+  /** Stocked units consumed; 0.5 when half a strip was sold. */
   quantity: number;
+  /** Pack size as it stood at the sale, so an old row still reads correctly. */
+  packSize?: number;
+  /** Quantity as charged, in billedUnit: 5 tablets, or 2 whole strips. */
+  billedQuantity?: number;
+  /** Unit that billedQuantity and sellingPriceAtDispense are both in. */
+  billedUnit?: string;
   dispensedBy: string;
   dispenseDate: Date;
-  /** Unit selling price (MRP) as charged */
+  /** Rate per billed unit: per dispense unit on a loose sale, per pack otherwise. */
   sellingPriceAtDispense?: number;
   totalSellingPrice?: number;
   batchNumber?: string;
@@ -992,8 +1027,10 @@ export interface MedicineBatch {
   medicineId: string;
   batchNumber: string;
   expiryDate?: Date;
+  /** MRP of one stocked unit (the whole pack). */
   mrp?: number;
   purchaseRate?: number;
+  /** Stocked units on hand; fractional once a pack has been broken. */
   quantity: number;
   supplierId?: string;
   createdAt: Date;

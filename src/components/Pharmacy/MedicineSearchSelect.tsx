@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 import { MedicineWithPrice } from '../../types';
+import { packSpec, stockBreakdown } from '../../utils/packUnits';
 
 interface MedicineSearchSelectProps {
   medicines: MedicineWithPrice[];
@@ -118,7 +119,7 @@ const MedicineSearchSelect: React.FC<MedicineSearchSelectProps> = ({ medicines, 
               <div className="flex items-center justify-between gap-2">
                 <span className="text-gray-800 truncate">{m.name}{m.strength ? ` ${m.strength}` : ''}</span>
                 <span className={`text-xs whitespace-nowrap ${m.currentStock > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  Stock: {m.currentStock}
+                  Stock: {stockBreakdown(m.currentStock, packSpec(m))}
                 </span>
               </div>
               <div className="text-xs text-gray-500 flex items-center gap-2">

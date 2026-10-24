@@ -25,6 +25,10 @@ const convertDatabaseMedicineMaster = (dbMedicine: DatabaseMedicineMaster): Medi
   isChronic: dbMedicine.is_chronic ?? false,
   hsnCode: dbMedicine.hsn_code ?? undefined,
   gstRate: dbMedicine.gst_rate ?? 12,
+  packSize: dbMedicine.pack_size != null ? Number(dbMedicine.pack_size) : 1,
+  stockUnit: dbMedicine.stock_unit ?? undefined,
+  dispenseUnit: dbMedicine.dispense_unit ?? undefined,
+  allowLooseSale: dbMedicine.allow_loose_sale ?? true,
   isActive: dbMedicine.is_active,
   createdAt: new Date(dbMedicine.created_at),
   updatedAt: new Date(dbMedicine.updated_at)
@@ -66,6 +70,10 @@ const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'create
   is_chronic: medicine.isChronic ?? false,
   hsn_code: medicine.hsnCode?.trim() || null,
   gst_rate: medicine.gstRate ?? 12,
+  pack_size: medicine.packSize && medicine.packSize > 0 ? medicine.packSize : 1,
+  stock_unit: medicine.stockUnit?.trim() || null,
+  dispense_unit: medicine.dispenseUnit?.trim() || null,
+  allow_loose_sale: medicine.allowLooseSale ?? true,
   is_active: medicine.isActive
 });
 
@@ -273,8 +281,14 @@ export const masterDataService = {
     if (medicine.rackLocation !== undefined) dbMedicine.rack_location = medicine.rackLocation?.trim() || null;
     if (medicine.barcode !== undefined) dbMedicine.barcode = medicine.barcode?.replace(/\s+/g, '') || null;
     if (medicine.isChronic !== undefined) dbMedicine.is_chronic = medicine.isChronic;
-if (medicine.hsnCode !== undefined) dbMedicine.hsn_code = medicine.hsnCode?.trim() || null;
+    if (medicine.hsnCode !== undefined) dbMedicine.hsn_code = medicine.hsnCode?.trim() || null;
     if (medicine.gstRate !== undefined) dbMedicine.gst_rate = medicine.gstRate;
+    // A pack size of 0 or blank would make every per-unit rate a division by
+    // zero, so it falls back to 1 (the pack IS the dispense unit).
+    if (medicine.packSize !== undefined) dbMedicine.pack_size = medicine.packSize && medicine.packSize > 0 ? medicine.packSize : 1;
+    if (medicine.stockUnit !== undefined) dbMedicine.stock_unit = medicine.stockUnit?.trim() || null;
+    if (medicine.dispenseUnit !== undefined) dbMedicine.dispense_unit = medicine.dispenseUnit?.trim() || null;
+    if (medicine.allowLooseSale !== undefined) dbMedicine.allow_loose_sale = medicine.allowLooseSale;
 
     const { data, error } = await supabase
       .from('medicines_master')

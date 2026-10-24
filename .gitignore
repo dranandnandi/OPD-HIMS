@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-suite-admin
 *.local
 
 # Editor directories and files
@@ -42,6 +43,15 @@ firebase-adminsdk-*.json
 .env.local
 .env.production
 .env.development
+.env.*
+*.env
+*.env.*
+
+# Local credentials and assistant settings
+.claude/settings.local.json
+.aws/
+*.pem
+*.key
 
 # Local scratch / debug artifacts
 b_src.txt

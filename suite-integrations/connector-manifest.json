@@ -1,0 +1,98 @@
+[
+    {
+        "component":  "growth",
+        "relative":  "supabase/functions/_shared/suite-connector-core.ts",
+        "target":  "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-connector-core.ts",
+        "staged":  "staged\\growth\\supabase\\functions\\_shared\\suite-connector-core.ts",
+        "beforeHash":  null,
+        "afterHash":  "1f50dfbe14721d437204827ca3d9a5719f9e86a4fae06bc521ad7bbb1a79cad0"
+    },
+    {
+        "component":  "growth",
+        "relative":  "supabase/functions/suite-connector/index.ts",
+        "target":  "D:\\app\\gmb review system\\project\\supabase\\functions\\suite-connector\\index.ts",
+        "staged":  "staged\\growth\\supabase\\functions\\suite-connector\\index.ts",
+        "beforeHash":  null,
+        "afterHash":  "19b2822dc935a6b63f481fe73874abb81fa0f7d8f718e93340fbff2ed61b7220"
+    },
+    {
+        "component":  "growth",
+        "relative":  "supabase/config.toml",
+        "target":  "D:\\app\\gmb review system\\project\\supabase\\config.toml",
+        "staged":  "staged\\growth\\supabase\\config.toml",
+        "beforeHash":  "1454d1ac8c3850485171384b22f35c5db6ebd313aeb3846d169895cc93a6eb57",
+        "afterHash":  "a506a1733e32e0981e8f343c5ec0a82ca21c5ec3da8614f8a728aa720c5d22e0"
+    },
+    {
+        "component":  "workforce",
+        "relative":  "supabase/functions/_shared/suite-connector-core.ts",
+        "target":  "D:\\task manager android app\\project\\supabase\\functions\\_shared\\suite-connector-core.ts",
+        "staged":  "staged\\workforce\\supabase\\functions\\_shared\\suite-connector-core.ts",
+        "beforeHash":  null,
+        "afterHash":  "1f50dfbe14721d437204827ca3d9a5719f9e86a4fae06bc521ad7bbb1a79cad0"
+    },
+    {
+        "component":  "workforce",
+        "relative":  "supabase/functions/suite-connector/index.ts",
+        "target":  "D:\\task manager android app\\project\\supabase\\functions\\suite-connector\\index.ts",
+        "staged":  "staged\\workforce\\supabase\\functions\\suite-connector\\index.ts",
+        "beforeHash":  null,
+        "afterHash":  "2177703645c1bcb6c40de9a22513b3c498b7d6a3d6f7ce4917df8e2ddf6a860d"
+    },
+    {
+        "component":  "workforce",
+        "relative":  "supabase/config.toml",
+        "target":  "D:\\task manager android app\\project\\supabase\\config.toml",
+        "staged":  "staged\\workforce\\supabase\\config.toml",
+        "beforeHash":  "6cc3003f0244da4564089f4b27c4127f778c36b69d3c1e2c087fb5505983f67a",
+        "afterHash":  "6cc3003f0244da4564089f4b27c4127f778c36b69d3c1e2c087fb5505983f67a"
+    },
+    {
+        "component":  "whatsapp",
+        "relative":  "server/suiteConnectorCore.ts",
+        "target":  "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteConnectorCore.ts",
+        "staged":  "staged\\whatsapp\\server\\suiteConnectorCore.ts",
+        "beforeHash":  null,
+        "afterHash":  "1f50dfbe14721d437204827ca3d9a5719f9e86a4fae06bc521ad7bbb1a79cad0"
+    },
+    {
+        "component":  "whatsapp",
+        "relative":  "server/suiteConnector.ts",
+        "target":  "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteConnector.ts",
+        "staged":  "staged\\whatsapp\\server\\suiteConnector.ts",
+        "beforeHash":  "2e04a3a04b2c4a0d2652dfd9cb0d71b465be058c4d8ab1cbe5a46cc85f176418",
+        "afterHash":  "38f6013a65621e9e7435d321187bd5799f36f22d3c7d302ac55700fc2f13043f"
+    },
+    {
+        "component":  "whatsapp",
+        "relative":  "server/index.ts",
+        "target":  "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\index.ts",
+        "staged":  "staged\\whatsapp\\server\\index.ts",
+        "beforeHash":  "3b98d834b5fd7986188ba219e5cc0a0c001f6abc6576a6e1cd872487e49e4af5",
+        "afterHash":  "832c21d782cccd3988afecc6f7ba80119ad58946e437e26e562365c5dc2cdbad"
+    },
+    {
+        "component":  "legacy_whatsapp",
+        "relative":  "server/suiteConnectorCore.ts",
+        "target":  "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteConnectorCore.ts",
+        "staged":  "staged\\legacy_whatsapp\\server\\suiteConnectorCore.ts",
+        "beforeHash":  null,
+        "afterHash":  "1f50dfbe14721d437204827ca3d9a5719f9e86a4fae06bc521ad7bbb1a79cad0"
+    },
+    {
+        "component":  "legacy_whatsapp",
+        "relative":  "server/suiteConnector.ts",
+        "target":  "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteConnector.ts",
+        "staged":  "staged\\legacy_whatsapp\\server\\suiteConnector.ts",
+        "beforeHash":  null,
+        "afterHash":  "c1587c375bcebea57b2591caab6cf7e39d1fe1efa3355d7d0346286a722f6559"
+    },
+    {
+        "component":  "legacy_whatsapp",
+        "relative":  "server/index.ts",
+        "target":  "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\index.ts",
+        "staged":  "staged\\legacy_whatsapp\\server\\index.ts",
+        "beforeHash":  "2c34393ee73bee9bf5144aa5a46eefbe1f55dd2a259a2deef2fd2f31d3e1c415",
+        "afterHash":  "1d4b071531768aaba52c7f08b89289e36ea2959c4e6ca575d76b916d32fdfa36"
+    }
+]

@@ -5,6 +5,7 @@ import { masterDataService } from '../../services/masterDataService';
 import { pharmacyService, DebitNoteItemInput } from '../../services/pharmacyService';
 import { useAuth } from '../Auth/useAuth';
 import { computeGstLine, sumGstLines, GST_RATES, inr, isInterstate, stateCodeFromGstin } from '../../utils/gst';
+import { packSpec, stockBreakdown } from '../../utils/packUnits';
 
 interface ReturnToSupplierModalProps {
   onSave: () => void;
@@ -108,7 +109,7 @@ const ReturnToSupplierModal: React.FC<ReturnToSupplierModalProps> = ({ onSave, o
     const valid = rows.filter(r => r.medicineId && r.quantity > 0);
     if (valid.length === 0) { alert('Add at least one item to return'); return; }
     for (const r of valid) {
-      if (r.quantity > available(r)) {
+      if (r.quantity > available(r) + 1e-9) {
         const m = medicines.find(x => x.id === r.medicineId);
         alert(`Cannot return ${r.quantity} of ${m?.name}; only ${available(r)} available${r.batchId ? ' in that batch' : ''}.`);
         return;
@@ -235,12 +236,16 @@ const ReturnToSupplierModal: React.FC<ReturnToSupplierModalProps> = ({ onSave, o
                         <label className="block text-xs text-gray-600 mb-1">Batch</label>
                         <select value={r.batchId} onChange={(e) => updateRow(index, { batchId: e.target.value })} disabled={!r.medicineId} className={`${inputCls} disabled:bg-gray-100`}>
                           <option value="">Pool</option>
-                          {r.medicineId && batchesFor(r.medicineId).map(b => <option key={b.id} value={b.id}>{b.batchNumber} ({b.quantity})</option>)}
+                          {r.medicineId && batchesFor(r.medicineId).map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.batchNumber} ({stockBreakdown(b.quantity, packSpec(medicines.find(m => m.id === r.medicineId)))})
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Qty</label>
-                        <input type="number" min="1" value={r.quantity} onChange={(e) => updateRow(index, { quantity: parseInt(e.target.value) || 0 })}
+                        <input type="number" min="1" step="1" value={r.quantity} onChange={(e) => updateRow(index, { quantity: parseInt(e.target.value) || 0 })}
                           className={`${inputCls} ${over ? 'border-red-300 bg-red-50' : ''}`} />
                       </div>
                       <div>
@@ -297,7 +302,7 @@ const ReturnToSupplierModal: React.FC<ReturnToSupplierModalProps> = ({ onSave, o
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={onClose} className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleSave}
-              disabled={saving || !supplierId || !reason.trim() || totals.grandTotal <= 0 || rows.some(r => r.medicineId && r.quantity > available(r))}
+              disabled={saving || !supplierId || !reason.trim() || totals.grandTotal <= 0 || rows.some(r => r.medicineId && r.quantity > available(r) + 1e-9)}
               className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">
               <Save className="w-4 h-4" />
               {saving ? 'Processing...' : 'Record Debit Note'}

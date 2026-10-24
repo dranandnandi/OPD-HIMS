@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Paperclip, Play, FileText, File as FileIcon, ExternalLink, X, Sparkles, Download, Mic } from 'lucide-react';
-import { VisitImage } from '../../types';
+import { Patient, VisitImage } from '../../types';
+import ReportActionsModal from './ReportActionsModal';
 import {
   getAttachmentKind,
   attachmentTypeLabel,
@@ -16,6 +17,9 @@ interface VisitAttachmentsGalleryProps {
   compact?: boolean;
   /** Heading shown above the grid. Pass null to render the grid only. */
   title?: string | null;
+  visitId?: string;
+  patient?: Patient;
+  onAttachmentsChange?: (attachments: VisitImage[]) => void;
 }
 
 /** Non-image tiles get an icon plate instead of a thumbnail. */
@@ -46,16 +50,20 @@ const IconPlate: React.FC<{ kind: AttachmentKind; compact?: boolean }> = ({ kind
 };
 
 /**
- * Read-only viewer for everything attached to a visit — images, videos, PDFs.
+ * Viewer and report actions for everything attached to a visit.
  * Shared by the patient timeline, the visit details page and the visit modal so
  * all three stay in step.
  */
 const VisitAttachmentsGallery: React.FC<VisitAttachmentsGalleryProps> = ({
   attachments,
   compact = false,
-  title = 'Attachments'
+  title = 'Attachments',
+  visitId,
+  patient,
+  onAttachmentsChange,
 }) => {
   const [preview, setPreview] = useState<VisitImage | null>(null);
+  const [reportAction, setReportAction] = useState<{ attachment: VisitImage; mode: 'brand' | 'send' } | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
 
@@ -156,11 +164,33 @@ const VisitAttachmentsGallery: React.FC<VisitAttachmentsGalleryProps> = ({
                     <ExternalLink className="w-3 h-3" /> Open full
                   </a>
                 )}
+                {attachment.reportSource && (
+                  <a href={attachment.reportSource.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-gray-500 underline mt-1">Original report</a>
+                )}
+                {attachment.performingLab && <p className="text-xs text-gray-600 mt-1" title={attachment.performingLab}>Lab: {attachment.performingLab}</p>}
+                {visitId && patient && (kind === 'pdf' || kind === 'image') && (
+                  <div className="mt-2 space-y-1 border-t pt-2">
+                    <button type="button" onClick={() => setReportAction({ attachment, mode: 'brand' })} className="block text-left text-xs text-blue-700 hover:underline">Create letterhead PDF</button>
+                    <button type="button" onClick={() => setReportAction({ attachment, mode: 'send' })} className="block text-left text-xs text-green-700 hover:underline">Send to patient</button>
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {reportAction && visitId && patient && (
+        <ReportActionsModal
+          key={`${reportAction.attachment.id}-${reportAction.mode}`}
+          attachment={reportAction.attachment}
+          visitId={visitId}
+          patient={patient}
+          initialMode={reportAction.mode}
+          onSaved={updated => onAttachmentsChange?.(updated)}
+          onClose={() => setReportAction(null)}
+        />
+      )}
 
       {/* Preview overlay - player/viewer picked by file kind */}
       {preview && (

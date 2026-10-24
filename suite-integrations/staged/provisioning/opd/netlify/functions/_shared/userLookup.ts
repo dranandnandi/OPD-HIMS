@@ -1,0 +1,42 @@
+import { requiredRuntimeEnv } from './suite-runtime-guard';
+/**
+ * Helper to look up WhatsApp backend user ID from auth_id
+ */
+
+const getConnectionString = () => 
+  process.env.WHATSAPP_DB_CONNECTION_STRING || 
+  requiredRuntimeEnv('WHATSAPP_DB_CONNECTION_STRING');
+
+export async function getUserIdFromAuthId(authId: string): Promise<string | null> {
+  try {
+    const { Pool } = await import('pg');
+    
+    const pool = new Pool({
+      connectionString: getConnectionString(),
+      ssl: {
+        rejectUnauthorized: false
+      }
+    });
+
+    try {
+      const result = await pool.query(
+        'SELECT id FROM users WHERE auth_id = $1 LIMIT 1',
+        [authId]
+      );
+      
+      await pool.end();
+      
+      if (result.rows.length > 0) {
+        return result.rows[0].id;
+      }
+      
+      return null;
+    } catch (dbError) {
+      await pool.end();
+      throw dbError;
+    }
+  } catch (error) {
+    console.error('Error looking up user:', error);
+    return null;
+  }
+}

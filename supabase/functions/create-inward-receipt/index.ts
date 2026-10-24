@@ -54,6 +54,7 @@ serve(async (req) => {
       receipt_id: receiptData.id,
       medicine_id: item.medicine_id,
       quantity: item.quantity,
+      pack_size: item.pack_size ?? null,
       unit_cost_price: item.unit_cost_price,
       batch_number: item.batch_number,
       expiry_date: item.expiry_date

@@ -14,6 +14,7 @@ import {
   Bill
 } from '../types';
 import { getCurrentProfile } from './profileService';
+import { round3 } from '../utils/packUnits';
 import { supabaseUrl } from '../lib/supabaseClient';
 import type {
   DatabaseSupplier,
@@ -82,6 +83,7 @@ const convertDatabaseInwardItem = (dbItem: DatabasePharmacyInwardItem, medicine?
   receiptId: dbItem.receipt_id,
   medicineId: dbItem.medicine_id,
   quantity: dbItem.quantity,
+  packSize: optNum(dbItem.pack_size),
   unitCostPrice: num(dbItem.unit_cost_price),
   totalCostPrice: num(dbItem.total_cost_price),
   batchNumber: dbItem.batch_number,
@@ -108,7 +110,10 @@ const convertDatabaseDispensedItem = (dbItem: DatabasePharmacyDispensedItem, med
   visitId: dbItem.visit_id,
   prescriptionId: dbItem.prescription_id,
   medicineId: dbItem.medicine_id,
-  quantity: dbItem.quantity,
+  quantity: num(dbItem.quantity),
+  packSize: dbItem.pack_size != null ? num(dbItem.pack_size) : 1,
+  billedQuantity: dbItem.billed_quantity != null ? num(dbItem.billed_quantity) : num(dbItem.quantity),
+  billedUnit: dbItem.billed_unit ?? undefined,
   dispensedBy: dbItem.dispensed_by,
   dispenseDate: new Date(dbItem.dispense_date),
   sellingPriceAtDispense: optNum(dbItem.selling_price_at_dispense),
@@ -124,7 +129,7 @@ const convertDatabaseDispensedItem = (dbItem: DatabasePharmacyDispensedItem, med
   cgstAmount: optNum(dbItem.cgst_amount),
   sgstAmount: optNum(dbItem.sgst_amount),
   igstAmount: optNum(dbItem.igst_amount),
-  refundedQuantity: dbItem.refunded_quantity,
+  refundedQuantity: optNum(dbItem.refunded_quantity),
   refundRequestId: dbItem.refund_request_id ?? undefined,
   createdAt: new Date(dbItem.created_at),
   medicine
@@ -138,7 +143,7 @@ const convertDatabaseBatch = (b: DatabaseMedicineBatch, medicine?: MedicineMaste
   expiryDate: b.expiry_date ? new Date(b.expiry_date) : undefined,
   mrp: optNum(b.mrp),
   purchaseRate: optNum(b.purchase_rate),
-  quantity: b.quantity,
+  quantity: num(b.quantity),
   supplierId: b.supplier_id ?? undefined,
   createdAt: new Date(b.created_at),
   updatedAt: new Date(b.updated_at),
@@ -263,6 +268,30 @@ export interface DebitNoteItemInput {
   sgstAmount: number;
   igstAmount: number;
   lineTotal: number;
+}
+
+/**
+ * Fields of a saved purchase line that a correction may change. Only the keys
+ * present are touched. The tax amounts are computed by the caller with
+ * `src/utils/gst.ts`, the same way they were on the original entry, so the
+ * stored numbers still add up to what the supplier invoiced.
+ */
+export interface InwardItemCorrection {
+  quantity?: number;
+  freeQuantity?: number;
+  packSize?: number;
+  unitCostPrice?: number;
+  mrp?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  gstRate?: number;
+  hsnCode?: string;
+  expiryDate?: Date | null;
+  taxableAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  lineTotal?: number;
 }
 
 export interface DebitNoteInput {
@@ -490,6 +519,7 @@ export const pharmacyService = {
           clinic_id: clinicId,
           medicine_id: item.medicineId && item.medicineId.trim() !== '' ? item.medicineId : null,
           quantity: item.quantity,
+          pack_size: item.packSize && item.packSize > 0 ? item.packSize : null,
           unit_cost_price: item.unitCostPrice,
           batch_number: item.batchNumber?.trim() || null,
           expiry_date: item.expiryDate ? item.expiryDate.toISOString().slice(0, 10) : null,
@@ -589,6 +619,9 @@ export const pharmacyService = {
         clinic_id: profile.clinicId,
         medicine_id: item.medicineId,
         quantity: item.quantity,
+        pack_size: item.packSize && item.packSize > 0 ? item.packSize : 1,
+        billed_quantity: item.billedQuantity ?? item.quantity,
+        billed_unit: item.billedUnit || null,
         dispensed_by: item.dispensedBy,
         dispense_date: item.dispenseDate.toISOString(),
         selling_price_at_dispense: item.sellingPriceAtDispense,
@@ -757,88 +790,42 @@ export const pharmacyService = {
 
   // Dashboard Analytics
   async getPharmacyDashboardData(clinicId?: string): Promise<{
-    totalMedicines: number;
-    lowStockCount: number;
-    expiringCount: number;
-    totalStockValue: number;
-    recentMovements: StockMovementLog[];
+    totalMedicines: number; lowStockCount: number; expiringCount: number;
+    totalStockValue: number; recentMovements: StockMovementLog[]; medicines: MedicineWithPrice[];
   }> {
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
-    }
-
+    if (!supabase) throw new Error('Supabase client not initialized');
     const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
-    }
-
-    try {
-      const [
-        allMedicines,
-        lowStockMedicines,
-        expiringMedicines,
-        { data: recentMovements }
-      ] = await Promise.all([
-        this.getAllMedicinesWithPrices(clinicId),
-        this.getLowStockMedicines(clinicId),
-        this.getExpiringMedicines(30, clinicId),
-        supabase
-          .from('stock_movement_log')
-          .select(`
-            *,
-            medicines_master (*),
-            clinic_id,
-            profiles (*)
-          `)
-          .order('movement_date', { ascending: false })
-          .limit(10)
-      ]);
-
-      const totalStockValue = allMedicines.reduce((sum, medicine) => {
-        return sum + (medicine.currentStock * (medicine.costPrice || 0));
-      }, 0) || 0;
-
-      return {
-        totalMedicines: allMedicines.length,
-        lowStockCount: lowStockMedicines.length,
-        expiringCount: expiringMedicines.length,
-        totalStockValue,
-        recentMovements: recentMovements?.map(log => convertDatabaseStockMovementLog(log, log.medicines_master)) || []
-      };
-
-    } catch (error) {
-      console.error('Error fetching pharmacy dashboard data:', error);
-      throw new Error('Failed to fetch pharmacy dashboard data');
-    }
+    if (!profile?.clinicId) throw new Error('User not assigned to a clinic.');
+    const [medicines, movements] = await Promise.all([
+      this.getAllMedicinesWithPrices(clinicId),
+      supabase.from('stock_movement_log').select('*, medicines_master (*)')
+        .eq('clinic_id', profile.clinicId).order('movement_date', { ascending: false }).limit(10),
+    ]);
+    if (movements.error) throw new Error('Failed to fetch recent stock movements');
+    return {
+      medicines, totalMedicines: medicines.length,
+      lowStockCount: medicines.filter(m => m.currentStock <= m.reorderLevel).length,
+      expiringCount: medicines.filter(m => m.currentStock > 0 && m.expiryDate && new Date(m.expiryDate).getTime() <= Date.now() + 30 * 86400000).length,
+      totalStockValue: medicines.reduce((sum, m) => sum + m.currentStock * (m.costPrice || 0), 0),
+      recentMovements: (movements.data || []).map(log => convertDatabaseStockMovementLog(log, log.medicines_master)),
+    };
   },
 
-  async getAllMedicinesWithPrices(clinicId?: string): Promise<MedicineWithPrice[]> {
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
-    }
-
+  async getAllMedicinesWithPrices(_clinicId?: string): Promise<MedicineWithPrice[]> {
+    if (!supabase) throw new Error('Supabase client not initialized');
     const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
+    if (!profile?.clinicId) throw new Error('User not assigned to a clinic.');
+    const medicines: MedicineWithPrice[] = [];
+    for (let start = 0; ; start += 1000) {
+      const { data, error } = await supabase.from('medicines_master')
+        .select('*, clinic_medicine_prices!left (selling_price, cost_price)')
+        .eq('is_active', true).eq('clinic_id', profile.clinicId)
+        .order('name').order('id').range(start, start + 999);
+      if (error) throw new Error('Failed to fetch medicines with prices');
+      medicines.push(...(data || []).map(convertMedicineRowWithPrice));
+      if (!data || data.length < 1000) break;
     }
-
-    const { data, error } = await supabase
-      .from('medicines_master')
-      .select(`
-        *,
-        clinic_medicine_prices!left (
-          selling_price,
-          cost_price
-        )
-      `)
-      .eq('is_active', true)
-      .eq('clinic_id', profile.clinicId);
-
-    if (error) {
-      throw new Error('Failed to fetch medicines with prices');
-    }
-
-    return data.map(convertMedicineRowWithPrice);
+    return medicines;
   },
 
   // Stock Alerts Management
@@ -1084,7 +1071,9 @@ export const pharmacyService = {
         throw new Error('Medicine not found or error fetching medicine data');
       }
 
-      const newStockLevel = medicine.current_stock + quantityChange;
+      // Stock is fractional now (a broken pack), so the sum is rounded back to
+      // the 3 decimals the column holds instead of carrying float residue.
+      const newStockLevel = round3(Number(medicine.current_stock) + quantityChange);
 
       if (newStockLevel < 0) {
         throw new Error(`Invalid adjustment. Would result in negative stock. Current: ${medicine.current_stock}, Change: ${quantityChange}`);
@@ -1125,6 +1114,120 @@ export const pharmacyService = {
     } catch (error) {
       console.error('Error adjusting stock:', error);
       throw error;
+    }
+  },
+
+  // Purchase corrections
+  /**
+   * Correct a saved purchase line to match the invoice the supplier actually
+   * sent — the fix for a wrong AI parse. Stock moves by the quantity delta,
+   * the batch's MRP / rate / expiry follow, the receipt header is re-summed
+   * and a before/after row is kept. Rejected if the difference has already
+   * been sold.
+   */
+  async correctInwardItem(
+    itemId: string,
+    patch: InwardItemCorrection,
+    reason?: string
+  ): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    // Only the keys the pharmacist actually changed go down, so the SQL side
+    // can leave everything else exactly as invoiced.
+    const p: Record<string, unknown> = {};
+    const put = (key: string, value: unknown) => {
+      if (value !== undefined) p[key] = value;
+    };
+    put('quantity', patch.quantity);
+    put('free_quantity', patch.freeQuantity);
+    put('pack_size', patch.packSize);
+    put('unit_cost_price', patch.unitCostPrice);
+    put('mrp', patch.mrp);
+    put('discount_percent', patch.discountPercent);
+    put('discount_amount', patch.discountAmount);
+    put('gst_rate', patch.gstRate);
+    put('hsn_code', patch.hsnCode?.trim());
+    put('taxable_amount', patch.taxableAmount);
+    put('cgst_amount', patch.cgstAmount);
+    put('sgst_amount', patch.sgstAmount);
+    put('igst_amount', patch.igstAmount);
+    put('line_total', patch.lineTotal);
+    if (patch.expiryDate !== undefined) {
+      p.expiry_date = patch.expiryDate ? patch.expiryDate.toISOString().slice(0, 10) : null;
+    }
+
+    if (Object.keys(p).length === 0) {
+      throw new Error('Nothing was changed');
+    }
+
+    const { error } = await supabase.rpc('correct_inward_item', {
+      p_item_id: itemId,
+      p_patch: p,
+      p_reason: reason?.trim() || null
+    });
+    if (error) {
+      throw new Error(error.message || 'Could not correct the purchase line');
+    }
+  },
+
+  /** Remove a purchase line that the parser invented, reversing its stock. */
+  async deleteInwardItem(itemId: string, reason?: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const { error } = await supabase.rpc('delete_inward_item', {
+      p_item_id: itemId,
+      p_reason: reason?.trim() || null
+    });
+    if (error) {
+      throw new Error(error.message || 'Could not remove the purchase line');
+    }
+  },
+
+  /**
+   * Correct a mis-read batch number. The batch and every row that copied the
+   * old text off it (purchase, dispense, bill and debit-note lines) follow,
+   * because the number is what a drug recall is matched against. Refused when
+   * the medicine already has a batch under the new number.
+   */
+  async renameBatch(batchId: string, newNumber: string, reason?: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const { error } = await supabase.rpc('rename_medicine_batch', {
+      p_batch_id: batchId,
+      p_new_number: newNumber.trim(),
+      p_reason: reason?.trim() || null
+    });
+    if (error) {
+      throw new Error(error.message || 'Could not rename the batch');
+    }
+  },
+
+  /**
+   * Re-price stock already on the shelf. The counter reads MRP from the batch,
+   * so this is the only way to fix an MRP that was mis-read off the invoice.
+   * The purchase rate is not editable here — it belongs to the purchase line,
+   * where changing it is audited.
+   */
+  async updateBatchPricing(
+    batchId: string,
+    changes: { mrp?: number; expiryDate?: Date | null }
+  ): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+    const clearExpiry = changes.expiryDate === null;
+    const { error } = await supabase.rpc('update_batch_pricing', {
+      p_batch_id: batchId,
+      p_mrp: changes.mrp ?? null,
+      p_expiry_date: changes.expiryDate ? changes.expiryDate.toISOString().slice(0, 10) : null,
+      p_clear_expiry: clearExpiry
+    });
+    if (error) {
+      throw new Error(error.message || 'Could not update the batch');
     }
   }
 };

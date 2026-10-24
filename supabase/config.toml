@@ -1,3 +1,20 @@
+[functions.suite-admin]
+# This handler validates the actual user with auth.getUser, then the platform
+# allowlist. It does not rely on gateway JWT checks or clinic role metadata.
+verify_jwt = false
+
+[functions.suite-member]
+# Validates the actual verified Auth user before accepting an invitation.
+verify_jwt = false
+
+[functions.suite-connector]
+# Scoped server credential; this read-only connector validates it itself.
+verify_jwt = false
+
+[functions.suite-product-access]
+# Dedicated per-product machine credentials, checked inside the handler.
+verify_jwt = false
+
 [functions.verify-prescription]
 verify_jwt = false
 
@@ -58,6 +75,10 @@ verify_jwt = false
 # forget it.
 [functions.abdm-callback]
 verify_jwt = false
+[functions.suite-worker]
+# Dedicated server credential; no browser access or caller-supplied actor.
+verify_jwt = false
+
 
 # Authenticates the HIMS bot secret or a verified clinic user inside the handler.
 [functions.hims-opd-bot]

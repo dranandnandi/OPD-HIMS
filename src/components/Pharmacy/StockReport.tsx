@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Clock, Package, Pill } from 'lucide-react';
+import { Search, Filter, Calendar, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Clock, Package, Pill, Pencil } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { StockMovementLog, MedicineMaster, MedicineWithPrice, MedicineBatch } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
+import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
 
@@ -11,6 +12,13 @@ const StockReport: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'movements' | 'low-stock' | 'expiring' | 'batches'>('movements');
   const [batches, setBatches] = useState<MedicineBatch[]>([]);
   const [batchSearch, setBatchSearch] = useState('');
+  /**
+   * The batch being re-priced. MRP reaches a batch only from the purchase that
+   * created it, and the counter reads MRP from the batch, so a mis-read MRP
+   * could not be fixed anywhere else.
+   */
+  const [editBatch, setEditBatch] = useState<{ id: string; number: string; origNumber: string; mrp: string; expiry: string } | null>(null);
+  const [savingBatch, setSavingBatch] = useState(false);
   const [movements, setMovements] = useState<StockMovementLog[]>([]);
   const [lowStockMedicines, setLowStockMedicines] = useState<MedicineWithPrice[]>([]);
   const [expiringMedicines, setExpiringMedicines] = useState<MedicineWithPrice[]>([]);
@@ -31,6 +39,47 @@ const StockReport: React.FC = () => {
       loadData();
     }
   }, [user, activeTab]);
+
+  /**
+   * Save a corrected MRP / expiry onto the batch. Only the batch moves: the
+   * purchase it came from, and the invoices already raised from it, are
+   * untouched — this is the price the counter will use from now on.
+   */
+  const saveBatch = async () => {
+    if (!editBatch) return;
+    const mrp = editBatch.mrp.trim() === '' ? undefined : parseFloat(editBatch.mrp);
+    if (mrp !== undefined && (!Number.isFinite(mrp) || mrp < 0)) {
+      alert('Enter a valid MRP, or leave it blank to keep the current one');
+      return;
+    }
+    const newNumber = editBatch.number.trim();
+    if (!newNumber) {
+      alert('Batch number cannot be blank');
+      return;
+    }
+    try {
+      setSavingBatch(true);
+      // The rename goes first: it corrects the recall trail on every row that
+      // copied the old number, and it is the change most likely to be refused
+      // (a collision with an existing batch), so nothing else moves if it is.
+      if (newNumber !== editBatch.origNumber) {
+        await pharmacyService.renameBatch(editBatch.id, newNumber, 'Corrected on the stock report');
+      }
+      await pharmacyService.updateBatchPricing(editBatch.id, {
+        mrp,
+        // An empty date box means "no expiry on record", which is a real state
+        // for a batch, so it is passed through as a deliberate clear.
+        expiryDate: editBatch.expiry ? new Date(`${editBatch.expiry}T00:00:00`) : null
+      });
+      setEditBatch(null);
+      await loadData();
+    } catch (err) {
+      console.error('Could not update the batch:', err);
+      alert(err instanceof Error ? err.message : 'Could not update the batch');
+    } finally {
+      setSavingBatch(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -467,7 +516,7 @@ const StockReport: React.FC = () => {
                         <span className={`text-sm font-medium ${
                           movement.quantityChange > 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {movement.quantityChange > 0 ? '+' : ''}{movement.quantityChange}
+                          {movement.quantityChange > 0 ? '+' : ''}{fmtQty(movement.quantityChange)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -544,7 +593,7 @@ const StockReport: React.FC = () => {
                           <span className={`text-sm font-medium ${
                             medicine.currentStock === 0 ? 'text-red-600' : 'text-orange-600'
                           }`}>
-                            {medicine.currentStock}
+                            {stockBreakdown(medicine.currentStock, packSpec(medicine))}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -552,7 +601,7 @@ const StockReport: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-red-600">
-                            {shortage > 0 ? shortage : 0}
+                            {fmtQty(shortage > 0 ? shortage : 0)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -601,7 +650,8 @@ const StockReport: React.FC = () => {
               <div>
                 <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
                   <p className="text-sm text-gray-600">
-                    Stock per batch (first expiry first). Batches are created automatically from purchase entries that carry a batch number.
+                    Stock per batch (first expiry first). Batches are created automatically from purchase entries that carry a batch
+                    number; the number, MRP and expiry can be corrected here when the scan read them wrong.
                   </p>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -626,15 +676,17 @@ const StockReport: React.FC = () => {
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">MRP</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Rate</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Value</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {rows.length === 0 && (
-                        <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No batches yet. Record a purchase with a batch number to start batch tracking.</td></tr>
+                        <tr><td colSpan={9} className="px-6 py-8 text-center text-gray-500">No batches yet. Record a purchase with a batch number to start batch tracking.</td></tr>
                       )}
                       {rows.map(b => {
                         const expired = b.expiryDate && b.expiryDate < new Date();
                         const expiring = !expired && b.expiryDate && b.expiryDate <= soon;
+                        const editing = editBatch?.id === b.id;
                         return (
                           <tr key={b.id} className={`hover:bg-gray-50 ${b.quantity === 0 ? 'text-gray-400' : ''}`}>
                             <td className="px-6 py-3">
@@ -646,18 +698,74 @@ const StockReport: React.FC = () => {
                                 ? <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-medium">{b.medicine.rackLocation}</span>
                                 : <span className="text-gray-400">—</span>}
                             </td>
-                            <td className="px-6 py-3 text-sm font-mono">{b.batchNumber}</td>
+                            <td className="px-6 py-3 text-sm font-mono">
+                              {editing ? (
+                                <input
+                                  type="text"
+                                  value={editBatch!.number}
+                                  onChange={(e) => setEditBatch({ ...editBatch!, number: e.target.value })}
+                                  title="Correcting the number also fixes it on the purchase and sale lines that came from this batch"
+                                  className="w-28 px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:ring-2 focus:ring-blue-500"
+                                />
+                              ) : b.batchNumber}
+                            </td>
                             <td className="px-6 py-3 text-sm">
-                              {b.expiryDate ? (
+                              {editing ? (
+                                <input
+                                  type="date"
+                                  value={editBatch!.expiry}
+                                  onChange={(e) => setEditBatch({ ...editBatch!, expiry: e.target.value })}
+                                  className="w-36 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                />
+                              ) : b.expiryDate ? (
                                 <span className={`px-2 py-0.5 rounded text-xs ${expired ? 'bg-red-100 text-red-800' : expiring ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
                                   {format(b.expiryDate, 'MMM yyyy')}{expired ? ' · expired' : expiring ? ` · ${differenceInDays(b.expiryDate, new Date())}d` : ''}
                                 </span>
                               ) : '—'}
                             </td>
-                            <td className="px-6 py-3 text-sm text-right font-medium">{b.quantity}</td>
-                            <td className="px-6 py-3 text-sm text-right">{b.mrp ? `₹${b.mrp.toFixed(2)}` : '—'}</td>
-                            <td className="px-6 py-3 text-sm text-right">{b.purchaseRate ? `₹${b.purchaseRate.toFixed(2)}` : '—'}</td>
+                            <td className="px-6 py-3 text-sm text-right font-medium">
+                              {stockBreakdown(b.quantity, packSpec(b.medicine))}
+                            </td>
+                            <td className="px-6 py-3 text-sm text-right">
+                              {editing ? (
+                                <input
+                                  type="number" min="0" step="0.01" autoFocus
+                                  value={editBatch!.mrp}
+                                  onChange={(e) => setEditBatch({ ...editBatch!, mrp: e.target.value })}
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right focus:ring-2 focus:ring-blue-500"
+                                />
+                              ) : b.mrp ? `₹${b.mrp.toFixed(2)}` : '—'}
+                            </td>
+                            <td className="px-6 py-3 text-sm text-right" title="Set by the purchase that brought this batch in — correct it on the purchase line">
+                              {b.purchaseRate ? `₹${b.purchaseRate.toFixed(2)}` : '—'}
+                            </td>
                             <td className="px-6 py-3 text-sm text-right">{b.purchaseRate ? `₹${(b.purchaseRate * b.quantity).toFixed(2)}` : '—'}</td>
+                            <td className="px-6 py-3 text-sm text-right whitespace-nowrap">
+                              {editing ? (
+                                <div className="flex items-center justify-end gap-1">
+                                  <button onClick={saveBatch} disabled={savingBatch}
+                                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
+                                    {savingBatch ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button onClick={() => setEditBatch(null)} disabled={savingBatch}
+                                    className="px-2 py-1 border border-gray-300 rounded text-xs hover:bg-gray-50">Cancel</button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setEditBatch({
+                                    id: b.id,
+                                    number: b.batchNumber,
+                                    origNumber: b.batchNumber,
+                                    mrp: b.mrp != null ? String(b.mrp) : '',
+                                    expiry: b.expiryDate ? b.expiryDate.toISOString().slice(0, 10) : ''
+                                  })}
+                                  title="Correct this batch's number, MRP or expiry"
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -711,7 +819,7 @@ const StockReport: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {medicine.currentStock}
+                          {stockBreakdown(medicine.currentStock, packSpec(medicine))}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {medicine.expiryDate ? format(medicine.expiryDate, 'MMM dd, yyyy') : 'Not set'}

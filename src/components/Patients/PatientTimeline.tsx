@@ -356,6 +356,9 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
                           {visit.visitImages && visit.visitImages.length > 0 && (
                             <VisitAttachmentsGallery
                               attachments={visit.visitImages}
+                              visitId={visit.id}
+                              patient={patient}
+                              onAttachmentsChange={visitImages => setVisits(current => current.map(item => item.id === visit.id ? { ...item, visitImages } : item))}
                               compact
                               title="Attachments"
                             />

@@ -1,0 +1,18 @@
+[
+  {
+    "component": "workforce",
+    "relative": "src/App.tsx",
+    "target": "D:\\task manager android app\\project\\src\\App.tsx",
+    "staged": "staged\\workforce\\src\\App.tsx",
+    "beforeHash": "fea5ee9e06e568f42d4a64451a858cb28b0a80a064dff06eb1a043e4e1cce20b",
+    "afterHash": "022e9f0cc39b76ff1feea829780a104564cc1e7d9e21895ae1b4b1eec6a5bc6a"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/utils/verifiedOrganization.ts",
+    "target": "D:\\task manager android app\\project\\src\\utils\\verifiedOrganization.ts",
+    "staged": "staged\\workforce\\src\\utils\\verifiedOrganization.ts",
+    "beforeHash": null,
+    "afterHash": "12efacc86ea658fac9dbc8b37010a5295a23d90a7bc4bcc1c64de9336e170c38"
+  }
+]

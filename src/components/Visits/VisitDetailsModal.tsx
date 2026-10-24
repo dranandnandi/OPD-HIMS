@@ -1517,7 +1517,9 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
               {/* Clinical attachments - images, videos, PDFs */}
               {visit.visitImages && visit.visitImages.length > 0 && (
                 <div className="card-standard p-6">
-                  <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments" />
+                  <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments"
+                    visitId={visit.id} patient={visit.patient}
+                    onAttachmentsChange={visitImages => setVisit(current => current ? { ...current, visitImages } : current)} />
                 </div>
               )}
 

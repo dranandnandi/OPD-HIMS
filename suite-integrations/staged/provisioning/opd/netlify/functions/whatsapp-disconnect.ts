@@ -1,0 +1,39 @@
+import { guardNetlify } from './_shared/suite-runtime-guard';
+import type { Handler } from '@netlify/functions';
+import { corsHeaders, ensureLabContext, forwardToWhatsApp, ok, error, parseRequestBody } from './_shared/whatsappClient';
+import { getUserIdFromAuthId } from './_shared/userLookup';
+
+const handler: Handler = guardNetlify(async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: corsHeaders, body: '' };
+  }
+
+  try {
+    const body = parseRequestBody(event.body);
+    ensureLabContext(body);
+    
+    // auth_id from OPD system
+    const authId = body.userId || body.authId || body.profileId;
+    if (!authId) {
+      return error('userId is required to disconnect WhatsApp', 400);
+    }
+    
+    // Map OPD auth_id -> backend userId
+    const backendUserId = await getUserIdFromAuthId(authId);
+    if (!backendUserId) {
+      return error('User not found in WhatsApp backend. Please ensure you are logged in and synced.', 404);
+    }
+
+    const payload = await forwardToWhatsApp({
+      path: `/api/users/${backendUserId}/whatsapp/session`,
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    return ok(payload);
+  } catch (err) {
+    return error(err instanceof Error ? err.message : 'Failed to disconnect WhatsApp');
+  }
+}, 'opd', 'whatsapp-disconnect', false);
+
+export { handler };

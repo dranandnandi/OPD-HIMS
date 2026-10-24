@@ -191,10 +191,11 @@ export const paymentService = {
       // filter and the bill PDF all read bills.payment_method, which nothing
       // else maintains for OPD bills. A DB trigger (20261015000000) does the
       // same server-side; this keeps the app right even before it is applied.
+      // A receipt also changes the printable balance; discard cached bill PDFs.
       if ((options?.recordType || 'payment') === 'payment') {
         const { error: methodError } = await supabase
           .from('bills')
-          .update({ payment_method: payment.paymentMethod })
+          .update({ payment_method: payment.paymentMethod, pdf_url: null, print_pdf_url: null })
           .eq('id', payment.billId)
           .eq('clinic_id', profile.clinicId);
         if (methodError) {

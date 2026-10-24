@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save, ClipboardList, Truck, Percent, BookOpen, MapPin, ShoppingCart } from 'lucide-react';
 import { MedicineWithPrice, StockMovementLog, StockAlert, MedicineMaster } from '../../types';
+import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
 import { Link, useSearchParams } from 'react-router-dom';
 import CounterSaleModal from './CounterSaleModal';
+import PharmacySalesRegister from './PharmacySalesRegister';
 import { format } from 'date-fns';
 import ReturnToSupplierModal from './ReturnToSupplierModal';
 import StockAdjustmentModal from './StockAdjustmentModal';
@@ -29,6 +31,11 @@ const PharmacyDashboard: React.FC = () => {
   const [showReturnModal, setShowReturnModal] = useState(false);
   // /pharmacy?sale=1 (sidebar "Counter Sale") opens the over-the-counter flow directly
   const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get('view') === 'sales' ? 'sales' : 'stock';
+  const [salesRevision, setSalesRevision] = useState(0);
+  const [stockPage, setStockPage] = useState(0);
+  useEffect(() => { setStockPage(0); }, [searchTerm, stockFilter]);
+  useEffect(() => { if (searchParams.get('sale') === '1') setShowCounterSale(true); }, [searchParams]);
   const [showCounterSale, setShowCounterSale] = useState(searchParams.get('sale') === '1');
   const closeCounterSale = () => {
     setShowCounterSale(false);
@@ -48,7 +55,6 @@ const PharmacyDashboard: React.FC = () => {
   useEffect(() => {
     if (user) {
       loadDashboardData();
-      loadAllMedicines();
       loadStockAlerts();
       loadIndentCounts();
     }
@@ -67,21 +73,12 @@ const PharmacyDashboard: React.FC = () => {
       const clinicId = user?.clinicId;
       const data = await pharmacyService.getPharmacyDashboardData(clinicId);
       setDashboardData(data);
+      setAllMedicines(data.medicines);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pharmacy dashboard data');
       console.error('Error loading pharmacy dashboard data:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadAllMedicines = async () => {
-    try {
-      const clinicId = user?.clinicId;
-      const medicines = await pharmacyService.getAllMedicinesWithPrices(clinicId);
-      setAllMedicines(medicines);
-    } catch (err) {
-      console.error('Error loading all medicines:', err);
     }
   };
 
@@ -139,20 +136,21 @@ const PharmacyDashboard: React.FC = () => {
   const handleReturnSaved = () => {
     setShowReturnModal(false);
     loadDashboardData(); // Reload dashboard data
-    loadAllMedicines(); // Reload medicines list
   };
 
   const handleAdjustmentSaved = () => {
     setShowAdjustmentModal(false);
     loadDashboardData(); // Reload dashboard data
-    loadAllMedicines(); // Reload medicines list
   };
 
-  const filteredMedicines = allMedicines.filter(medicine =>
-    medicine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    medicine.genericName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    medicine.batchNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMedicines = allMedicines.filter(medicine => {
+    const matches = [medicine.name, medicine.genericName, medicine.batchNumber, medicine.rackLocation]
+      .some(value => value?.toLowerCase().includes(searchTerm.toLowerCase()));
+    const expiring = !!medicine.expiryDate && medicine.currentStock > 0 && new Date(medicine.expiryDate).getTime() <= Date.now() + 30 * 86400000;
+    return matches && (stockFilter === 'all' || (stockFilter === 'low' && medicine.currentStock <= medicine.reorderLevel)
+      || (stockFilter === 'out' && medicine.currentStock <= 0) || (stockFilter === 'expiring' && expiring));
+  });
+  const visibleStockPage = Math.min(stockPage, Math.max(0, Math.ceil(filteredMedicines.length / 50) - 1));
 
   if (!user) {
     return (
@@ -162,7 +160,7 @@ const PharmacyDashboard: React.FC = () => {
     );
   }
 
-  if (loading) {
+  if (loading && !dashboardData) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -171,7 +169,7 @@ const PharmacyDashboard: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (error && !dashboardData) {
     return (
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">{error}</div>
@@ -191,9 +189,11 @@ const PharmacyDashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Pharmacy Dashboard</h2>
-          <p className="text-gray-600">Manage medicine inventory and stock</p>
+          <p className="text-gray-600">Stock, counter sales, invoices and saved PDFs</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => setShowCounterSale(true)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"><ShoppingCart className="w-4 h-4" />Counter Sale</button>
+          <button disabled={loading} onClick={() => { loadDashboardData(); setSalesRevision(r => r + 1); }} className="flex items-center gap-2 border bg-white px-4 py-2 rounded-lg disabled:opacity-50"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
           {/* Ward indents — IP Pharmacy / ward stores have ordered stock */}
           <Link
             to="/pharmacy/indents"
@@ -340,9 +340,15 @@ const PharmacyDashboard: React.FC = () => {
         </div>
       )}
 
+      {error && <p role="alert" className="text-red-700 bg-red-50 p-3 rounded">{error}</p>}
+      <nav aria-label="Pharmacy views" className="flex flex-wrap gap-2 border-b pb-3">
+        {([['stock', 'Current Stock'], ['sales', 'Sales & Bills']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined}
+          onClick={() => { const next = new URLSearchParams(searchParams); next.set('view', key); setSearchParams(next, { replace: true }); }}
+          className={`px-5 py-3 rounded-lg font-medium ${view === key ? 'bg-blue-600 text-white' : 'bg-white border text-gray-700'}`}>{label}</button>)}
+      </nav>
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
+      <details className="bg-white rounded-lg shadow-md p-4">
+        <summary className="font-semibold text-gray-800 cursor-pointer">Operations &amp; Reports</summary>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             to="/pharmacy/inward"
@@ -488,8 +494,10 @@ const PharmacyDashboard: React.FC = () => {
             <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
           </Link>
         </div>
-      </div>
+      </details>
 
+      {view === 'sales' && <PharmacySalesRegister revision={salesRevision} />}
+      {view === 'stock' && <>
       {/* Medicine Inventory */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="p-4 border-b border-gray-200">
@@ -572,7 +580,7 @@ const PharmacyDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredMedicines.map(medicine => (
+              {filteredMedicines.slice(visibleStockPage * 50, (visibleStockPage + 1) * 50).map(medicine => (
                 <tr key={medicine.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
@@ -600,7 +608,7 @@ const PharmacyDashboard: React.FC = () => {
                         ? 'text-red-600' 
                         : 'text-gray-900'
                     }`}>
-                      {medicine.currentStock}
+                      {stockBreakdown(medicine.currentStock, packSpec(medicine))}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -633,6 +641,11 @@ const PharmacyDashboard: React.FC = () => {
           </table>
         </div>
 
+        {filteredMedicines.length > 0 && <div className="p-4 border-t flex justify-between text-sm items-center">
+          <span>{visibleStockPage * 50 + 1}-{Math.min((visibleStockPage + 1) * 50, filteredMedicines.length)} of {filteredMedicines.length} medicines</span>
+          <div className="flex gap-3"><button disabled={visibleStockPage === 0} onClick={() => setStockPage(visibleStockPage - 1)} className="border rounded px-3 py-1 disabled:opacity-40">Previous</button>
+          <button disabled={(visibleStockPage + 1) * 50 >= filteredMedicines.length} onClick={() => setStockPage(visibleStockPage + 1)} className="border rounded px-3 py-1 disabled:opacity-40">Next</button></div>
+        </div>}
         {filteredMedicines.length === 0 && (
           <div className="p-8 text-center">
             <Pill className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -664,7 +677,7 @@ const PharmacyDashboard: React.FC = () => {
                         {movement.medicine?.name || 'Unknown Medicine'}
                       </p>
                       <p className="text-xs text-gray-600">
-                        {movement.movementType === 'inward' ? '+' : '-'}{Math.abs(movement.quantityChange)} units
+                        {movement.movementType === 'inward' ? '+' : '-'}{fmtQty(Math.abs(movement.quantityChange))} units
                       </p>
                     </div>
                   </div>
@@ -690,6 +703,8 @@ const PharmacyDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      </>}
 
       {/* Stock Alerts Modal */}
       {showAlertsModal && (
@@ -756,8 +771,8 @@ const PharmacyDashboard: React.FC = () => {
         <CounterSaleModal
           onClose={closeCounterSale}
           onSaved={() => {
+            setSalesRevision(r => r + 1);
             loadDashboardData();
-            loadAllMedicines();
           }}
         />
       )}
@@ -785,7 +800,6 @@ const PharmacyDashboard: React.FC = () => {
             try {
               await masterDataService.addMedicine(medicineData);
               setShowAddMedicineModal(false);
-              await loadAllMedicines();
               await loadDashboardData();
               alert('Medicine added successfully!');
             } catch (error) {
@@ -821,6 +835,10 @@ const AddMedicineModal: React.FC<{
     reorderLevel: 0,
     batchNumber: '',
     expiryDate: undefined as Date | undefined,
+    packSize: 1,
+    stockUnit: '',
+    dispenseUnit: '',
+    allowLooseSale: true,
     isActive: true
   });
 
@@ -998,14 +1016,69 @@ const AddMedicineModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Current Stock ({formData.stockUnit || 'Pack'}s)
+              </label>
               <input
                 type="number"
                 min="0"
+                step="0.001"
                 value={formData.currentStock}
-                onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
+              <input
+                type="text"
+                value={formData.stockUnit}
+                onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Strip / Bottle / Vial"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dispense unit</label>
+              <input
+                type="text"
+                value={formData.dispenseUnit}
+                onChange={(e) => setFormData({ ...formData, dispenseUnit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Tablet / ml"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pack size</label>
+              <input
+                type="number"
+                min="1"
+                step="0.001"
+                value={formData.packSize}
+                onChange={(e) => setFormData({ ...formData, packSize: parseFloat(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="10"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                1 {formData.stockUnit || 'Pack'} = {formData.packSize || 1} {formData.dispenseUnit || 'Unit'}. Lets the counter sell half a strip.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3 pt-7">
+              <input
+                id="dashAllowLooseSale"
+                type="checkbox"
+                checked={formData.allowLooseSale}
+                onChange={(e) => setFormData({ ...formData, allowLooseSale: e.target.checked })}
+                className="mt-1 rounded"
+              />
+              <label htmlFor="dashAllowLooseSale" className="text-sm text-gray-700">
+                May be sold loose
+                <span className="block text-xs text-gray-500">Untick for a sealed pack that can only leave whole.</span>
+              </label>
             </div>
 
             <div>

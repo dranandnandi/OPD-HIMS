@@ -1,0 +1,66 @@
+[
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/workforce-whatsapp/index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\workforce-whatsapp\\index.ts",
+    "staged": "staged\\workforce\\supabase\\functions\\workforce-whatsapp\\index.ts",
+    "beforeHash": null,
+    "afterHash": "f1095ac9eaa6b26735c193f2cfaa267da72d55f2c895b5d614c6b748feb29d8c"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/workforceBridge.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\workforceBridge.ts",
+    "staged": "staged\\whatsapp\\server\\workforceBridge.ts",
+    "beforeHash": null,
+    "afterHash": "2356de5c6542dd511a23ca2bd990efdc0a3ff256c2926c1f84468df010327683"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/workforceBridgeCore.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\workforceBridgeCore.ts",
+    "staged": "staged\\whatsapp\\server\\workforceBridgeCore.ts",
+    "beforeHash": null,
+    "afterHash": "fbe98fd453aafae6ed6bf6734d419b5aaaa113f1bce459cbb5c648360ce3a056"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/config.toml",
+    "target": "D:\\task manager android app\\project\\supabase\\config.toml",
+    "staged": "staged\\workforce\\supabase\\config.toml",
+    "beforeHash": "8893b9a889dc34b6afb11178e34dbd2d99afd3be71d7dcb7c3c1d837172ff6b8",
+    "afterHash": "6cc3003f0244da4564089f4b27c4127f778c36b69d3c1e2c087fb5505983f67a"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/services/externalWhatsAppService.ts",
+    "target": "D:\\task manager android app\\project\\src\\services\\externalWhatsAppService.ts",
+    "staged": "staged\\workforce\\src\\services\\externalWhatsAppService.ts",
+    "beforeHash": "6a0629762f0b2b3e6a7edfff4bd625d470c1e91a2d529718040a44342998beaf",
+    "afterHash": "f8cc852c7b0a8a3b3ee15d0cc08c8610b5d2f052baec6db02abb5bd1700beda2"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/components/WhatsAppConnection.tsx",
+    "target": "D:\\task manager android app\\project\\src\\components\\WhatsAppConnection.tsx",
+    "staged": "staged\\workforce\\src\\components\\WhatsAppConnection.tsx",
+    "beforeHash": "974d721860f19b79c2710c5fe96571563ffc0d6f3ec0fac2deb1d25117796ec8",
+    "afterHash": "83f2c840553d8d9174c3334d97db0beb7ef7de25fd57327e5b16b965dacb0778"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/externalApiRoutes.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\externalApiRoutes.ts",
+    "staged": "staged\\whatsapp\\server\\externalApiRoutes.ts",
+    "beforeHash": "bc43dd8c5c8572bc2b265000fcbe3386d65d06dbd086ed951e7d7788a34adf55",
+    "afterHash": "00afeab11eb4501f13d69244b042d532c38f971b80778bbfcb3799d3e80b392a"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/routes.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\routes.ts",
+    "staged": "staged\\whatsapp\\server\\routes.ts",
+    "beforeHash": "21b84d8c873256a95251eda6e4d274ed6dd2f898f005a897154bde6a168acb8b",
+    "afterHash": "0145f8030c33fd51cfe98902f207f1b3c3e3a2827dec07da4fec53cbd9d57fcd"
+  }
+]

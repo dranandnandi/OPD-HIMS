@@ -8,6 +8,7 @@ import {
 } from '../../services/pharmacyMisService';
 import { useAuth } from '../Auth/useAuth';
 import { inr, toCsv, downloadCsv } from '../../utils/gst';
+import { fmtQty } from '../../utils/packUnits';
 
 type Tab = 'medicine' | 'category' | 'daily' | 'suppliers' | 'valuation' | 'dead' | 'expired' | 'users';
 
@@ -75,7 +76,10 @@ const PharmacyMis: React.FC = () => {
   const byCategory = useMemo(() => {
     const map = new Map<string, SalesByMedicineRow>();
     for (const r of byMedicine) {
-      const c = map.get(r.category) || { medicineName: '', category: r.category, quantity: 0, invoiceCount: 0, taxableAmount: 0, taxAmount: 0, salesAmount: 0, costAmount: 0, marginAmount: 0 };
+      // Category rollups mix units (strips with bottles), so the unit labels
+      // are deliberately blank on the total row.
+      const c: SalesByMedicineRow = map.get(r.category)
+        || { medicineName: '', category: r.category, quantity: 0, stockUnit: '', packSize: 1, dispenseUnit: '', invoiceCount: 0, taxableAmount: 0, taxAmount: 0, salesAmount: 0, costAmount: 0, marginAmount: 0 };
       c.quantity += r.quantity; c.invoiceCount += r.invoiceCount; c.taxableAmount += r.taxableAmount; c.taxAmount += r.taxAmount;
       c.salesAmount += r.salesAmount; c.costAmount += r.costAmount; c.marginAmount += r.marginAmount;
       map.set(r.category, c);
@@ -89,7 +93,7 @@ const PharmacyMis: React.FC = () => {
     rows.filter(r => !q || r.medicineName.toLowerCase().includes(q) || r.rackLocation?.toLowerCase().includes(q));
 
   const handleWriteOff = async (row: ExpiredStockRow) => {
-    const reason = prompt(`Write off ${row.quantity} × ${row.medicineName} (batch ${row.batchNumber})?\nReason:`, 'Expired');
+    const reason = prompt(`Write off ${fmtQty(row.quantity)} ${row.stockUnit} × ${row.medicineName} (batch ${row.batchNumber})?\nReason:`, 'Expired');
     if (reason === null) return;
     try {
       await pharmacyMisService.writeOffBatch(row.batchId, reason || 'Expired');
@@ -103,8 +107,8 @@ const PharmacyMis: React.FC = () => {
     const stamp = `${from}-to-${to}`;
     switch (tab) {
       case 'medicine':
-        downloadCsv(`sales-by-medicine-${stamp}.csv`, toCsv(['Medicine', 'Category', 'HSN', 'Qty', 'Invoices', 'Taxable', 'GST', 'Sales', 'Cost', 'Margin', 'Margin %'],
-          byMedicine.map(r => [r.medicineName, r.category, r.hsnCode || '', r.quantity, r.invoiceCount, n2(r.taxableAmount), n2(r.taxAmount), n2(r.salesAmount), n2(r.costAmount), n2(r.marginAmount), pct(r.marginAmount, r.taxableAmount)])));
+        downloadCsv(`sales-by-medicine-${stamp}.csv`, toCsv(['Medicine', 'Category', 'HSN', 'Qty', 'Unit', 'Invoices', 'Taxable', 'GST', 'Sales', 'Cost', 'Margin', 'Margin %'],
+          byMedicine.map(r => [r.medicineName, r.category, r.hsnCode || '', r.quantity, r.stockUnit, r.invoiceCount, n2(r.taxableAmount), n2(r.taxAmount), n2(r.salesAmount), n2(r.costAmount), n2(r.marginAmount), pct(r.marginAmount, r.taxableAmount)])));
         break;
       case 'category':
         downloadCsv(`sales-by-category-${stamp}.csv`, toCsv(['Category', 'Qty', 'Taxable', 'GST', 'Sales', 'Cost', 'Margin', 'Margin %'],
@@ -121,16 +125,16 @@ const PharmacyMis: React.FC = () => {
           suppliers.map(r => [r.supplierName, r.supplierGstin || '', r.invoiceCount, r.debitNoteCount, n2(r.taxableAmount), n2(r.taxAmount), n2(r.totalAmount)])));
         break;
       case 'valuation':
-        downloadCsv(`stock-valuation-${fmt(new Date())}.csv`, toCsv(['Medicine', 'Category', 'Rack', 'Batch qty', 'Pooled qty', 'Total qty', 'Value at cost', 'Value at MRP', 'Earliest expiry'],
-          valuation.map(r => [r.medicineName, r.category, r.rackLocation || '', r.batchQuantity, r.pooledQuantity, r.totalQuantity, n2(r.costValue), n2(r.mrpValue), r.earliestExpiry ? format(r.earliestExpiry, 'dd/MM/yyyy') : ''])));
+        downloadCsv(`stock-valuation-${fmt(new Date())}.csv`, toCsv(['Medicine', 'Category', 'Rack', 'Batch qty', 'Pooled qty', 'Total qty', 'Stocked unit', 'Pack size', 'Dispense unit', 'Value at cost', 'Value at MRP', 'Earliest expiry'],
+          valuation.map(r => [r.medicineName, r.category, r.rackLocation || '', r.batchQuantity, r.pooledQuantity, r.totalQuantity, r.stockUnit, r.packSize, r.dispenseUnit, n2(r.costValue), n2(r.mrpValue), r.earliestExpiry ? format(r.earliestExpiry, 'dd/MM/yyyy') : ''])));
         break;
       case 'dead':
-        downloadCsv(`dead-stock-${deadDays}d.csv`, toCsv(['Medicine', 'Category', 'Rack', 'Stock', 'Value at cost', 'Last sold', 'Days idle'],
-          dead.map(r => [r.medicineName, r.category, r.rackLocation || '', r.currentStock, n2(r.costValue), r.lastSoldAt ? format(r.lastSoldAt, 'dd/MM/yyyy') : 'never', r.daysIdle])));
+        downloadCsv(`dead-stock-${deadDays}d.csv`, toCsv(['Medicine', 'Category', 'Rack', 'Stock', 'Unit', 'Value at cost', 'Last sold', 'Days idle'],
+          dead.map(r => [r.medicineName, r.category, r.rackLocation || '', r.currentStock, r.stockUnit, n2(r.costValue), r.lastSoldAt ? format(r.lastSoldAt, 'dd/MM/yyyy') : 'never', r.daysIdle])));
         break;
       case 'expired':
-        downloadCsv(`expired-stock-${fmt(new Date())}.csv`, toCsv(['Medicine', 'Batch', 'Expiry', 'Qty', 'Purchase rate', 'MRP', 'Value at cost', 'Supplier', 'Rack'],
-          expired.map(r => [r.medicineName, r.batchNumber, format(r.expiryDate, 'dd/MM/yyyy'), r.quantity, r.purchaseRate ?? '', r.mrp ?? '', n2(r.costValue), r.supplierName || '', r.rackLocation || ''])));
+        downloadCsv(`expired-stock-${fmt(new Date())}.csv`, toCsv(['Medicine', 'Batch', 'Expiry', 'Qty', 'Unit', 'Purchase rate', 'MRP', 'Value at cost', 'Supplier', 'Rack'],
+          expired.map(r => [r.medicineName, r.batchNumber, format(r.expiryDate, 'dd/MM/yyyy'), r.quantity, r.stockUnit, r.purchaseRate ?? '', r.mrp ?? '', n2(r.costValue), r.supplierName || '', r.rackLocation || ''])));
         break;
       case 'users':
         downloadCsv(`sales-by-pharmacist-${stamp}.csv`, toCsv(['Pharmacist', 'Invoices', 'Lines', 'Qty', 'Taxable', 'GST', 'Sales'],
@@ -235,7 +239,9 @@ const PharmacyMis: React.FC = () => {
                       <tr key={r.medicineId || i} className={r.marginAmount < 0 ? 'bg-red-50' : ''}>
                         <td className="px-3 py-2">{r.medicineName}{r.hsnCode && <span className="ml-2 text-xs text-gray-400">HSN {r.hsnCode}</span>}</td>
                         <td className="px-3 py-2 capitalize">{r.category}</td>
-                        <td className={tdR}>{r.quantity}</td><td className={tdR}>{r.invoiceCount}</td>
+                        <td className={tdR} title={r.packSize > 1 ? `${fmtQty(r.quantity * r.packSize)} ${r.dispenseUnit}` : undefined}>
+                          {fmtQty(r.quantity)}{r.stockUnit ? ` ${r.stockUnit}` : ''}
+                        </td><td className={tdR}>{r.invoiceCount}</td>
                         <td className={tdR}>{n2(r.taxableAmount)}</td><td className={tdR}>{n2(r.taxAmount)}</td><td className={`${tdR} font-medium`}>{n2(r.salesAmount)}</td>
                         <td className={tdR}>{n2(r.costAmount)}</td><td className={`${tdR} ${r.marginAmount < 0 ? 'text-red-700' : 'text-green-700'}`}>{n2(r.marginAmount)}</td><td className={tdR}>{pct(r.marginAmount, r.taxableAmount)}</td>
                       </tr>
@@ -243,7 +249,7 @@ const PharmacyMis: React.FC = () => {
                   </tbody>
                   {rows.length > 0 && <tfoot className={tfoot}><tr>
                     <td className="px-3 py-3" colSpan={2}>Total</td>
-                    <td className={tdR}>{sum(rows, r => r.quantity)}</td><td className={tdR}></td>
+                    <td className={tdR}>{fmtQty(sum(rows, r => r.quantity))}</td><td className={tdR}></td>
                     <td className={tdR}>{n2(sum(rows, r => r.taxableAmount))}</td><td className={tdR}>{n2(sum(rows, r => r.taxAmount))}</td><td className={tdR}>{n2(sum(rows, r => r.salesAmount))}</td>
                     <td className={tdR}>{n2(sum(rows, r => r.costAmount))}</td><td className={tdR}>{n2(sum(rows, r => r.marginAmount))}</td><td className={tdR}>{pct(sum(rows, r => r.marginAmount), sum(rows, r => r.taxableAmount))}</td>
                   </tr></tfoot>}
@@ -261,7 +267,7 @@ const PharmacyMis: React.FC = () => {
                   {byCategory.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-500">No pharmacy sales in this period</td></tr>}
                   {byCategory.map(r => (
                     <tr key={r.category}>
-                      <td className="px-3 py-2 capitalize">{r.category}</td><td className={tdR}>{r.quantity}</td><td className={tdR}>{n2(r.taxableAmount)}</td><td className={tdR}>{n2(r.taxAmount)}</td>
+                      <td className="px-3 py-2 capitalize">{r.category}</td><td className={tdR}>{fmtQty(r.quantity)}</td><td className={tdR}>{n2(r.taxableAmount)}</td><td className={tdR}>{n2(r.taxAmount)}</td>
                       <td className={`${tdR} font-medium`}>{n2(r.salesAmount)}</td><td className={tdR}>{pct(r.salesAmount, sum(byCategory, x => x.salesAmount))}</td>
                       <td className={tdR}>{n2(r.costAmount)}</td><td className={tdR}>{n2(r.marginAmount)}</td><td className={tdR}>{pct(r.marginAmount, r.taxableAmount)}</td>
                     </tr>
@@ -324,7 +330,7 @@ const PharmacyMis: React.FC = () => {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border-b border-gray-200 text-sm">
                     <div><div className="text-gray-500">SKUs in stock</div><div className="text-xl font-bold">{valuation.length}</div></div>
-                    <div><div className="text-gray-500">Units</div><div className="text-xl font-bold">{sum(valuation, r => r.totalQuantity)}</div></div>
+                    <div><div className="text-gray-500">Stocked units</div><div className="text-xl font-bold">{fmtQty(sum(valuation, r => r.totalQuantity))}</div></div>
                     <div><div className="text-gray-500">Value at cost</div><div className="text-xl font-bold">{inr(sum(valuation, r => r.costValue))}</div></div>
                     <div><div className="text-gray-500">Value at MRP</div><div className="text-xl font-bold text-green-700">{inr(sum(valuation, r => r.mrpValue))}</div></div>
                   </div>
@@ -338,8 +344,10 @@ const PharmacyMis: React.FC = () => {
                         <tr key={r.medicineId}>
                           <td className="px-3 py-2">{r.medicineName}<span className="ml-2 text-xs text-gray-400 capitalize">{r.category}</span></td>
                           <td className="px-3 py-2">{r.rackLocation ? <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs">{r.rackLocation}</span> : '—'}</td>
-                          <td className={tdR}>{r.batchQuantity}</td><td className={`${tdR} ${r.pooledQuantity > 0 ? 'text-amber-700' : ''}`}>{r.pooledQuantity || '—'}</td>
-                          <td className={`${tdR} font-medium`}>{r.totalQuantity}</td><td className={tdR}>{n2(r.costValue)}</td><td className={tdR}>{n2(r.mrpValue)}</td>
+                          <td className={tdR}>{fmtQty(r.batchQuantity)}</td><td className={`${tdR} ${r.pooledQuantity > 0 ? 'text-amber-700' : ''}`}>{r.pooledQuantity ? fmtQty(r.pooledQuantity) : '—'}</td>
+                          <td className={`${tdR} font-medium`} title={r.packSize > 1 ? `1 ${r.stockUnit} = ${fmtQty(r.packSize)} ${r.dispenseUnit}` : undefined}>
+                            {fmtQty(r.totalQuantity)} {r.stockUnit}
+                          </td><td className={tdR}>{n2(r.costValue)}</td><td className={tdR}>{n2(r.mrpValue)}</td>
                           <td className="px-3 py-2 whitespace-nowrap">{r.earliestExpiry ? format(r.earliestExpiry, 'MMM yyyy') : '—'}</td>
                         </tr>
                       ))}
@@ -362,12 +370,12 @@ const PharmacyMis: React.FC = () => {
                     {rows.map(r => (
                       <tr key={r.medicineId}>
                         <td className="px-3 py-2">{r.medicineName}<span className="ml-2 text-xs text-gray-400 capitalize">{r.category}</span></td>
-                        <td className="px-3 py-2">{r.rackLocation || '—'}</td><td className={tdR}>{r.currentStock}</td><td className={`${tdR} font-medium`}>{n2(r.costValue)}</td>
+                        <td className="px-3 py-2">{r.rackLocation || '—'}</td><td className={tdR}>{fmtQty(r.currentStock)} {r.stockUnit}</td><td className={`${tdR} font-medium`}>{n2(r.costValue)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.lastSoldAt ? format(r.lastSoldAt, 'dd MMM yyyy') : <span className="text-gray-400">never</span>}</td><td className={tdR}>{r.daysIdle}</td>
                       </tr>
                     ))}
                   </tbody>
-                  {rows.length > 0 && <tfoot className={tfoot}><tr><td className="px-3 py-3" colSpan={2}>{rows.length} SKUs tying up</td><td className={tdR}>{sum(rows, r => r.currentStock)}</td><td className={tdR}>{n2(sum(rows, r => r.costValue))}</td><td colSpan={2}></td></tr></tfoot>}
+                  {rows.length > 0 && <tfoot className={tfoot}><tr><td className="px-3 py-3" colSpan={2}>{rows.length} SKUs tying up</td><td className={tdR}>{fmtQty(sum(rows, r => r.currentStock))}</td><td className={tdR}>{n2(sum(rows, r => r.costValue))}</td><td colSpan={2}></td></tr></tfoot>}
                 </table>
               );
             })()}
@@ -386,7 +394,7 @@ const PharmacyMis: React.FC = () => {
                       <tr key={r.batchId} className="bg-red-50/40">
                         <td className="px-3 py-2">{r.medicineName}</td><td className="px-3 py-2 font-mono">{r.batchNumber}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-red-700 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{format(r.expiryDate, 'dd MMM yyyy')}</td>
-                        <td className={tdR}>{r.quantity}</td><td className={`${tdR} font-medium`}>{n2(r.costValue)}</td>
+                        <td className={tdR}>{fmtQty(r.quantity)} {r.stockUnit}</td><td className={`${tdR} font-medium`}>{n2(r.costValue)}</td>
                         <td className="px-3 py-2">{r.supplierName || '—'}</td><td className="px-3 py-2">{r.rackLocation || '—'}</td>
                         <td className="px-3 py-2 text-right">
                           <button onClick={() => handleWriteOff(r)} className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-red-300 text-red-700 rounded hover:bg-red-100">
@@ -396,7 +404,7 @@ const PharmacyMis: React.FC = () => {
                       </tr>
                     ))}
                   </tbody>
-                  {rows.length > 0 && <tfoot className={tfoot}><tr><td className="px-3 py-3" colSpan={3}>{rows.length} batches</td><td className={tdR}>{sum(rows, r => r.quantity)}</td><td className={tdR}>{n2(sum(rows, r => r.costValue))}</td><td colSpan={3}></td></tr></tfoot>}
+                  {rows.length > 0 && <tfoot className={tfoot}><tr><td className="px-3 py-3" colSpan={3}>{rows.length} batches</td><td className={tdR}>{fmtQty(sum(rows, r => r.quantity))}</td><td className={tdR}>{n2(sum(rows, r => r.costValue))}</td><td colSpan={3}></td></tr></tfoot>}
                 </table>
               );
             })()}
@@ -411,7 +419,7 @@ const PharmacyMis: React.FC = () => {
                   {byUser.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-500">No dispensing in this period</td></tr>}
                   {byUser.map((r, i) => (
                     <tr key={r.userId || i}>
-                      <td className="px-3 py-2">{r.userName}</td><td className={tdR}>{r.invoiceCount}</td><td className={tdR}>{r.lineCount}</td><td className={tdR}>{r.quantity}</td>
+                      <td className="px-3 py-2">{r.userName}</td><td className={tdR}>{r.invoiceCount}</td><td className={tdR}>{r.lineCount}</td><td className={tdR}>{fmtQty(r.quantity)}</td>
                       <td className={tdR}>{n2(r.taxableAmount)}</td><td className={tdR}>{n2(r.taxAmount)}</td><td className={`${tdR} font-medium`}>{n2(r.salesAmount)}</td>
                       <td className={tdR}>{pct(r.salesAmount, sum(byUser, x => x.salesAmount))}</td>
                     </tr>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Download, ChevronDown, ChevronRight, FileText, RotateCcw, Plus } from 'lucide-react';
+import { Download, ChevronDown, ChevronRight, FileText, RotateCcw, Plus, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { PharmacyInwardReceipt, PharmacyDebitNote } from '../../types';
+import { PharmacyInwardReceipt, PharmacyInwardItem, PharmacyDebitNote } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
 import { useAuth } from '../Auth/useAuth';
 import { inr, toCsv, downloadCsv } from '../../utils/gst';
+import InwardLineCorrectionModal from './InwardLineCorrectionModal';
 
 const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -23,6 +24,8 @@ const PurchaseRegister: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<'purchases' | 'returns'>('purchases');
+  // The line being put right after a bad scan, with the invoice it belongs to.
+  const [correcting, setCorrecting] = useState<{ receipt: PharmacyInwardReceipt; item: PharmacyInwardItem } | null>(null);
 
   useEffect(() => {
     if (user) load();
@@ -168,13 +171,19 @@ const PurchaseRegister: React.FC = () => {
                               <th className="text-left py-1">Expiry</th><th className="text-right py-1">Qty</th><th className="text-right py-1">Free</th>
                               <th className="text-right py-1">MRP</th><th className="text-right py-1">Rate</th><th className="text-right py-1">Disc%</th>
                               <th className="text-right py-1">GST%</th><th className="text-right py-1">Taxable</th><th className="text-right py-1">Tax</th><th className="text-right py-1">Total</th>
+                              <th className="text-right py-1"></th>
                             </tr>
                           </thead>
                           <tbody>
                             {(r.inwardItems || []).map(i => (
                               <tr key={i.id} className="border-t border-gray-200">
                                 <td className="py-1">{i.medicine?.name || i.medicineId}</td>
-                                <td className="py-1">{i.hsnCode || i.medicine?.hsnCode || '—'}</td>
+                                {/* Only the HSN the supplier's invoice carried. Falling back to
+                                    the master's current HSN would make an old purchase appear to
+                                    change every time someone corrects the medicine. */}
+                                <td className="py-1" title={i.hsnCode ? undefined : 'This purchase invoice carried no HSN for the line'}>
+                                  {i.hsnCode || '—'}
+                                </td>
                                 <td className="py-1">{i.batchNumber || '—'}</td>
                                 <td className="py-1">{i.expiryDate ? format(i.expiryDate, 'MM/yy') : '—'}</td>
                                 <td className="py-1 text-right">{i.quantity}</td>
@@ -186,6 +195,15 @@ const PurchaseRegister: React.FC = () => {
                                 <td className="py-1 text-right">{(i.taxableAmount ?? i.totalCostPrice).toFixed(2)}</td>
                                 <td className="py-1 text-right">{((i.cgstAmount || 0) + (i.sgstAmount || 0) + (i.igstAmount || 0)).toFixed(2)}</td>
                                 <td className="py-1 text-right font-medium">{(i.lineTotal ?? i.totalCostPrice).toFixed(2)}</td>
+                                <td className="py-1 text-right">
+                                  <button
+                                    onClick={() => setCorrecting({ receipt: r, item: i })}
+                                    title="Correct this line — the scan read the invoice wrong"
+                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -291,6 +309,15 @@ const PurchaseRegister: React.FC = () => {
             )}
           </table>
         </div>
+      )}
+
+      {correcting && (
+        <InwardLineCorrectionModal
+          receipt={correcting.receipt}
+          item={correcting.item}
+          onSaved={() => { setCorrecting(null); load(); }}
+          onClose={() => setCorrecting(null)}
+        />
       )}
     </div>
   );

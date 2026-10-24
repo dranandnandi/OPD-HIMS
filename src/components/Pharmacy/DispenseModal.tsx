@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Save, Plus, Trash2, AlertCircle, CheckCircle, MapPin, Printer, Receipt, FileText, Camera, Bell, User, Pencil } from 'lucide-react';
 import BarcodeScanInput from './BarcodeScanInput';
 import MedicineSearchSelect from './MedicineSearchSelect';
@@ -9,9 +9,11 @@ import { masterDataService } from '../../services/masterDataService';
 import { patientService } from '../../services/patientService';
 import { pharmacyService, DispenseItemInput } from '../../services/pharmacyService';
 import { PharmacyBillLineInput } from '../../services/billingService';
-import { pdfService } from '../../services/pdfService';
+import { pharmacyInvoiceService } from '../../services/pharmacyInvoiceService';
 import { useAuth } from '../Auth/useAuth';
 import { computeGstLine, sumGstLines, groupByRate, GST_RATES, inr, round2 } from '../../utils/gst';
+import { packSpec, toStockUnits, toDispenseUnits, unitRate, round3, fmtQty, stockBreakdown } from '../../utils/packUnits';
+import { resolveDispensePrice } from '../../utils/dispensePrice';
 
 interface DispenseModalProps {
   /** The OPD visit being dispensed against. Omit for an over-the-counter sale. */
@@ -27,8 +29,15 @@ interface DispenseLine {
   prescriptionId?: string;
   medicineId: string;
   batchId: string;
+  /**
+   * The number the pharmacist typed, in whichever unit the line is set to:
+   * dispense units (tablets) when sellLoose, stocked units (strips) otherwise.
+   * Stock, price and tax are all derived from it in lineMath().
+   */
   quantity: number;
-  /** MRP / selling price per unit */
+  /** True when the pack is broken open and the quantity is in dispense units. */
+  sellLoose: boolean;
+  /** MRP of one stocked unit — the whole pack, as printed on it. */
   unitPrice: number;
   discountPercent: number;
   gstRate: number;
@@ -55,6 +64,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lines, setLines] = useState<DispenseLine[]>([]);
+  const initializedSale = useRef<string>();
 
   const [collectNow, setCollectNow] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -72,17 +82,20 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
 
   const clinic = user?.clinic;
   const compositionScheme = clinic?.pharmacyGstScheme === 'composition';
-  const pricesIncludeGst = clinic?.pharmacyPricesIncludeGst ?? true;
+  // This form enters the printed pack MRP; GST is extracted from that price.
+  const pricesIncludeGst = true;
 
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
-    if (medicines.length > 0) {
-      initializeLines();
-    }
-  }, [visit, medicines, batches]);
+    const saleKey = visit?.id ?? 'counter';
+    if (loading || initializedSale.current === saleKey) return;
+    initializedSale.current = saleKey;
+    initializeLines();
+    // Refreshing medicine data after linking a barcode must preserve entered rows.
+  }, [visit, medicines, batches, loading]);
 
   const loadData = async () => {
     try {
@@ -112,17 +125,53 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     base: Partial<DispenseLine>
   ): DispenseLine => {
     const batch = m ? defaultBatch(m.id) : undefined;
+    const spec = packSpec(m);
     return {
       prescriptionId: base.prescriptionId,
       medicineId: m?.id || '',
       batchId: batch?.id || '',
       quantity: base.quantity || 1,
-      unitPrice: batch?.mrp ?? m?.sellingPrice ?? 0,
+      // A strip of 10 is sold by the tablet by default — that is the number
+      // both the prescription and the customer talk in. The pharmacist can
+      // switch the line back to whole packs.
+      sellLoose: base.sellLoose ?? spec.looseCapable,
+      unitPrice: resolveDispensePrice(m, batch).unitPrice,
       discountPercent: 0,
       gstRate: compositionScheme ? 0 : (m?.gstRate ?? 12),
       originalPrescriptionName: base.originalPrescriptionName,
       isMatched: !!m
     };
+  };
+
+  /** Pack rules for a line's medicine, with defaults for an unset SKU. */
+  const specFor = (line: DispenseLine) => packSpec(medicines.find(m => m.id === line.medicineId));
+
+  /**
+   * Everything that follows from the typed quantity. The entered number is in
+   * dispense units on a loose sale, so stock moves by a fraction of a pack
+   * while the price is the per-tablet rate — a half strip of a 100-rupee
+   * strip of 10 is 5 tablets at 10.00, i.e. 50.00 with GST backed out of it.
+   */
+  const lineMath = (line: DispenseLine) => {
+    const spec = specFor(line);
+    const loose = line.sellLoose && spec.packSize > 1;
+    const entered = Math.max(0, Number(line.quantity) || 0);
+    const stockQty = loose ? toStockUnits(entered, spec.packSize) : round3(entered);
+    const dispenseQty = loose ? round3(entered) : toDispenseUnits(entered, spec.packSize);
+    // The invoice is written in whichever unit was typed, at the matching
+    // rate, so the printed quantity times the printed rate is the amount.
+    const billedQty = round3(entered);
+    const billedUnitLabel = loose ? spec.dispenseUnit : spec.stockUnit;
+    const billedRate = unitRate(line.unitPrice, spec.packSize, loose);
+    const tax = computeGstLine({
+      quantity: entered,
+      unitPrice: billedRate,
+      discountPercent: line.discountPercent,
+      gstRate: line.gstRate,
+      priceIncludesGst: pricesIncludeGst,
+      interstate: false
+    });
+    return { spec, loose, entered, stockQty, dispenseQty, billedQty, billedUnitLabel, billedRate, tax };
   };
 
   const initializeLines = () => {
@@ -157,15 +206,22 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
   const addLine = () => setLines([...lines, lineFromMedicine(undefined, {})]);
   const removeLine = (index: number) => setLines(lines.filter((_, i) => i !== index));
 
-  /** Scanned or photo-identified medicine: bump an existing line or fill/add one. */
+  /**
+   * Scanned or photo-identified medicine: bump an existing line or fill/add
+   * one. Scanning a pack barcode means one more of THAT pack, so the line is
+   * set to whole packs and a repeat scan adds a pack's worth either way.
+   */
   const addMedicineQuick = (m: MedicineWithPrice) => {
+    const spec = packSpec(m);
     setLines(prev => {
       const existing = prev.findIndex(l => l.medicineId === m.id);
       if (existing >= 0) {
-        return prev.map((l, i) => i === existing ? { ...l, quantity: l.quantity + 1 } : l);
+        return prev.map((l, i) => i === existing
+          ? { ...l, quantity: round3(l.quantity + (l.sellLoose && spec.packSize > 1 ? spec.packSize : 1)) }
+          : l);
       }
       const empty = prev.findIndex(l => !l.medicineId);
-      const fresh = lineFromMedicine(m, {});
+      const fresh = lineFromMedicine(m, { sellLoose: false });
       if (empty >= 0) return prev.map((l, i) => i === empty ? fresh : l);
       return [...prev, fresh];
     });
@@ -187,7 +243,8 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       const rx = visit?.prescriptions?.find(p => p.id === l.prescriptionId);
       const rxDays = parseDurationDays(rx?.duration);
       if (m?.isChronic) anyChronic = true;
-      days = Math.max(days, rxDays, m?.isChronic ? l.quantity : 0);
+      // One dispense unit a day: 30 tablets is a month, whatever the pack.
+      days = Math.max(days, rxDays, m?.isChronic ? Math.floor(lineMath(l).dispenseQty) : 0);
     }
     if (days <= 0) {
       setRefill(r => ({ ...r, enabled: false, dueDate: '' }));
@@ -202,7 +259,11 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     if (!refill.enabled || !refill.dueDate || !patient?.id) return;
     const meds = lines.filter(l => l.medicineId && l.quantity > 0).map(l => {
       const m = medicines.find(x => x.id === l.medicineId);
-      return { medicineId: l.medicineId, name: m ? [m.name, m.strength].filter(Boolean).join(' ') : 'medicine', quantity: l.quantity };
+      return {
+        medicineId: l.medicineId,
+        name: m ? [m.name, m.strength].filter(Boolean).join(' ') : 'medicine',
+        quantity: lineMath(l).dispenseQty
+      };
     });
     try {
       await refillReminderService.create({
@@ -226,14 +287,18 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
         const m = medicines.find(x => x.id === patch.medicineId);
         const b = m ? defaultBatch(m.id) : undefined;
         next.batchId = b?.id || '';
-        next.unitPrice = b?.mrp ?? m?.sellingPrice ?? 0;
+        next.unitPrice = resolveDispensePrice(m, b).unitPrice;
         next.gstRate = compositionScheme ? 0 : (m?.gstRate ?? 12);
+        next.sellLoose = packSpec(m).looseCapable;
         next.isMatched = !!m;
       }
-      if (patch.batchId !== undefined && patch.batchId) {
-        const b = batches.find(x => x.id === patch.batchId);
-        if (b?.mrp) next.unitPrice = b.mrp;
+      if (patch.batchId !== undefined) {
+        const m = medicines.find(x => x.id === next.medicineId);
+        const b = batches.find(x => x.id === patch.batchId && x.medicineId === next.medicineId);
+        next.unitPrice = resolveDispensePrice(m, b).unitPrice;
       }
+      // Quantity is the count of the selected unit: selecting Strip with
+      // quantity 1 means one whole strip, selecting Tablet means one tablet.
       return next;
     }));
   };
@@ -243,34 +308,18 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     return medicines.find(m => m.id === line.medicineId)?.currentStock || 0;
   };
 
-  const stockOk = (line: DispenseLine) => !line.medicineId || availableStock(line) >= line.quantity;
+  /** Stock is held in stocked units, so a loose quantity is converted first. */
+  const stockOk = (line: DispenseLine) =>
+    !line.medicineId || availableStock(line) + 1e-9 >= lineMath(line).stockQty;
 
   // Tax per line + invoice totals, recomputed on every edit
   const computed = useMemo(() => {
     const valid = lines.filter(l => l.medicineId && l.quantity > 0);
-    const results = valid.map(l => ({
-      line: l,
-      tax: computeGstLine({
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        discountPercent: l.discountPercent,
-        gstRate: l.gstRate,
-        priceIncludesGst: pricesIncludeGst,
-        interstate: false
-      })
-    }));
-    const totals = sumGstLines(results.map(r => r.tax));
+    const results = valid.map(l => ({ line: l, tax: lineMath(l).tax }));
+    const totals = sumGstLines(results.map(r => r.tax), false);
     const byRate = groupByRate(results.map(r => ({ ...r.tax, gstRate: r.line.gstRate })));
     return { results, totals, byRate };
-  }, [lines, pricesIncludeGst]);
-
-  const lineTax = (index: number) => {
-    const l = lines[index];
-    return computeGstLine({
-      quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent,
-      gstRate: l.gstRate, priceIncludesGst: pricesIncludeGst
-    });
-  };
+  }, [lines, medicines, pricesIncludeGst]);
 
   const validate = (): DispenseLine[] | null => {
     if (!user) {
@@ -283,9 +332,23 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       return null;
     }
     for (const l of valid) {
+      const { spec, stockQty, loose } = lineMath(l);
+      if (!loose && spec.packSize > 1 && !Number.isInteger(l.quantity)) {
+        alert(`Enter whole ${spec.stockUnit.toLowerCase()}s, or select ${spec.dispenseUnit} for a loose quantity.`);
+        return null;
+      }
+      if (!spec.allowLooseSale && stockQty % 1 !== 0) {
+        const m = medicines.find(x => x.id === l.medicineId);
+        alert(`${m?.name} can only be sold in whole ${spec.stockUnit.toLowerCase()}s.`);
+        return null;
+      }
       if (!stockOk(l)) {
         const m = medicines.find(x => x.id === l.medicineId);
-        alert(`Insufficient stock for ${m?.name}. Available: ${availableStock(l)}, Required: ${l.quantity}`);
+        alert(
+          `Insufficient stock for ${m?.name}. Available: ${stockBreakdown(availableStock(l), spec)}, ` +
+          `required: ${fmtQty(stockQty)} ${spec.stockUnit}` +
+          (loose ? ` (${fmtQty(lineMath(l).dispenseQty)} ${spec.dispenseUnit})` : '')
+        );
         return null;
       }
     }
@@ -296,18 +359,20 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     valid.map(l => {
       const m = medicines.find(x => x.id === l.medicineId);
       const b = batches.find(x => x.id === l.batchId);
-      const t = computeGstLine({
-        quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent,
-        gstRate: l.gstRate, priceIncludesGst: pricesIncludeGst
-      });
+      const { spec, stockQty, billedQty, billedUnitLabel, billedRate, tax: t } = lineMath(l);
       return {
         visitId: visit?.id ?? null,
         prescriptionId: l.prescriptionId,
         medicineId: l.medicineId,
-        quantity: l.quantity,
+        // Stock always moves in stocked units; the billed pair is the line as
+        // the customer sees it, so rate x quantity is the amount either way.
+        quantity: stockQty,
+        packSize: spec.packSize,
+        billedQuantity: billedQty,
+        billedUnit: billedUnitLabel,
         dispensedBy: user!.id,
         dispenseDate: new Date(),
-        sellingPriceAtDispense: l.unitPrice,
+        sellingPriceAtDispense: billedRate,
         batchNumber: b?.batchNumber || m?.batchNumber || '',
         batchId: b?.id,
         hsnCode: m?.hsnCode,
@@ -348,15 +413,15 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     const billLines: PharmacyBillLineInput[] = valid.map(l => {
       const m = medicines.find(x => x.id === l.medicineId)!;
       const b = batches.find(x => x.id === l.batchId);
-      const t = computeGstLine({
-        quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent,
-        gstRate: l.gstRate, priceIncludesGst: pricesIncludeGst
-      });
+      const { spec, stockQty, billedQty, billedUnitLabel, billedRate, tax: t } = lineMath(l);
       return {
         medicineId: m.id,
         itemName: [m.name, m.strength].filter(Boolean).join(' '),
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
+        quantity: stockQty,
+        billedQuantity: billedQty,
+        packSize: spec.packSize,
+        billedUnit: billedUnitLabel,
+        unitPrice: billedRate,
         mrp: b?.mrp ?? l.unitPrice,
         batchId: b?.id,
         batchNumber: b?.batchNumber || m.batchNumber,
@@ -433,16 +498,8 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     if (!result?.bill || !customer || !clinic) return;
     try {
       setPrinting(true);
-      const url = await pdfService.generatePdfFromData('bill', {
-        bill: { ...result.bill, visit: result.bill.visit || visit },
-        patient: customer,
-        doctor: visit?.doctor,
-        clinicSettings: clinic
-      }, { forceRegenerate: true });
-      if (result.bill.id) {
-        try { await pdfService.savePdfUrlToDatabase('bill', result.bill.id, url); } catch { /* non-fatal */ }
-      }
-      window.open(url, '_blank');
+      const pdf = await pharmacyInvoiceService.open(result.bill.id);
+      setResult(current => current?.bill ? { ...current, bill: { ...current.bill, pdfUrl: pdf.url } } : current);
     } catch (err) {
       console.error('Error generating invoice PDF:', err);
       alert(err instanceof Error ? err.message : 'Failed to generate invoice PDF');
@@ -691,7 +748,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                 const lineBatches = line.medicineId ? batchesFor(line.medicineId) : [];
                 const batch = batches.find(b => b.id === line.batchId);
                 const ok = stockOk(line);
-                const t = lineTax(index);
+                const { spec, loose, stockQty, dispenseQty, billedRate, tax: t } = lineMath(line);
 
                 return (
                   <div key={index} className={`border rounded-lg p-4 ${
@@ -730,28 +787,57 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                           <option value="">{lineBatches.length ? 'Select batch' : 'No batch (pool)'}</option>
                           {lineBatches.map(b => (
                             <option key={b.id} value={b.id}>
-                              {b.batchNumber} · {b.quantity} left{b.expiryDate ? ` · exp ${b.expiryDate.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}` : ''}
+                              {b.batchNumber} · {stockBreakdown(b.quantity, spec)} left{b.expiryDate ? ` · exp ${b.expiryDate.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}` : ''}
                             </option>
                           ))}
                         </select>
                       </div>
 
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Qty *</label>
-                        <input
-                          type="number" min="1" value={line.quantity}
-                          onChange={(e) => updateLine(index, { quantity: parseInt(e.target.value) || 0 })}
-                          className={`w-full px-2 py-1 border rounded text-sm focus:ring-2 focus:ring-blue-500 ${!ok ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
-                        />
+                        <label className="block text-xs text-gray-600 mb-1">
+                          Qty * {loose ? `(${spec.dispenseUnit})` : `(${spec.stockUnit})`}
+                        </label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number" min="0" step="1" value={line.quantity}
+                            onChange={(e) => updateLine(index, { quantity: parseFloat(e.target.value) || 0 })}
+                            className={`w-full px-2 py-1 border rounded text-sm focus:ring-2 focus:ring-blue-500 ${!ok ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+                          />
+                          {spec.packSize > 1 && spec.allowLooseSale && (
+                            <select
+                              value={loose ? 'loose' : 'pack'}
+                              onChange={(e) => updateLine(index, { sellLoose: e.target.value === 'loose' })}
+                              title={`1 ${spec.stockUnit} = ${fmtQty(spec.packSize)} ${spec.dispenseUnit}`}
+                              className="px-1 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="loose">{spec.dispenseUnit}</option>
+                              <option value="pack">{spec.stockUnit}</option>
+                            </select>
+                          )}
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">MRP (₹)</label>
+                        <label className="block text-xs text-gray-600 mb-1">MRP / {spec.stockUnit} (₹, incl. GST)</label>
                         <input
                           type="number" min="0" step="0.01" value={line.unitPrice}
                           onChange={(e) => updateLine(index, { unitPrice: parseFloat(e.target.value) || 0 })}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
                         />
+                        {medicine && resolveDispensePrice(medicine, batch).source === 'medicine'
+                          && line.unitPrice === resolveDispensePrice(medicine, batch).unitPrice && (
+                          <p className="text-[11px] text-amber-700 mt-0.5">
+                            Using saved medicine price{batch ? '; batch MRP unavailable' : ''}.
+                          </p>
+                        )}
+                        {medicine && line.unitPrice <= 0 && (
+                          <p className="text-[11px] text-amber-700 mt-0.5">Enter the pack MRP to price this item.</p>
+                        )}
+                        {loose && (
+                          <p className="text-[11px] text-gray-500 mt-0.5">
+                            {inr(billedRate)} / {spec.dispenseUnit}
+                          </p>
+                        )}
                       </div>
 
                       <div>
@@ -794,7 +880,20 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                             <MapPin className="w-3 h-3" /> Rack {medicine.rackLocation}
                           </span>
                         )}
-                        <span>Available: <strong className={ok ? '' : 'text-red-600'}>{availableStock(line)}</strong>{batch ? ' in batch' : ' total'}</span>
+                        <span>
+                          Available: <strong className={ok ? '' : 'text-red-600'}>{stockBreakdown(availableStock(line), spec)}</strong>
+                          {batch ? ' in batch' : ' total'}
+                        </span>
+                        {spec.packSize > 1 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800">
+                            1 {spec.stockUnit} = {fmtQty(spec.packSize)} {spec.dispenseUnit}
+                          </span>
+                        )}
+                        {loose && line.quantity > 0 && (
+                          <span>
+                            Deducts <strong>{fmtQty(dispenseQty)} {spec.dispenseUnit}</strong> from stock
+                          </span>
+                        )}
                         {medicine.hsnCode && <span>HSN {medicine.hsnCode}</span>}
                         {batch?.expiryDate && <span>Exp {batch.expiryDate.toLocaleDateString('en-IN')}</span>}
                         <span>Generic: {medicine.genericName || 'N/A'}</span>

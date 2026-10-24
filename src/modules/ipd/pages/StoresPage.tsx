@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
 import { storeService, Store, StoreStockRow, StoreTransfer } from '../services/storeService';
+import { packSpec, stockBreakdown } from '../../../utils/packUnits';
 import { medicationService, MedicineOption } from '../services/medicationService';
 import { admissionService } from '../services/admissionService';
 import type { Admission } from '../types/ipd';
@@ -143,13 +144,24 @@ export default function StoresPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stock.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-100">
-                        <td className="py-1.5">{r.medicine?.name} {r.medicine?.strength ?? ''}</td>
-                        <td className="text-right font-medium">{r.quantity}</td>
-                        <td className="text-right text-slate-400">{r.medicine?.current_stock ?? '—'}</td>
-                      </tr>
-                    ))}
+                    {stock.map((r) => {
+                      const spec = packSpec({
+                        packSize: (r.medicine as any)?.pack_size,
+                        stockUnit: (r.medicine as any)?.stock_unit,
+                        dispenseUnit: (r.medicine as any)?.dispense_unit,
+                        allowLooseSale: (r.medicine as any)?.allow_loose_sale,
+                        dosageForm: (r.medicine as any)?.dosage_form,
+                      });
+                      return (
+                        <tr key={r.id} className="border-b border-slate-100">
+                          <td className="py-1.5">{r.medicine?.name} {r.medicine?.strength ?? ''}</td>
+                          <td className="text-right font-medium">{stockBreakdown(Number(r.quantity), spec)}</td>
+                          <td className="text-right text-slate-400">
+                            {r.medicine?.current_stock != null ? stockBreakdown(Number(r.medicine.current_stock), spec) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {stock.length === 0 && (
                       <tr><td colSpan={3} className="py-4 text-center text-slate-400">Empty — transfer stock in from Main Pharmacy</td></tr>
                     )}

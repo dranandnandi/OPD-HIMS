@@ -1,48 +1,45 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Edit, Trash2, Plus, CheckCircle, AlertCircle, Eye, X, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Save, Trash2, Plus, CheckCircle, AlertCircle, Eye, X, Search } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { getCurrentProfile } from '../../services/profileService';
 import { Supplier, MedicineWithPrice } from '../../types';
 import { computeGstLine, sumGstLines, GST_RATES, inr, isInterstate, stateCodeFromGstin } from '../../utils/gst';
+import { parsePackSize } from '../../utils/packUnits';
 
-interface InvoiceData {
-  invoiceInfo: {
-    supplierName: string | null;
-    supplierGstin?: string | null;
-    invoiceNumber: string | null;
-    invoiceDate: string | null;
-    taxableAmount?: number | null;
-    cgstAmount?: number | null;
-    sgstAmount?: number | null;
-    igstAmount?: number | null;
-    totalAmount: number | null;
+import type { InvoiceData, InvoiceLine, ImportDraft } from '../../types/pharmacyImport';
+import type { PharmacyInwardReceipt } from '../../types';
+import { pharmacyImportService } from '../../services/pharmacyImportService';
+import { possibleDuplicateLines, normalizeInvoiceNumber, invoiceHeaderReview } from '../../utils/pharmacyImport';
+
+type ReviewLine = InvoiceLine & { id?: string; medicineId?: string; isMatched?: boolean; confidence?: number; rateUnknown?: boolean };
+function reviewLine(medicine: ReviewLine) {
+  return {
+    ...medicine, id: medicine.id || crypto.randomUUID(),
+    sourceKey: medicine.sourceKey || `manual:${crypto.randomUUID()}`,
+    medicineName: medicine.medicineName || '', quantity: medicine.quantity ?? 0,
+    unitCostPrice: medicine.unitCostPrice ?? 0,
+    rateUnknown: medicine.rateUnknown ?? medicine.unitCostPrice == null,
+    totalCostPrice: medicine.totalCostPrice ?? null,
+    batchNumber: medicine.batchNumber || '', expiryDate: medicine.expiryDate || '',
+    manufacturer: medicine.manufacturer || '', strength: medicine.strength || '', packSize: medicine.packSize || '',
+    hsnCode: medicine.hsnCode || '', gstRate: medicine.gstRate ?? null,
+    mrp: medicine.mrp ?? null, discountPercent: medicine.discountPercent ?? null,
+    discountAmount: medicine.discountAmount ?? null, freeQuantity: medicine.freeQuantity ?? 0,
+    medicineId: medicine.medicineId || '', isMatched: medicine.isMatched || false,
+    confidence: medicine.confidence || 0,
   };
-  medicines: Array<{
-    medicineName: string;
-    quantity: number;
-    unitCostPrice: number;
-    totalCostPrice: number | null;
-    batchNumber: string | null;
-    expiryDate: string | null;
-    manufacturer: string | null;
-    strength: string | null;
-    packSize: string | null;
-    hsnCode?: string | null;
-    gstRate?: number | null;
-    mrp?: number | null;
-    discountPercent?: number | null;
-    discountAmount?: number | null;
-    freeQuantity?: number | null;
-  }>;
 }
 
 interface InvoiceReviewModalProps {
   extractedData: InvoiceData;
   rawText: string;
-  confidence: number;
   fileName: string;
+  importDraft: ImportDraft;
+  existingReceipt?: PharmacyInwardReceipt;
+  incomplete?: boolean;
+  onSaveDraft: (snapshot: NonNullable<ImportDraft['payload']['review']>) => Promise<ImportDraft>;
   onComplete: () => void;
   onClose: () => void;
 }
@@ -50,12 +47,13 @@ interface InvoiceReviewModalProps {
 const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   extractedData,
   rawText,
-  confidence,
   fileName,
+  importDraft, existingReceipt, incomplete, onSaveDraft,
   onComplete,
   onClose
 }) => {
   const { user } = useAuth();
+  const headerRef = useRef<HTMLDivElement>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [medicines, setMedicines] = useState<MedicineWithPrice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,44 +61,33 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   const [showRawText, setShowRawText] = useState(false);
   const [itemSearchTerm, setItemSearchTerm] = useState('');
 
-  const [invoiceInfo, setInvoiceInfo] = useState({
-    supplierId: '',
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [headerResolution, setHeaderResolution] = useState(importDraft.payload.review?.headerResolution || '');
+  const [draftSaving, setDraftSaving] = useState(false);
+  const initialHeader = {
+    supplierId: existingReceipt?.supplierId || '',
     supplierName: extractedData.invoiceInfo.supplierName || '',
     supplierGstin: extractedData.invoiceInfo.supplierGstin || '',
-    invoiceNumber: extractedData.invoiceInfo.invoiceNumber || '',
-    invoiceDate: extractedData.invoiceInfo.invoiceDate || new Date().toISOString().split('T')[0],
-    totalAmount: extractedData.invoiceInfo.totalAmount || 0,
-    extractedTaxable: extractedData.invoiceInfo.taxableAmount || 0,
-    extractedTax: (extractedData.invoiceInfo.cgstAmount || 0) + (extractedData.invoiceInfo.sgstAmount || 0) + (extractedData.invoiceInfo.igstAmount || 0),
-    remarks: `Processed from ${fileName} with ${(confidence * 100).toFixed(1)}% confidence`
-  });
-
-  // Inter-state when the supplier's state differs from the clinic's
+    invoiceNumber: existingReceipt?.invoiceNumber || extractedData.invoiceInfo.invoiceNumber || '',
+    invoiceDate: existingReceipt?.supplierInvoiceDate?.toISOString().slice(0, 10) || extractedData.invoiceInfo.invoiceDate || '',
+    totalAmount: extractedData.invoiceInfo.totalAmount,
+    extractedTaxable: extractedData.invoiceInfo.taxableAmount ?? null,
+    extractedTax: [extractedData.invoiceInfo.cgstAmount, extractedData.invoiceInfo.sgstAmount, extractedData.invoiceInfo.igstAmount].some(v => v != null)
+      ? (extractedData.invoiceInfo.cgstAmount || 0) + (extractedData.invoiceInfo.sgstAmount || 0) + (extractedData.invoiceInfo.igstAmount || 0) : null,
+    roundOff: extractedData.invoiceInfo.roundOff ?? existingReceipt?.roundOff ?? null,
+    remarks: `Imported from ${fileName}`
+  };
+  const [invoiceInfo, setInvoiceInfo] = useState({ ...initialHeader, ...(importDraft.payload.review?.invoiceInfo || {}) } as typeof initialHeader);
   const clinicState = user?.clinic?.gstStateCode || stateCodeFromGstin(user?.clinic?.gstin);
-
-  const [medicineItems, setMedicineItems] = useState(
-    extractedData.medicines.map((medicine, index) => ({
-      id: `temp_${index}`,
-      medicineName: medicine.medicineName,
-      quantity: medicine.quantity,
-      unitCostPrice: medicine.unitCostPrice,
-      totalCostPrice: medicine.totalCostPrice || (medicine.quantity * medicine.unitCostPrice),
-      batchNumber: medicine.batchNumber || '',
-      expiryDate: medicine.expiryDate || '',
-      manufacturer: medicine.manufacturer || '',
-      strength: medicine.strength || '',
-      packSize: medicine.packSize || '',
-      hsnCode: medicine.hsnCode || '',
-      gstRate: medicine.gstRate ?? 12,
-      mrp: medicine.mrp || 0,
-      discountPercent: medicine.discountPercent || 0,
-      discountAmount: medicine.discountAmount || 0,
-      freeQuantity: medicine.freeQuantity || 0,
-      medicineId: '', // Will be set if matched to master data
-      isMatched: false,
-      confidence: 0.8 // Default confidence for extracted items
-    }))
+  const [medicineItems, setMedicineItems] = useState(() =>
+    ((importDraft.payload.review?.medicineItems || extractedData.medicines) as ReviewLine[]).map(reviewLine)
   );
+  const saveDraft = async () => {
+    setDraftSaving(true);
+    try { await onSaveDraft({ invoiceInfo, medicineItems, headerResolution }); onClose(); }
+    catch (error) { alert(error instanceof Error ? error.message : 'Could not save draft'); }
+    finally { setDraftSaving(false); }
+  };
 
   useEffect(() => {
     loadData();
@@ -110,6 +97,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
     // Auto-match medicines with master data
     matchMedicinesWithMaster();
   }, [medicines]);
+
+  useEffect(() => { setAcknowledged(false); }, [medicineItems, invoiceInfo]);
 
   const loadData = async () => {
     try {
@@ -132,7 +121,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             s.name.toLowerCase().includes(invoiceInfo.supplierName.toLowerCase()) ||
             invoiceInfo.supplierName.toLowerCase().includes(s.name.toLowerCase()))
         : undefined);
-      if (matchedSupplier) {
+      if (matchedSupplier && !invoiceInfo.supplierId) {
         setInvoiceInfo(prev => ({ ...prev, supplierId: matchedSupplier.id }));
       }
     } catch (error) {
@@ -144,12 +133,10 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
 
   const matchMedicinesWithMaster = () => {
     setMedicineItems(prev => prev.map(item => {
+      if (item.medicineId) return item;
       const matchedMedicine = medicines.find(m => 
         m.name.toLowerCase() === item.medicineName.toLowerCase() ||
-        m.genericName?.toLowerCase() === item.medicineName.toLowerCase() ||
-        m.brandName?.toLowerCase() === item.medicineName.toLowerCase() ||
-        item.medicineName.toLowerCase().includes(m.name.toLowerCase()) ||
-        m.name.toLowerCase().includes(item.medicineName.toLowerCase())
+        m.brandName?.toLowerCase() === item.medicineName.toLowerCase()
       );
 
       if (matchedMedicine) {
@@ -157,7 +144,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
           ...item,
           medicineId: matchedMedicine.id,
           hsnCode: item.hsnCode || matchedMedicine.hsnCode || '',
-          gstRate: item.gstRate ?? matchedMedicine.gstRate ?? 12,
+          gstRate: item.gstRate, // Missing invoice tax must be reviewed, never silently defaulted.
           isMatched: true,
           confidence: 0.9
         };
@@ -175,27 +162,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   );
 
   const addMedicineItem = () => {
-    const newItem = {
-      id: `temp_${Date.now()}`,
-      medicineName: '',
-      quantity: 1,
-      unitCostPrice: 0,
-      totalCostPrice: 0,
-      batchNumber: '',
-      expiryDate: '',
-      manufacturer: '',
-      strength: '',
-      packSize: '',
-      hsnCode: '',
-      gstRate: 12,
-      mrp: 0,
-      discountPercent: 0,
-      discountAmount: 0,
-      freeQuantity: 0,
-      medicineId: '',
-      isMatched: false,
-      confidence: 1.0
-    };
+    const newItem = reviewLine({ medicineName: '', quantity: 1, unitCostPrice: 0, totalCostPrice: null,
+      batchNumber: null, expiryDate: null, manufacturer: null, strength: null, packSize: null });
     setMedicineItems([...medicineItems, newItem]);
   };
 
@@ -203,11 +171,9 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
     setMedicineItems(prev => prev.map((item, i) => {
       if (i === index) {
         const updatedItem = { ...item, [field]: value };
-        
-        // Recalculate total cost price when quantity or unit cost changes
-        if (field === 'quantity' || field === 'unitCostPrice') {
-          updatedItem.totalCostPrice = updatedItem.quantity * updatedItem.unitCostPrice;
-        }
+        // Keep printed amounts intact so corrections can be reconciled.
+        if (field === 'medicineName') { updatedItem.medicineId = ''; updatedItem.isMatched = false; }
+        if (field === 'unitCostPrice') updatedItem.rateUnknown = false;
         
         return updatedItem;
       }
@@ -220,305 +186,98 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   };
 
   const selectedSupplier = suppliers.find(s => s.id === invoiceInfo.supplierId);
-  const interstate = isInterstate(clinicState, selectedSupplier?.stateCode || stateCodeFromGstin(selectedSupplier?.gstin));
+  const interstate = existingReceipt?.isInterstate ?? isInterstate(clinicState, selectedSupplier?.stateCode || stateCodeFromGstin(selectedSupplier?.gstin || invoiceInfo.supplierGstin));
 
-  const lineTax = (item: { quantity: number; unitCostPrice: number; discountPercent?: number; discountAmount?: number; gstRate?: number }) =>
+  const lineTax = (item: { quantity: number; unitCostPrice: number; discountPercent?: number | null; discountAmount?: number | null; gstRate?: number | null }) =>
     computeGstLine({
       quantity: item.quantity, unitPrice: item.unitCostPrice, discountPercent: item.discountPercent || 0,
-      discountAmount: item.discountAmount || 0, gstRate: item.gstRate ?? 12, priceIncludesGst: false, interstate
+      discountAmount: item.discountAmount || 0, gstRate: item.gstRate ?? 0, priceIncludesGst: false, interstate
     });
 
-  const invoiceTotals = sumGstLines(
-    medicineItems.filter(i => i.medicineName.trim() && i.quantity > 0).map(lineTax)
-  );
-
-  /** GST-inclusive grand total of the lines as reviewed */
+  const newTotals = sumGstLines(medicineItems.map(lineTax), false);
+  const combinedSubtotal = newTotals.subtotal + (existingReceipt ? (existingReceipt.grandTotal ?? existingReceipt.totalAmount) - (existingReceipt.roundOff || 0) : 0);
+  const roundOff = invoiceInfo.roundOff ?? Math.round((Math.round(combinedSubtotal) - combinedSubtotal) * 100) / 100;
+  const invoiceTotals = {
+    ...newTotals,
+    taxable: newTotals.taxable + (existingReceipt?.taxableAmount || 0),
+    cgst: newTotals.cgst + (existingReceipt?.cgstAmount || 0),
+    sgst: newTotals.sgst + (existingReceipt?.sgstAmount || 0),
+    igst: newTotals.igst + (existingReceipt?.igstAmount || 0),
+    roundOff, grandTotal: Math.round((combinedSubtotal + roundOff) * 100) / 100
+  };
   const calculateTotalAmount = () => invoiceTotals.grandTotal;
-
-  // Flag when our line-by-line total drifts from what the parser read off the invoice
-  const extractedGrand = invoiceInfo.totalAmount || 0;
-  const totalMismatch = extractedGrand > 0 && Math.abs(extractedGrand - invoiceTotals.grandTotal) > 1;
-
+  const extractedGrand = invoiceInfo.totalAmount;
+  const totalMismatch = extractedGrand != null && Math.abs(extractedGrand - invoiceTotals.grandTotal) > 1;
+  const taxMismatch = invoiceInfo.extractedTax != null && Math.abs(invoiceInfo.extractedTax - invoiceTotals.cgst - invoiceTotals.sgst - invoiceTotals.igst) > 1;
+  const taxableMismatch = invoiceInfo.extractedTaxable != null && Math.abs(invoiceInfo.extractedTaxable - invoiceTotals.taxable) > 1;
+  const duplicateRows = possibleDuplicateLines(medicineItems);
+  const existingDuplicates = existingReceipt?.inwardItems?.some(old => medicineItems.some(item =>
+    item.medicineId === old.medicineId && item.batchNumber === (old.batchNumber || '') && item.quantity === old.quantity && item.unitCostPrice === old.unitCostPrice));
+  const headerReview = invoiceHeaderReview(importDraft.payload.pages, {
+    supplierId: invoiceInfo.supplierId, supplierGstin: selectedSupplier?.gstin || invoiceInfo.supplierGstin,
+    invoiceNumber: invoiceInfo.invoiceNumber, invoiceDate: invoiceInfo.invoiceDate,
+  });
+  const headerNeedsReview = headerReview.conflicts.length > 0 || !!existingReceipt && (
+    (!!extractedData.invoiceInfo.invoiceNumber && normalizeInvoiceNumber(extractedData.invoiceInfo.invoiceNumber) !== normalizeInvoiceNumber(existingReceipt.invoiceNumber)) ||
+    (!!extractedData.invoiceInfo.invoiceDate && extractedData.invoiceInfo.invoiceDate !== existingReceipt.supplierInvoiceDate?.toISOString().slice(0, 10)) ||
+    (!!extractedData.invoiceInfo.supplierGstin && !!existingReceipt.supplier?.gstin && extractedData.invoiceInfo.supplierGstin !== existingReceipt.supplier.gstin));
+  const continuationConflict = headerNeedsReview && headerResolution !== headerReview.signature;
+  const unresolved = medicineItems.some(item => !item.medicineName.trim() || !Number.isInteger(item.quantity) || item.quantity <= 0 ||
+    item.rateUnknown || !Number.isFinite(item.unitCostPrice) || item.unitCostPrice < 0 || item.gstRate == null || !Number.isFinite(item.gstRate) || item.gstRate < 0 || item.gstRate > 100 ||
+    !Number.isInteger(item.freeQuantity) || item.freeQuantity < 0 || (item.discountPercent != null && (item.discountPercent < 0 || item.discountPercent > 100)) ||
+    (item.discountAmount != null && item.discountAmount < 0));
+  const blockers = [
+    ...(!invoiceInfo.supplierId ? ['Select the supplier in Invoice Information.'] : []),
+    ...(!invoiceInfo.invoiceNumber.trim() ? ['Enter the supplier invoice number.'] : []),
+    ...(!invoiceInfo.invoiceDate ? ['Enter the invoice date.'] : []),
+    ...(!medicineItems.length ? ['Add at least one medicine.'] : []),
+    ...(incomplete ? ['Some pages are unfinished. Save the draft and retry those pages.'] : []),
+    ...(unresolved ? ['Some items have missing or invalid names, quantities, rates, GST or discounts.'] : []),
+    ...(continuationConflict ? ['Confirm the supplier, invoice number and date for all pages below.'] : []),
+    ...(!acknowledged ? ['Tick the final review confirmation below.'] : []),
+  ];
   const handleSave = async () => {
+    if (!user || !invoiceInfo.supplierId || !invoiceInfo.invoiceNumber.trim() || !invoiceInfo.invoiceDate) { alert('Supplier, bill number and date are required.'); return; }
+    if (incomplete || unresolved || !medicineItems.length || continuationConflict) { alert('Resolve unfinished pages, missing GST/quantity, and bill conflicts before posting.'); return; }
+    if (!acknowledged) { alert('Review the extracted fields and reconciliation warnings, then confirm below.'); return; }
     const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      alert('User not assigned to a clinic. Cannot save invoice data.');
-      return;
-    }
-    if (!user) {
-      alert('You must be logged in to save invoice data');
-      return;
-    }
-
-    if (!invoiceInfo.supplierId) {
-      alert('Please select a supplier');
-      return;
-    }
-
-    if (medicineItems.length === 0) {
-      alert('Please add at least one medicine item');
-      return;
-    }
-
-    const validItems = medicineItems.filter(item => 
-      item.medicineName.trim() && item.quantity > 0 && item.unitCostPrice > 0
-    );
-
-    if (validItems.length === 0) {
-      alert('Please ensure all medicine items have valid names, quantities, and prices');
-      return;
-    }
-
+    if (!profile?.clinicId) return;
+    setSaving(true);
     try {
-      setSaving(true);
-      
-      // Generate unique invoice number if duplicate
-      let finalInvoiceNumber = invoiceInfo.invoiceNumber;
-      if (!finalInvoiceNumber || finalInvoiceNumber.trim() === '') {
-        finalInvoiceNumber = `INV-${Date.now()}`;
-      }
-      
-      // Step 1: Create new medicines in master data for unmatched items
-      const processedItems = [...validItems];
-      
-      for (let i = 0; i < processedItems.length; i++) {
-        const item = processedItems[i];
-        
-        if (!item.isMatched && item.medicineName.trim()) {
-          try {
-            console.log(`Creating new medicine in master data: ${item.medicineName}`);
-            
-            // First, check if a medicine with this name already exists
-            const existingMedicines = await masterDataService.searchMedicines(item.medicineName.trim());
-            
-            if (existingMedicines.length > 0) {
-              // Medicine already exists, use the existing one
-              const existingMedicine = existingMedicines[0];
-              console.log(`✅ Found existing medicine: ${existingMedicine.name} with ID: ${existingMedicine.id}`);
-              
-              // Update the item with the existing medicine ID
-              processedItems[i] = {
-                ...item,
-                medicineId: existingMedicine.id,
-                isMatched: true
-              };
-              
-              // Set clinic-specific pricing for the existing medicine
-              const sellingPrice = item.mrp > 0 ? item.mrp : Math.round(item.unitCostPrice * (1 + (item.gstRate ?? 12) / 100) * 1.2);
-              try {
-                await masterDataService.setClinicMedicinePrice(
-                  profile.clinicId,
-                  existingMedicine.id,
-                  sellingPrice,
-                  item.unitCostPrice
-                );
-              } catch (priceError) {
-                console.warn(`Could not set price for existing medicine ${existingMedicine.name}:`, priceError);
-                // Continue processing even if price setting fails
-              }
-              
-              continue; // Skip to next item
-            }
-            
-            // Prepare master data with defaults for required fields
-            const masterData = {
-              name: item.medicineName.trim(),
-              genericName: item.medicineName.trim(), // Use same name as fallback
-              brandName: item.medicineName.trim(),
-              category: 'other', // Default category
-              dosageForm: 'other', // Default dosage form
-              strength: item.strength || null,
-              manufacturer: item.manufacturer || null,
-              description: `Auto-created from invoice: ${fileName}`,
-              sideEffects: [],
-              contraindications: [],
-              currentStock: 0, // Will be updated by inward receipt
-              reorderLevel: 10, // Default reorder level
-              hsnCode: item.hsnCode || '3004',
-              gstRate: item.gstRate ?? 12,
-              batchNumber: item.batchNumber || null,
-              expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-              isActive: true
-            };
-            
-            // Calculate selling price (add 20% markup to cost price)
-            const sellingPrice = item.mrp > 0 ? item.mrp : Math.round(item.unitCostPrice * (1 + (item.gstRate ?? 12) / 100) * 1.2);
-            
-            const pricingData = {
-              sellingPrice: sellingPrice,
-              costPrice: item.unitCostPrice
-            };
-            
-            // Create the medicine and set pricing
-            try {
-              const result = await masterDataService.upsertMasterDataAndPrice(
-                'medicine',
-                masterData,
-                pricingData,
-                profile.clinicId
-              );
-              
-              // Update the item with the new medicine ID
-              processedItems[i] = {
-                ...item,
-                medicineId: result.itemId,
-                isMatched: true
-              };
-              
-              console.log(`✅ Successfully created medicine: ${item.medicineName} with ID: ${result.itemId}`);
-            } catch (createError) {
-              console.error(`Failed to create medicine ${item.medicineName}:`, createError);
-              
-              // If it's an RLS error, try creating just the medicine without pricing
-              if (createError instanceof Error && createError.message.includes('row-level security')) {
-                try {
-                  // Try creating just the medicine in master data
-                  const medicineResult = await masterDataService.createMedicine(masterData);
-                  
-                  processedItems[i] = {
-                    ...item,
-                    medicineId: medicineResult.id,
-                    isMatched: true
-                  };
-                  
-                  console.log(`✅ Created medicine without pricing: ${item.medicineName}`);
-                  continue;
-                } catch (fallbackError) {
-                  console.error(`Fallback creation also failed for ${item.medicineName}:`, fallbackError);
-                }
-              }
-              
-              // If it's a duplicate error, try to find and use the existing medicine
-              if (createError instanceof Error && (createError.message.includes('duplicate') || createError.message.includes('already exists'))) {
-                try {
-                  const existingMedicines = await masterDataService.searchMedicines(item.medicineName.trim());
-                  if (existingMedicines.length > 0) {
-                    const existingMedicine = existingMedicines[0];
-                    console.log(`✅ Using existing medicine after duplicate error: ${existingMedicine.name}`);
-                    
-                    processedItems[i] = {
-                      ...item,
-                      medicineId: existingMedicine.id,
-                      isMatched: true
-                    };
-                    
-                    continue; // Successfully handled, move to next item
-                  }
-                } catch (searchError) {
-                  console.error('Error searching for existing medicine:', searchError);
-                }
-              }
-              
-              // If we reach here, we couldn't create or find the medicine
-              console.warn(`⚠️ Skipping medicine "${item.medicineName}" due to error:`, createError);
-            }
-          } catch (error) {
-            console.error(`Unexpected error processing medicine ${item.medicineName}:`, error);
+      const latest = await pharmacyImportService.get(importDraft.id);
+      if (latest.status === 'posted') { onComplete(); return; }
+      if (latest.revision !== importDraft.revision) throw new Error('Draft changed. Reopen it before posting.');
+      const processed = [...medicineItems];
+      for (let i = 0; i < processed.length; i++) {
+        const item = processed[i];
+        if (!item.medicineId) {
+          // Exact names only: fuzzy first-result matching can post stock to a different medicine.
+          const matches = await masterDataService.searchMedicines(item.medicineName.trim());
+          const exact = matches.find(m => m.name.trim().toLowerCase() === item.medicineName.trim().toLowerCase());
+          if (exact) processed[i] = { ...item, medicineId: exact.id, isMatched: true };
+          else {
+            const created = await masterDataService.upsertMasterDataAndPrice('medicine', {
+              name: item.medicineName.trim(), genericName: item.medicineName.trim(), brandName: item.medicineName.trim(),
+              category: 'other', dosageForm: 'other', strength: item.strength || null, manufacturer: item.manufacturer || null,
+              description: `Created from invoice ${invoiceInfo.invoiceNumber}`, sideEffects: [], contraindications: [], currentStock: 0,
+              reorderLevel: 10, hsnCode: item.hsnCode || null, gstRate: item.gstRate!, isActive: true
+            }, { sellingPrice: item.mrp ?? 0, costPrice: item.unitCostPrice }, profile.clinicId);
+            processed[i] = { ...item, medicineId: created.itemId, isMatched: true };
           }
         }
       }
-      
-      // Step 2: Create the inward receipt with processed items
-      
-      const receiptData = {
-        supplierId: invoiceInfo.supplierId,
-        invoiceNumber: invoiceInfo.invoiceNumber,
-        receiptDate: new Date(),
-        supplierInvoiceDate: new Date(invoiceInfo.invoiceDate),
-        totalAmount: invoiceTotals.grandTotal,
-        uploadedBy: user.id,
-        invoiceFileUrl: '', // Could store the original file URL if needed
-        status: 'completed' as const,
-        remarks: invoiceInfo.remarks,
-        isInterstate: interstate,
-        taxableAmount: invoiceTotals.taxable,
-        discountAmount: invoiceTotals.discount,
-        cgstAmount: invoiceTotals.cgst,
-        sgstAmount: invoiceTotals.sgst,
-        igstAmount: invoiceTotals.igst,
-        roundOff: invoiceTotals.roundOff,
-        grandTotal: invoiceTotals.grandTotal
-      };
-
-      // Only include items that have valid medicine IDs (either matched or newly created)
-      const inwardItems = processedItems
-        .filter(item => item.medicineId && item.medicineId.trim() !== '')
-        .map(item => {
-          const t = lineTax(item);
-          return {
-            medicineId: item.medicineId,
-            quantity: item.quantity,
-            unitCostPrice: item.unitCostPrice,
-            batchNumber: item.batchNumber || undefined,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-            hsnCode: item.hsnCode || undefined,
-            gstRate: item.gstRate ?? 12,
-            mrp: item.mrp > 0 ? item.mrp : undefined,
-            discountPercent: item.discountPercent || 0,
-            discountAmount: item.discountAmount || 0,
-            freeQuantity: item.freeQuantity || 0,
-            taxableAmount: t.taxable,
-            cgstAmount: t.cgst,
-            sgstAmount: t.sgst,
-            igstAmount: t.igst,
-            lineTotal: t.total
-          };
-        });
-      
-      if (inwardItems.length === 0) {
-        alert('No valid medicine items to process. Please ensure medicines are properly matched or can be created.');
-        return;
-      }
-      
-      const skippedItems = processedItems.length - inwardItems.length;
-      if (skippedItems > 0) {
-        const proceed = confirm(`${skippedItems} item(s) could not be processed and will be skipped. Continue with ${inwardItems.length} valid item(s)?`);
-        if (!proceed) {
-          return;
-        }
-      }
-
-      try {
-        await pharmacyService.createInwardReceipt(receiptData, inwardItems);
-      } catch (receiptError) {
-        console.error('Error creating inward receipt:', receiptError);
-        
-        // Handle duplicate invoice number error
-        if (receiptError instanceof Error && receiptError.message.includes('duplicate key value violates unique constraint')) {
-          if (receiptError.message.includes('invoice_number')) {
-            // Generate a unique invoice number and retry
-            const timestamp = Date.now();
-            const uniqueInvoiceNumber = `${finalInvoiceNumber}-${timestamp}`;
-            
-            const updatedReceiptData = {
-              ...receiptData,
-              invoiceNumber: uniqueInvoiceNumber
-            };
-            
-            try {
-              await pharmacyService.createInwardReceipt(updatedReceiptData, inwardItems);
-              alert(`Invoice processed successfully with updated number: ${uniqueInvoiceNumber}! ${inwardItems.length} medicine items added to inventory.${skippedItems > 0 ? ` ${skippedItems} items were skipped due to errors.` : ''}`);
-              onComplete();
-              return;
-            } catch (retryError) {
-              console.error('Retry with unique invoice number also failed:', retryError);
-              throw new Error(`Failed to create inward receipt even with unique invoice number: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
-            }
-          }
-        }
-        
-        throw new Error(`Failed to create inward receipt: ${receiptError instanceof Error ? receiptError.message : 'Unknown error'}`);
-      }
-      
-      alert(`Invoice processed successfully! ${inwardItems.length} medicine items added to inventory.${skippedItems > 0 ? ` ${skippedItems} items were skipped due to errors.` : ''}`);
+      setMedicineItems(processed);
+      const saved = await onSaveDraft({ invoiceInfo, medicineItems: processed, headerResolution });
+      await pharmacyImportService.post(saved, { ...invoiceInfo, isInterstate: interstate, roundOff }, processed.map(item => ({
+        ...item, packSize: parsePackSize(item.packSize), source: { file: item.sourceFile, page: item.sourcePage, serialNumber: item.serialNumber,
+          rack: item.rack, oldMrp: item.oldMrp, printedGross: item.totalCostPrice, printedTaxable: item.taxableAmount, printedNet: item.netAmount,
+          warnings: item.warnings, reviewAcknowledged: true }
+      })));
+      alert(`${processed.length} items added to ${invoiceInfo.invoiceNumber}. Existing stock was not reposted.`);
       onComplete();
-      
     } catch (error) {
-      console.error('Error saving invoice data:', error);
-      alert(error instanceof Error ? error.message : 'Failed to save invoice data');
-    } finally {
-      setSaving(false);
-    }
+      alert(error instanceof Error ? error.message : String(error));
+    } finally { setSaving(false); }
   };
 
   if (loading) {
@@ -540,31 +299,29 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             <h2 className="text-xl font-bold text-gray-800">Review Extracted Invoice Data</h2>
             <div className="flex items-center gap-4 mt-1">
               <span className="text-sm text-gray-600">File: {fileName}</span>
-              <span className={`px-2 py-1 text-xs rounded-full ${
-                confidence >= 0.8 ? 'bg-green-100 text-green-700' :
-                confidence >= 0.6 ? 'bg-yellow-100 text-yellow-700' :
-                'bg-red-100 text-red-700'
-              }`}>
-                {(confidence * 100).toFixed(1)}% confidence
+              <span className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-700">
+                Verify against supplier bill
               </span>
-              <button
+              {rawText && <button
                 onClick={() => setShowRawText(!showRawText)}
                 className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm"
               >
                 <Eye className="w-4 h-4" />
                 {showRawText ? 'Hide' : 'Show'} Raw Text
-              </button>
+              </button>}
             </div>
           </div>
           <button
             onClick={onClose}
+            disabled={saving || draftSaving}
+            aria-label="Close invoice review"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <fieldset disabled={saving || draftSaving} className="p-6 space-y-6 min-w-0">
           {/* Raw Text Display */}
           {showRawText && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -576,14 +333,18 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
           )}
 
           {/* Invoice Information */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div ref={headerRef} className="bg-blue-50 border border-blue-200 rounded-lg p-4 scroll-mt-28">
             <h3 className="font-medium text-blue-800 mb-4">Invoice Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
                 <select
+                  disabled={!!existingReceipt}
                   value={invoiceInfo.supplierId}
-                  onChange={(e) => setInvoiceInfo({ ...invoiceInfo, supplierId: e.target.value })}
+                  onChange={(e) => {
+                    const supplier = suppliers.find(s => s.id === e.target.value);
+                    setInvoiceInfo({ ...invoiceInfo, supplierId: e.target.value, supplierName: supplier?.name || '', supplierGstin: supplier?.gstin || '' });
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Select supplier</option>
@@ -604,13 +365,14 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
                 <input
                   type="text"
+                  disabled={!!existingReceipt}
                   value={invoiceInfo.invoiceNumber}
                   onChange={(e) => setInvoiceInfo({ ...invoiceInfo, invoiceNumber: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter invoice number (auto-generated if empty)"
+                  placeholder="Enter supplier invoice number"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to auto-generate unique number
+                  Required: use the number printed on the supplier bill
                 </p>
               </div>
 
@@ -618,6 +380,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
                 <input
                   type="date"
+                  disabled={!!existingReceipt}
                   value={invoiceInfo.invoiceDate}
                   onChange={(e) => setInvoiceInfo({ ...invoiceInfo, invoiceDate: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -633,7 +396,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                   className={`w-full px-3 py-2 border rounded-lg bg-gray-50 ${totalMismatch ? 'border-amber-400' : 'border-gray-300'}`}
                 />
                 {totalMismatch && (
-                  <p className="text-xs text-amber-700 mt-1">Invoice shows ₹{extractedGrand.toFixed(2)}. Check rates, GST % and discounts.</p>
+                  <p className="text-xs text-amber-700 mt-1">Invoice shows ₹{extractedGrand?.toFixed(2)}. Check rates, GST % and discounts.</p>
                 )}
               </div>
             </div>
@@ -649,6 +412,27 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             </div>
           </div>
 
+          <div className="rounded-lg bg-amber-50 p-4 text-sm space-y-2">
+            {existingReceipt && <p>Previously posted: {existingReceipt.inwardItems?.length || 0} items / {inr(existingReceipt.totalAmount)}. Totals below include the existing bill plus these new items.</p>}
+            {incomplete && <p className="text-red-700">Some pages are unfinished. Save this draft and retry those pages.</p>}
+            {headerNeedsReview && <div className="border border-amber-300 rounded-lg p-3 space-y-2">
+              <p className="font-semibold">Confirm which invoice these pages belong to</p>
+              <p>Extraction found different header values. Select the actual seller and correct bill number/date in Invoice Information. Confirm below only if every page belongs to this bill.</p>
+              <details><summary className="cursor-pointer">Compare extracted headers by page</summary>
+                <div className="overflow-x-auto"><table className="w-full text-left text-xs mt-2"><thead><tr><th>Page</th><th>Supplier</th><th>GSTIN</th><th>Bill number</th><th>Date</th></tr></thead>
+                  <tbody>{importDraft.payload.pages.map(p => <tr key={p.key}><td>{p.page}</td><td>{p.data?.invoiceInfo.supplierName || 'Unknown'}</td><td>{p.data?.invoiceInfo.supplierGstin || 'Unknown'}</td><td>{p.data?.invoiceInfo.invoiceNumber || 'Unknown'}</td><td>{p.data?.invoiceInfo.invoiceDate || 'Unknown'}</td></tr>)}</tbody>
+                </table></div>
+              </details>
+              <p>{continuationConflict ? 'Confirmation needed beside the Finalize button.' : 'Header differences reviewed for the selected invoice.'}</p>
+            </div>}
+            {(totalMismatch || taxMismatch || taxableMismatch) && <p>Printed totals differ. Printed taxable: {invoiceInfo.extractedTaxable ?? 'unknown'}; tax: {invoiceInfo.extractedTax ?? 'unknown'}; grand total: {extractedGrand ?? 'unknown'}. Check missing rows, discounts, tax and rounding.</p>}
+            {duplicateRows.length > 0 && <p>Possible repeated rows: {duplicateRows.join(', ')}. Verify before keeping them; legitimate batches are never automatically deleted.</p>}
+            {existingDuplicates && <p>Some new rows resemble items already on this bill. Remove any overlapping uploads.</p>}
+            <details><summary className="cursor-pointer">Extraction notes ({extractedData.warnings?.length || 0})</summary>{extractedData.warnings?.map((warning, i) => <p key={i}>{warning}</p>)}</details>
+            {unresolved && <p className="text-red-700">Resolve blank GST, product names or invalid quantities/rates before posting.</p>}
+            <label className="block">Invoice round off <input type="number" step="0.01" className="border rounded px-2 py-1" value={invoiceInfo.roundOff ?? ''} placeholder={roundOff.toFixed(2)} onChange={e => setInvoiceInfo({ ...invoiceInfo, roundOff: e.target.value === '' ? null : Number(e.target.value) })} /></label>
+            <p>Review confirmations and any remaining blockers are beside the Finalize button at the bottom.</p>
+          </div>
           {/* Medicine Items */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -677,7 +461,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             </div>
 
             <div className="space-y-4">
-              {filteredMedicineItems.map((item, index) => {
+              {filteredMedicineItems.map((item) => {
                 // Find the original index in the full medicineItems array
                 const originalIndex = medicineItems.findIndex(originalItem => originalItem.id === item.id);
                 
@@ -704,6 +488,14 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     </button>
                   </div>
 
+                  <div className="text-xs text-gray-600 mb-3 space-y-1">
+                    <p>{item.sourceFile || 'Manual entry'} {item.sourcePage ? `- page ${item.sourcePage}` : ''} | Sr {item.serialNumber || '-'} | Rack {item.rack || '-'} | Old MRP {item.oldMrp ?? '-'}</p>
+                    <p>Printed amount {item.totalCostPrice ?? '-'} | Taxable {item.taxableAmount ?? '-'} | Net {item.netAmount ?? '-'}
+                      {item.netAmount != null && Math.abs(item.netAmount - lineTax(item).total) > 0.05 ? ' - differs from calculated line total' : ''}</p>
+                    {item.rateUnknown && <p className="text-red-700">Purchase rate could not be read. Enter the printed rate.</p>}
+                    {(item.mrp == null || item.discountPercent == null && item.discountAmount == null) && <p className="text-amber-700">MRP or discount is unreadable/not printed. Verify; a blank discount is treated as none for calculation.</p>}
+                    {item.warnings?.map((w, i) => <p className="text-amber-700" key={i}>{w}</p>)}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Medicine Name *</label>
@@ -755,8 +547,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         type="number"
                         min="0"
                         step="0.01"
-                        value={item.mrp}
-                        onChange={(e) => updateMedicineItem(originalIndex, 'mrp', parseFloat(e.target.value) || 0)}
+                        value={item.mrp ?? ''}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'mrp', e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
@@ -764,10 +556,12 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">GST %</label>
                       <select
-                        value={item.gstRate ?? 12}
-                        onChange={(e) => updateMedicineItem(originalIndex, 'gstRate', parseFloat(e.target.value))}
+                        value={item.gstRate ?? ''}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'gstRate', e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
+                        <option value="">Missing - select GST</option>
+                        {item.gstRate != null && !GST_RATES.some(r => r === item.gstRate) && <option value={item.gstRate}>{item.gstRate}% (printed)</option>}
                         {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                       </select>
                     </div>
@@ -790,8 +584,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         min="0"
                         max="100"
                         step="0.5"
-                        value={item.discountPercent}
-                        onChange={(e) => updateMedicineItem(originalIndex, 'discountPercent', parseFloat(e.target.value) || 0)}
+                        value={item.discountPercent ?? ''}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'discountPercent', e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
@@ -802,8 +596,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         type="number"
                         min="0"
                         step="0.01"
-                        value={item.discountAmount}
-                        onChange={(e) => updateMedicineItem(originalIndex, 'discountAmount', parseFloat(e.target.value) || 0)}
+                        value={item.discountAmount ?? ''}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'discountAmount', e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
@@ -817,6 +611,20 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         onChange={(e) => updateMedicineItem(originalIndex, 'freeQuantity', parseInt(e.target.value) || 0)}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Pack (1x10 / 10'S)</label>
+                      <input
+                        type="text"
+                        value={item.packSize || ''}
+                        onChange={(e) => updateMedicineItem(originalIndex, 'packSize', e.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="as printed on the invoice"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {parsePackSize(item.packSize) ? `read as ${parsePackSize(item.packSize)} loose units per pack` : 'teaches the master its pack size'}
+                      </p>
                     </div>
 
                     <div>
@@ -902,6 +710,17 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             />
           </div>
 
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm">
+            <button type="button" className="text-blue-700 underline" onClick={() => headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Edit supplier / bill details</button>
+            {headerNeedsReview && <label className="flex items-start gap-2">
+              <input type="checkbox" className="mt-1" disabled={!invoiceInfo.supplierId || !invoiceInfo.invoiceNumber.trim() || !invoiceInfo.invoiceDate}
+                checked={headerResolution === headerReview.signature}
+                onChange={e => { setHeaderResolution(e.target.checked ? headerReview.signature : ''); setAcknowledged(false); }} />
+              <span>I verified that all {importDraft.payload.pages.length} pages belong to <strong>{selectedSupplier?.name || 'the selected supplier'}</strong> (GSTIN: {selectedSupplier?.gstin || invoiceInfo.supplierGstin || 'not recorded'}), invoice <strong>{invoiceInfo.invoiceNumber || '(required)'}</strong>, dated <strong>{invoiceInfo.invoiceDate || '(required)'}</strong>. Use these details despite the extraction differences.</span>
+            </label>}
+            <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} />I checked all pages, item count, MRP, GST, discounts, totals and any duplicate warnings against the supplier bill.</label>
+            {blockers.length > 0 ? <div role="status" className="text-red-700"><p className="font-semibold">Before finalizing:</p><ul className="list-disc pl-5">{blockers.map(reason => <li key={reason}>{reason}</li>)}</ul></div> : <p role="status" className="text-green-700">Ready to finalize {medicineItems.length} items.</p>}
+          </div>
           {/* Action Buttons */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
             {!invoiceInfo.supplierId && (
@@ -916,16 +735,17 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             >
               Cancel
             </button>
+            <button disabled={saving || draftSaving} onClick={saveDraft} className="px-4 py-2 border rounded-lg">{draftSaving ? 'Saving...' : 'Save draft / add Part 2'}</button>
             <button
               onClick={handleSave}
-              disabled={saving || !invoiceInfo.supplierId || medicineItems.length === 0}
+              disabled={saving || draftSaving || blockers.length > 0}
               className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Saving...' : 'Save to Inventory'}
+              {saving ? 'Saving...' : 'Finalize & post new items'}
             </button>
           </div>
-        </div>
+        </fieldset>
       </div>
     </div>
   );

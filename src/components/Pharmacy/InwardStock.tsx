@@ -9,6 +9,7 @@ import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
 import { Link } from 'react-router-dom';
 import { computeGstLine, sumGstLines, GST_RATES, inr, isInterstate, stateCodeFromGstin } from '../../utils/gst';
+import { packSpec, fmtQty } from '../../utils/packUnits';
 
 interface ItemRow {
   medicineId: string;
@@ -21,11 +22,13 @@ interface ItemRow {
   discountPercent: number;
   discountAmount: number;  // flat rupee discount on the line
   gstRate: number;
+  /** Loose units in one purchased pack, as the invoice states it (1x10 -> 10). */
+  packSize: number;
 }
 
 const emptyRow = (): ItemRow => ({
   medicineId: '', batchNumber: '', expiryDate: '', quantity: 0, freeQuantity: 0,
-  mrp: 0, unitCostPrice: 0, discountPercent: 0, discountAmount: 0, gstRate: 12
+  mrp: 0, unitCostPrice: 0, discountPercent: 0, discountAmount: 0, gstRate: 12, packSize: 1
 });
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -54,6 +57,7 @@ const InwardStock: React.FC = () => {
       ...emptyRow(),
       medicineId: m.id,
       gstRate: m.gstRate ?? 12,
+      packSize: packSpec(m).packSize,
       mrp: info?.mrp ?? m.sellingPrice ?? 0,
       unitCostPrice: m.costPrice ?? 0,
       batchNumber: info?.batchNumber ?? '',
@@ -103,6 +107,7 @@ const InwardStock: React.FC = () => {
       if (patch.medicineId !== undefined) {
         const m = medicines.find(x => x.id === patch.medicineId);
         next.gstRate = m?.gstRate ?? 12;
+        next.packSize = packSpec(m).packSize;
         if (!next.mrp && m?.sellingPrice) next.mrp = m.sellingPrice;
         if (!next.unitCostPrice && m?.costPrice) next.unitCostPrice = m.costPrice;
       }
@@ -155,6 +160,7 @@ const InwardStock: React.FC = () => {
           expiryDate: r.expiryDate ? new Date(r.expiryDate) : undefined,
           hsnCode: m?.hsnCode,
           gstRate: r.gstRate,
+          packSize: r.packSize > 0 ? r.packSize : undefined,
           mrp: r.mrp || undefined,
           discountPercent: r.discountPercent,
           discountAmount: r.discountAmount,
@@ -320,7 +326,7 @@ const InwardStock: React.FC = () => {
               const t = lineTax(row);
               return (
                 <div key={index} className="border border-gray-200 rounded-lg p-4">
-                  <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-11 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-12 gap-3">
                     <div className="col-span-2">
                       <label className="block text-xs text-gray-600 mb-1">Medicine *</label>
                       <select value={row.medicineId} onChange={(e) => updateItem(index, { medicineId: e.target.value })} className={inputCls}>
@@ -338,19 +344,28 @@ const InwardStock: React.FC = () => {
                       <input type="date" value={row.expiryDate} onChange={(e) => updateItem(index, { expiryDate: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Qty *</label>
+                      <label className="block text-xs text-gray-600 mb-1">Qty * ({packSpec(m).stockUnit}s)</label>
                       <input type="number" min="1" value={row.quantity} onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Pack of</label>
+                      <input
+                        type="number" min="1" step="0.001" value={row.packSize}
+                        onChange={(e) => updateItem(index, { packSize: parseFloat(e.target.value) || 1 })}
+                        title={`Loose ${packSpec(m).dispenseUnit.toLowerCase()}s in one ${packSpec(m).stockUnit.toLowerCase()} — the "1x10" on the invoice`}
+                        className={inputCls}
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Free</label>
                       <input type="number" min="0" value={row.freeQuantity} onChange={(e) => updateItem(index, { freeQuantity: parseInt(e.target.value) || 0 })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">MRP (₹)</label>
+                      <label className="block text-xs text-gray-600 mb-1">MRP / {packSpec(m).stockUnit} (₹)</label>
                       <input type="number" min="0" step="0.01" value={row.mrp} onChange={(e) => updateItem(index, { mrp: parseFloat(e.target.value) || 0 })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Rate (₹, ex-GST) *</label>
+                      <label className="block text-xs text-gray-600 mb-1">Rate / {packSpec(m).stockUnit} (₹, ex-GST) *</label>
                       <input type="number" min="0" step="0.01" value={row.unitCostPrice} onChange={(e) => updateItem(index, { unitCostPrice: parseFloat(e.target.value) || 0 })} className={inputCls} />
                     </div>
                     <div>
@@ -380,6 +395,12 @@ const InwardStock: React.FC = () => {
                       <span className="font-medium text-gray-800">Line total {inr(t.total)}</span>
                       {row.mrp > 0 && row.unitCostPrice > 0 && (
                         <span className="text-green-700">Margin on MRP {(((row.mrp - row.unitCostPrice * (1 + row.gstRate / 100)) / row.mrp) * 100).toFixed(1)}%</span>
+                      )}
+                      {row.packSize > 1 && (
+                        <span>
+                          {fmtQty(row.quantity * row.packSize)} {packSpec(m).dispenseUnit.toLowerCase()}s in all
+                          {row.mrp > 0 && ` · ${inr(row.mrp / row.packSize)} per ${packSpec(m).dispenseUnit.toLowerCase()}`}
+                        </span>
                       )}
                     </div>
                   )}

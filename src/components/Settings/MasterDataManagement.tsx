@@ -7,6 +7,7 @@ import { getCurrentProfile } from '../../services/profileService';
 import { MedicineMaster, TestMaster, MedicineWithPrice, TestWithPrice, ClinicMedicinePrice, ClinicTestPrice } from '../../types';
 import AIMasterSettings from './AIMasterSettings';
 import { hasModuleAccess } from '../../utils/modulePermissions';
+import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
 
 interface MasterDataManagementProps {
   /**
@@ -28,6 +29,14 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
     hasPermission('all');
 
   const canManage = hasPermission('master_data_management') || (pharmacyMode && hasModuleAccess(user, 'pharmacy'));
+
+  /**
+   * The medicine master is the pharmacy's own working list — pack size, rack,
+   * HSN, GST rate and barcode all have to be corrected at the counter, not
+   * queued behind an admin. Anyone who may open this screen for the pharmacy
+   * may maintain medicines; tests stay admin-only.
+   */
+  const canManageMedicines = isAdmin || canManage;
 
   const [activeTab, setActiveTab] = useState<'ai-assistant' | 'medicines' | 'tests' | 'pricing'>(
     (location.state as { activeTab?: 'ai-assistant' | 'medicines' | 'tests' | 'pricing' })?.activeTab || (pharmacyMode ? 'medicines' : 'ai-assistant')
@@ -215,7 +224,7 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
             <AIMasterSettings />
           ) : activeTab === 'medicines' ? (
             <>
-              {isAdmin && (
+              {canManageMedicines && (
                 <div className="mb-4 flex justify-end">
                   <button
                     onClick={() => setShowAddMedicineModal(true)}
@@ -229,14 +238,14 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
               <MedicinesTable
                 medicines={filteredMedicines}
                 onEdit={(medicine) => {
-                  if (isAdmin) {
+                  if (canManageMedicines) {
                     setEditingMedicine(medicine);
                   } else {
-                    alert('Only administrators can edit master medicine data. Use AI Assistant to set clinic-specific pricing.');
+                    alert('You do not have access to the medicine master. Ask an administrator for pharmacy access.');
                   }
                 }}
                 onDelete={async (id) => {
-                  if (isAdmin) {
+                  if (canManageMedicines) {
                     if (confirm('Are you sure you want to delete this medicine?')) {
                       try {
                         await masterDataService.deleteMedicine(id);
@@ -248,7 +257,7 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
                       }
                     }
                   } else {
-                    alert('Only administrators can delete master medicine data.');
+                    alert('You do not have access to the medicine master. Ask an administrator for pharmacy access.');
                   }
                 }}
                 onSetPrice={(medicine) => {
@@ -466,8 +475,21 @@ const MedicinesTable: React.FC<{
               </td>
               <td className="py-3 px-4 text-gray-600">
                 <div className="space-y-1">
-                  <div>Stock: {medicine.currentStock}</div>
-                  <div className="text-xs">Reorder: {medicine.reorderLevel}</div>
+                  {(() => {
+                    const spec = packSpec(medicine);
+                    return (
+                      <>
+                        <div>Stock: {stockBreakdown(medicine.currentStock, spec)}</div>
+                        {spec.packSize > 1 && (
+                          <div className="text-xs text-blue-700">
+                            1 {spec.stockUnit} = {fmtQty(spec.packSize)} {spec.dispenseUnit}
+                            {!spec.allowLooseSale && ' · whole packs only'}
+                          </div>
+                        )}
+                        <div className="text-xs">Reorder: {medicine.reorderLevel}</div>
+                      </>
+                    );
+                  })()}
                 </div>
               </td>
               <td className="py-3 px-4 text-gray-600">
@@ -888,6 +910,10 @@ const MasterDataModal: React.FC<{
           isChronic: false,
           hsnCode: '3004',
           gstRate: 12,
+          packSize: 1,
+          stockUnit: '',
+          dispenseUnit: '',
+          allowLooseSale: true,
           isActive: true
         });
       } else {
@@ -1024,14 +1050,20 @@ const MasterDataModal: React.FC<{
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Stock ({formData.stockUnit || 'Pack'}s)
+                  </label>
                   <input
                     type="number"
                     min="0"
-                    value={formData.currentStock || 0}
-                    onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
+                    step="0.001"
+                    value={formData.currentStock ?? 0}
+                    onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    May be fractional: 2.5 means two full {(formData.stockUnit || 'pack').toLowerCase()}s and a part one.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
@@ -1044,6 +1076,72 @@ const MasterDataModal: React.FC<{
                   />
                 </div>
               </div>
+              {/* How this SKU is stocked vs how it leaves the counter. */}
+              <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-800">Pack and units</h4>
+                  <p className="text-xs text-gray-600">
+                    Stock, purchase and MRP are per stocked unit — the strip or bottle you buy. Pack size says how many
+                    loose units are inside it, so the counter can sell half a strip and charge half the MRP.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
+                    <input
+                      type="text"
+                      value={formData.stockUnit || ''}
+                      onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Strip / Bottle / Vial"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">What one unit of stock is, and what the MRP is for.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Dispense unit</label>
+                    <input
+                      type="text"
+                      value={formData.dispenseUnit || ''}
+                      onChange={(e) => setFormData({ ...formData, dispenseUnit: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Tablet / ml"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">What the customer is handed.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pack size</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.001"
+                      value={formData.packSize ?? 1}
+                      onChange={(e) => setFormData({ ...formData, packSize: parseFloat(e.target.value) || 1 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="10"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      1 {(formData.stockUnit || 'Pack')} = {formData.packSize || 1} {(formData.dispenseUnit || 'Unit')}. Leave at 1 if they are the same thing.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input
+                    id="allowLooseSale"
+                    type="checkbox"
+                    checked={formData.allowLooseSale !== false}
+                    onChange={(e) => setFormData({ ...formData, allowLooseSale: e.target.checked })}
+                    className="mt-1 rounded"
+                  />
+                  <label htmlFor="allowLooseSale" className="text-sm text-gray-700">
+                    May be sold loose
+                    <span className="block text-xs text-gray-500">
+                      Untick for something that can only leave whole, like a sealed bottle or an ampoule — the counter
+                      then refuses a part quantity.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rack / Location</label>
@@ -1253,6 +1351,13 @@ const AddMedicineModal: React.FC<{
     reorderLevel: 0,
     batchNumber: '',
     expiryDate: undefined as Date | undefined,
+    packSize: 1,
+    stockUnit: '',
+    dispenseUnit: '',
+    allowLooseSale: true,
+    rackLocation: '',
+    hsnCode: '3004',
+    gstRate: 12,
     isActive: true
   });
 
@@ -1430,12 +1535,15 @@ const AddMedicineModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Current Stock ({formData.stockUnit || 'Pack'}s)
+              </label>
               <input
                 type="number"
                 min="0"
+                step="0.001"
                 value={formData.currentStock}
-                onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -1449,6 +1557,95 @@ const AddMedicineModal: React.FC<{
                 onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
+              <input
+                type="text"
+                value={formData.stockUnit}
+                onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Strip / Bottle / Vial"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dispense unit</label>
+              <input
+                type="text"
+                value={formData.dispenseUnit}
+                onChange={(e) => setFormData({ ...formData, dispenseUnit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Tablet / ml"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pack size</label>
+              <input
+                type="number"
+                min="1"
+                step="0.001"
+                value={formData.packSize}
+                onChange={(e) => setFormData({ ...formData, packSize: parseFloat(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="10"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                1 {formData.stockUnit || 'Pack'} = {formData.packSize || 1} {formData.dispenseUnit || 'Unit'}. Lets the counter sell half a strip.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3 pt-7">
+              <input
+                id="addAllowLooseSale"
+                type="checkbox"
+                checked={formData.allowLooseSale}
+                onChange={(e) => setFormData({ ...formData, allowLooseSale: e.target.checked })}
+                className="mt-1 rounded"
+              />
+              <label htmlFor="addAllowLooseSale" className="text-sm text-gray-700">
+                May be sold loose
+                <span className="block text-xs text-gray-500">Untick for a sealed pack that can only leave whole.</span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rack / Location</label>
+              <input
+                type="text"
+                value={formData.rackLocation}
+                onChange={(e) => setFormData({ ...formData, rackLocation: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g. R2-S3 or Fridge"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
+              <input
+                type="text"
+                value={formData.hsnCode}
+                onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="3004 for most medicines"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate %</label>
+              <select
+                value={formData.gstRate}
+                onChange={(e) => setFormData({ ...formData, gstRate: parseFloat(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value={0}>0% (exempt)</option>
+                <option value={5}>5% (life-saving / insulin / vaccines)</option>
+                <option value={12}>12% (most medicines)</option>
+                <option value={18}>18% (consumables, supplements)</option>
+                <option value={28}>28%</option>
+              </select>
             </div>
 
             <div>

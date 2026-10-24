@@ -221,7 +221,7 @@ export const incomeService = {
         .select(`
           id, bill_date, total_amount, total_refunded_amount,
           visits ( doctor_id ),
-          bill_items ( item_type, quantity, unit_price, total_price )
+          bill_items ( item_type, quantity, billed_quantity, unit_price, total_price )
         `)
         .eq('clinic_id', clinicId)
         .gte('bill_date', fromISO)
@@ -329,7 +329,10 @@ export const incomeService = {
 
       for (const item of bill.bill_items || []) {
         const net = num(item.total_price);
-        const gross = num(item.quantity) * num(item.unit_price);
+        // unit_price is per BILLED unit on a pharmacy line (per tablet when a
+        // strip was broken), so the quantity that goes with it is the billed
+        // one. Old rows have no billed quantity and fall back unchanged.
+        const gross = num(item.billed_quantity ?? item.quantity) * num(item.unit_price);
         const discount = Math.max(0, gross - net);
         const code = OPD_TYPE_TO_HEAD[String(item.item_type || 'other')] || 'MISC';
 

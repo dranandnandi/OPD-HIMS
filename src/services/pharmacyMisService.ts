@@ -32,7 +32,8 @@ const period = (from: Date, to: Date) => ({ p_from: toDateOnly(from), p_to: toDa
 
 export interface SalesByMedicineRow {
   medicineId?: string; medicineName: string; category: string; hsnCode?: string;
-  quantity: number; invoiceCount: number;
+  /** Sold quantity in stocked units: 0.5 when half a strip went out. */
+  quantity: number; stockUnit: string; packSize: number; dispenseUnit: string; invoiceCount: number;
   taxableAmount: number; taxAmount: number; salesAmount: number; costAmount: number; marginAmount: number;
 }
 export interface DailySalesRow {
@@ -45,20 +46,24 @@ export interface PurchasesBySupplierRow {
 }
 export interface StockValuationRow {
   medicineId: string; medicineName: string; category: string; rackLocation?: string;
+  /** All three quantities are in stocked units and may be fractional. */
   batchQuantity: number; pooledQuantity: number; totalQuantity: number;
+  packSize: number; stockUnit: string; dispenseUnit: string;
   costValue: number; mrpValue: number; earliestExpiry?: Date;
 }
 export interface DeadStockRow {
   medicineId: string; medicineName: string; category: string; rackLocation?: string;
-  currentStock: number; costValue: number; lastSoldAt?: Date; daysIdle: number;
+  currentStock: number; stockUnit: string; costValue: number; lastSoldAt?: Date; daysIdle: number;
 }
 export interface ExpiredStockRow {
   batchId: string; medicineId: string; medicineName: string; rackLocation?: string;
-  batchNumber: string; expiryDate: Date; quantity: number;
+  batchNumber: string; expiryDate: Date; quantity: number; stockUnit: string;
   purchaseRate?: number; mrp?: number; costValue: number; supplierName?: string;
 }
 export interface SalesByUserRow {
-  userId?: string; userName: string; invoiceCount: number; lineCount: number; quantity: number;
+  userId?: string; userName: string; invoiceCount: number; lineCount: number;
+  /** Stocked units dispensed in the period. */
+  quantity: number;
   taxableAmount: number; taxAmount: number; salesAmount: number;
 }
 
@@ -67,7 +72,8 @@ export const pharmacyMisService = {
     const rows = await call('pharmacy_sales_by_medicine', period(from, to));
     return rows.map(r => ({
       medicineId: r.medicine_id ?? undefined, medicineName: r.medicine_name, category: r.category, hsnCode: r.hsn_code ?? undefined,
-      quantity: num(r.quantity), invoiceCount: num(r.invoice_count),
+      quantity: num(r.quantity), stockUnit: r.stock_unit || 'Pack', packSize: num(r.pack_size) || 1,
+      dispenseUnit: r.dispense_unit || 'Unit', invoiceCount: num(r.invoice_count),
       taxableAmount: num(r.taxable_amount), taxAmount: num(r.tax_amount), salesAmount: num(r.sales_amount),
       costAmount: num(r.cost_amount), marginAmount: num(r.margin_amount)
     }));
@@ -96,6 +102,7 @@ export const pharmacyMisService = {
     return rows.map(r => ({
       medicineId: r.medicine_id, medicineName: r.medicine_name, category: r.category, rackLocation: r.rack_location ?? undefined,
       batchQuantity: num(r.batch_quantity), pooledQuantity: num(r.pooled_quantity), totalQuantity: num(r.total_quantity),
+      packSize: num(r.pack_size) || 1, stockUnit: r.stock_unit || 'Pack', dispenseUnit: r.dispense_unit || 'Unit',
       costValue: num(r.cost_value), mrpValue: num(r.mrp_value),
       earliestExpiry: r.earliest_expiry ? new Date(r.earliest_expiry) : undefined
     }));
@@ -105,7 +112,7 @@ export const pharmacyMisService = {
     const rows = await call('pharmacy_dead_stock', { p_days: days });
     return rows.map(r => ({
       medicineId: r.medicine_id, medicineName: r.medicine_name, category: r.category, rackLocation: r.rack_location ?? undefined,
-      currentStock: num(r.current_stock), costValue: num(r.cost_value),
+      currentStock: num(r.current_stock), stockUnit: r.stock_unit || 'Pack', costValue: num(r.cost_value),
       lastSoldAt: r.last_sold_at ? new Date(r.last_sold_at) : undefined, daysIdle: num(r.days_idle)
     }));
   },
@@ -115,6 +122,7 @@ export const pharmacyMisService = {
     return rows.map(r => ({
       batchId: r.batch_id, medicineId: r.medicine_id, medicineName: r.medicine_name, rackLocation: r.rack_location ?? undefined,
       batchNumber: r.batch_number, expiryDate: new Date(r.expiry_date), quantity: num(r.quantity),
+      stockUnit: r.stock_unit || 'Pack',
       purchaseRate: r.purchase_rate != null ? num(r.purchase_rate) : undefined, mrp: r.mrp != null ? num(r.mrp) : undefined,
       costValue: num(r.cost_value), supplierName: r.supplier_name ?? undefined
     }));

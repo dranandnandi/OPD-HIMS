@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Camera, Upload, CheckCircle, AlertTriangle, MapPin, Plus, Loader2 } from 'lucide-react';
 import { MedicineWithPrice } from '../../types';
+import { packSpec, stockBreakdown } from '../../utils/packUnits';
 import { supabase } from '../../lib/supabase';
 import { supabaseUrl } from '../../lib/supabaseClient';
 import { masterDataService } from '../../services/masterDataService';
@@ -170,7 +171,7 @@ const MedicineIdentifyModal: React.FC<MedicineIdentifyModalProps> = ({ medicines
         </div>
       </div>
       <div className={`text-sm font-semibold whitespace-nowrap ${inStock(m) ? 'text-green-700' : 'text-red-600'}`}>
-        {inStock(m) ? `${m.currentStock} in stock` : 'Out of stock'}
+        {inStock(m) ? `${stockBreakdown(m.currentStock, packSpec(m))} in stock` : 'Out of stock'}
       </div>
     </button>
   );

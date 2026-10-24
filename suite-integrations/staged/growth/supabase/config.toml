@@ -1,0 +1,42 @@
+# Supabase project configuration
+# Per-function settings for Edge Functions.
+#
+# ccavenue-callback and ccavenue-reconcile must NOT require a Supabase JWT:
+# - ccavenue-callback is POSTed to directly by CCAvenue's servers (no auth header)
+# - ccavenue-reconcile is triggered by an external cron and protected by CRON_SECRET instead
+
+project_id = "iksfxkjnslttufpdklgq"
+
+[functions.ccavenue-initiate]
+verify_jwt = true
+
+# Guest checkout is called with the public anon key (no user session yet)
+[functions.ccavenue-guest-checkout]
+verify_jwt = true
+
+[functions.ccavenue-callback]
+verify_jwt = false
+
+[functions.ccavenue-reconcile]
+verify_jwt = false
+
+# GMB Profile Manager
+# gmb-sync is also called by a scheduler with x-cron-secret (no user JWT); user calls are
+# verified inside the function via auth.getUser().
+[functions.gmb-sync]
+verify_jwt = false
+
+[functions.gmb-action]
+verify_jwt = true
+
+[functions.gmb-ai-draft]
+verify_jwt = true
+
+[edge_runtime]
+# Keep the local worker alive after the response so EdgeRuntime.waitUntil
+# background tasks (Smart Report generation) can finish during "supabase start".
+policy = "per_worker"
+
+[functions.suite-connector]
+# Server-only credential checked by the handler.
+verify_jwt = false

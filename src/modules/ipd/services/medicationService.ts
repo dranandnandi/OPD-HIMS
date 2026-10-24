@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabase';
 import { chargeService } from './chargeService';
+import { packSpec, toStockUnits, unitRate, round3, parseDoseUnits, fmtQty } from '../../../utils/packUnits';
 import type { MedicationOrder, MedicationScheduleSlot } from '../types/ipd';
 
 /** Generic pharmacy-issue service that carries drug charges into the bill
@@ -466,10 +467,27 @@ export const medicationService = {
     if (params.status === 'given' && params.order.medicine_id) {
       const { data: med, error: medErr } = await supabase
         .from('medicines_master')
-        .select('id, current_stock, clinic_medicine_prices(selling_price)')
+        .select('id, current_stock, pack_size, stock_unit, dispense_unit, allow_loose_sale, dosage_form, clinic_medicine_prices(selling_price)')
         .eq('id', params.order.medicine_id)
         .single();
       if (medErr) throw medErr;
+
+      // An administration moves dispense units, not packs: "2 tab" off a ward
+      // strip is two tablets, so stock moves by 2/pack_size and the charge is
+      // the matching fraction of the pack price. The dose text is parsed
+      // conservatively — a strength like "500 mg" or anything unreadable
+      // counts as one unit. A SKU that only leaves whole (pack_size 1, or
+      // loose sale off) keeps costing a whole stocked unit per dose.
+      const spec = packSpec({
+        packSize: (med as any).pack_size,
+        stockUnit: (med as any).stock_unit,
+        dispenseUnit: (med as any).dispense_unit,
+        allowLooseSale: (med as any).allow_loose_sale,
+        dosageForm: (med as any).dosage_form,
+      });
+      const doseUnits = spec.looseCapable ? parseDoseUnits(params.order.dose, spec) : 1;
+      const doseStockUnits = spec.looseCapable ? toStockUnits(doseUnits, spec.packSize) : 1;
+      const doseUnitLabel = spec.looseCapable ? spec.dispenseUnit : spec.stockUnit;
 
       if (params.sourceStoreId) {
         // ward store path — RPC checks store stock and records consumption
@@ -477,19 +495,20 @@ export const medicationService = {
           p_clinic_id: params.clinicId,
           p_store_id: params.sourceStoreId,
           p_medicine_id: params.order.medicine_id,
-          p_quantity: 1,
+          p_quantity: doseStockUnits,
           p_admission_id: params.admissionId,
           p_user_id: params.userId ?? null,
-          p_remarks: `eMAR: ${params.order.medicine_name}`,
+          p_remarks: `eMAR: ${params.order.medicine_name} (${fmtQty(doseUnits)} ${doseUnitLabel})`,
         });
         if (consumeErr) throw consumeErr;
       } else {
-        // main pharmacy pool path
-        const stock = (med as any).current_stock ?? 0;
-        if (stock <= 0) {
+        // main pharmacy pool path. The dispensed-item trigger skips admission
+        // rows, so this is the only deduction the dose makes.
+        const stock = Number((med as any).current_stock) || 0;
+        if (stock + 1e-9 < doseStockUnits) {
           throw new Error('No main pharmacy stock — pick a ward store or record inward first.');
         }
-        const newLevel = stock - 1;
+        const newLevel = round3(stock - doseStockUnits);
 
         const { error: updErr } = await supabase
           .from('medicines_master')
@@ -503,7 +522,7 @@ export const medicationService = {
             clinic_id: params.clinicId,
             medicine_id: params.order.medicine_id,
             movement_type: 'outward',
-            quantity_change: -1,
+            quantity_change: -doseStockUnits,
             new_stock_level: newLevel,
             reference_type: 'ipd_medication_administration',
             reference_id: params.scheduleId,
@@ -517,26 +536,32 @@ export const medicationService = {
         stockMovementId = movement.id;
       }
 
-      const sellingPrice = (med as any).clinic_medicine_prices?.[0]?.selling_price ?? null;
+      // Selling price in the price list is per stocked unit (the pack), so a
+      // loose dose is billed at the per-dispense-unit fraction of it.
+      const packPrice = (med as any).clinic_medicine_prices?.[0]?.selling_price ?? null;
+      const doseRate = packPrice != null ? unitRate(Number(packPrice), spec.packSize, spec.looseCapable) : null;
       await supabase.from('pharmacy_dispensed_items').insert({
         clinic_id: params.clinicId,
         medicine_id: params.order.medicine_id,
         admission_id: params.admissionId,
-        quantity: 1,
-        selling_price_at_dispense: sellingPrice,
+        quantity: doseStockUnits,
+        pack_size: spec.packSize,
+        billed_quantity: doseUnits,
+        billed_unit: doseUnitLabel,
+        selling_price_at_dispense: doseRate,
         dispensed_by: params.userId ?? null,
       });
 
       // Post the drug charge so it lands in the bill (PHARM group; package
       // rules decide coverage). Skipped when no selling price is configured.
-      if (sellingPrice != null && Number(sellingPrice) > 0) {
+      if (doseRate != null && doseRate > 0) {
         const pharmServiceId = await getOrCreatePharmIssueService(params.clinicId);
         await chargeService.postCharge({
           clinicId: params.clinicId,
           admissionId: params.admissionId,
           serviceId: pharmServiceId,
-          quantity: 1,
-          unitRate: Number(sellingPrice),
+          quantity: doseUnits,
+          unitRate: doseRate,
           source: 'emar',
           sourceRef: params.scheduleId,
           description: `${params.order.medicine_name}${params.order.dose ? ` ${params.order.dose}` : ''}`,

@@ -6,6 +6,8 @@ import { patientService } from '../../services/patientService';
 import { useAuth } from '../Auth/useAuth';
 import { format } from 'date-fns';
 import BillModal from './BillModal';
+import PaymentForm from './PaymentForm';
+import { canReceiveBillPayment } from '../../utils/billingPayments';
 import { toTitleCase } from '../../utils/stringUtils';
 import RefundRequestModal from './RefundRequestModal';
 import { useWhatsApp } from '../../hooks/useWhatsApp';
@@ -18,7 +20,7 @@ const BillingDashboard: React.FC = () => {
   
   // Temporary filter states (for input fields)
   const [tempSearchTerm, setTempSearchTerm] = useState('');
-  const [tempStatusFilter, setTempStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
+  const [tempStatusFilter, setTempStatusFilter] = useState<'all' | Bill['paymentStatus']>('all');
   const [tempPaymentMethodFilter, setTempPaymentMethodFilter] = useState('');
   const [tempDoctorFilter, setTempDoctorFilter] = useState('');
   const [tempDateFromFilter, setTempDateFromFilter] = useState('');
@@ -26,7 +28,7 @@ const BillingDashboard: React.FC = () => {
   
   // Applied filter states (actually used for filtering)
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
-  const [appliedStatusFilter, setAppliedStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<'all' | Bill['paymentStatus']>('all');
   const [appliedPaymentMethodFilter, setAppliedPaymentMethodFilter] = useState('');
   const [appliedDoctorFilter, setAppliedDoctorFilter] = useState('');
   const [appliedDateFromFilter, setAppliedDateFromFilter] = useState('');
@@ -36,6 +38,7 @@ const BillingDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showBillModal, setShowBillModal] = useState(false);
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
+  const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundBill, setRefundBill] = useState<Bill | null>(null);
@@ -491,6 +494,7 @@ Reason:`
           >
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
+            <option value="partial">Partial</option>
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
             <option value="cancelled">Cancelled</option>
@@ -655,6 +659,16 @@ Reason:`
                       >
                         <RefreshCw className={`w-4 h-4 ${regeneratingBillId === bill.id ? 'animate-spin' : ''}`} />
                       </button>
+                      {canReceiveBillPayment(user, bill) && (
+                        <button
+                          onClick={() => setPaymentBill(bill)}
+                          className="inline-flex items-center gap-1 text-green-700 hover:text-green-900"
+                          title="Receive Payment"
+                        >
+                          <IndianRupee className="w-4 h-4" />
+                          <span>Receive Payment</span>
+                        </button>
+                      )}
                       {canEditBill(bill) ? (
                         <button 
                           onClick={() => handleEditBill(bill)}
@@ -718,6 +732,22 @@ Reason:`
           </div>
         )}
       </div>
+
+      {paymentBill && canReceiveBillPayment(user, paymentBill) && (
+        <PaymentForm
+          key={paymentBill.id}
+          billId={paymentBill.id}
+          billNumber={paymentBill.billNumber}
+          patientName={paymentBill.patient?.name}
+          billAmount={paymentBill.totalAmount}
+          paidAmount={paymentBill.paidAmount}
+          onPaymentRecorded={() => {
+            setPaymentBill(null);
+            void loadData();
+          }}
+          onCancel={() => setPaymentBill(null)}
+        />
+      )}
 
       {/* Bill Modal */}
       {showBillModal && (

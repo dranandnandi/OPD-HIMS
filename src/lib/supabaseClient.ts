@@ -507,6 +507,12 @@ export interface DatabaseBillItem {
   hsn_code?: string | null;
   gst_rate?: number;
   mrp?: number | null;
+  /** Pack size at the time of billing. */
+  pack_size?: number;
+  /** Quantity as printed on the invoice, in billed_unit. */
+  billed_quantity?: number | null;
+  /** Unit that billed_quantity and unit_price are both in. */
+  billed_unit?: string | null;
   taxable_amount?: number;
   cgst_amount?: number;
   sgst_amount?: number;
@@ -694,6 +700,14 @@ export interface DatabaseMedicineMaster {
   is_chronic?: boolean;
   hsn_code?: string | null;
   gst_rate?: number;
+  /** Dispense units in one stocked unit: 10 for a strip of 10 tablets. */
+  pack_size?: number;
+  /** Label of the stocked, priced unit: Strip, Bottle, Vial. */
+  stock_unit?: string | null;
+  /** Label of the unit handed over the counter: Tablet, ml. */
+  dispense_unit?: string | null;
+  /** False when the pack may only leave whole. */
+  allow_loose_sale?: boolean;
   clinic_id: string;
   is_active: boolean;
   created_at: string;
@@ -764,6 +778,8 @@ export interface DatabasePharmacyInwardItem {
   batch_number?: string;
   expiry_date?: string;
   batch_id?: string | null;
+  /** Dispense units in one purchased pack, from the distributor invoice. */
+  pack_size?: number | null;
   hsn_code?: string | null;
   gst_rate?: number;
   mrp?: number | null;
@@ -802,6 +818,12 @@ export interface DatabasePharmacyDispensedItem {
   igst_amount?: number;
   refunded_quantity?: number;
   refund_request_id?: string | null;
+  /** Pack size at the time of the sale, so an old row still reads correctly. */
+  pack_size?: number;
+  /** Quantity as charged, in billed_unit (5 tablets, or 2 strips). */
+  billed_quantity?: number | null;
+  /** Unit that billed_quantity and selling_price_at_dispense are both in. */
+  billed_unit?: string | null;
   clinic_id?: string;
   created_at: string;
 }

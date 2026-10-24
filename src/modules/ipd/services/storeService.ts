@@ -1,6 +1,7 @@
 import { supabase } from '../utils/supabase';
 import { chargeService } from './chargeService';
 import { medicationService } from './medicationService';
+import { packSpec } from '../../../utils/packUnits';
 
 export interface Store {
   id: string;
@@ -62,7 +63,7 @@ export const storeService = {
   async listStock(storeId: string): Promise<StoreStockRow[]> {
     const { data, error } = await supabase
       .from('store_stock')
-      .select('*, medicine:medicines_master(name, strength, current_stock)')
+      .select('*, medicine:medicines_master(name, strength, current_stock, pack_size, stock_unit, dispense_unit, allow_loose_sale, dosage_form)')
       .eq('store_id', storeId)
       .gt('quantity', 0)
       .order('quantity', { ascending: false });
@@ -192,6 +193,22 @@ export const storeService = {
     }
   },
 
+  /** Pack rules of a medicine, for labelling what a store issue was. */
+  async packSpecFor(medicineId: string) {
+    const { data } = await supabase
+      .from('medicines_master')
+      .select('pack_size, stock_unit, dispense_unit, allow_loose_sale, dosage_form')
+      .eq('id', medicineId)
+      .maybeSingle();
+    return packSpec({
+      packSize: (data as any)?.pack_size,
+      stockUnit: (data as any)?.stock_unit,
+      dispenseUnit: (data as any)?.dispense_unit,
+      allowLooseSale: (data as any)?.allow_loose_sale,
+      dosageForm: (data as any)?.dosage_form,
+    });
+  },
+
   /**
    * Consume from a store. When an admission is given, also:
    * writes pharmacy_dispensed_items (admission-linked) and posts the
@@ -228,11 +245,17 @@ export const storeService = {
         .maybeSingle();
       const sellingPrice = priceRow?.selling_price as number | undefined;
 
+      // Store issues are whole stocked units and are charged per stocked
+      // unit, so the billed pair is the quantity itself with the pack label.
+      const spec = await storeService.packSpecFor(params.medicineId);
       await supabase.from('pharmacy_dispensed_items').insert({
         clinic_id: params.clinicId,
         medicine_id: params.medicineId,
         admission_id: params.admissionId,
         quantity: params.quantity,
+        pack_size: spec.packSize,
+        billed_quantity: params.quantity,
+        billed_unit: spec.stockUnit,
         selling_price_at_dispense: sellingPrice ?? null,
         dispensed_by: params.userId ?? null,
       });

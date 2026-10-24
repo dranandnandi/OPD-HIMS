@@ -137,6 +137,7 @@
         "npm:@capacitor/local-notifications@^7.0.3",
         "npm:@capacitor/push-notifications@^7.0.3",
         "npm:@ckeditor/ckeditor5-react@^11.2.0",
+        "npm:@electric-sql/pglite@~0.5.10",
         "npm:@eslint/js@^9.9.1",
         "npm:@google-cloud/vision@^5.3.0",
         "npm:@google/generative-ai@~0.24.1",

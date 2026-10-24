@@ -4,6 +4,15 @@
   "version": "2.0.1",
   "type": "module",
   "scripts": {
+    "dev:suite-admin": "npm --prefix suite-admin run dev",
+    "build:suite-admin": "npm --prefix suite-admin run build",
+    "test:suite": "node --test tests/suite-platform.test.mjs tests/suite-operations.test.mjs tests/suite-invitations.test.mjs",
+    "test:pharmacy": "node --test tests/pharmacy-pack-units.test.mjs tests/pharmacy-dispense-price.test.mjs tests/pharmacy-loose-stock-precision.test.mjs tests/pharmacy-purchase-corrections.test.mjs tests/pharmacy-ipd-stock.test.mjs tests/pharmacy-invoice-import.test.mjs tests/pharmacy-store-migration-repair.test.mjs tests/pharmacy-invoice-pdf.test.mjs tests/pharmacy-invoice-service.test.mjs tests/pharmacy-register.test.mjs tests/billing-payments.test.mjs",
+    "test:suite:contracts": "deno test --allow-env --no-lock supabase/functions/_shared/suite-contract.test.ts supabase/functions/_shared/suite-http.test.ts supabase/functions/_shared/suite-connector.test.ts supabase/functions/_shared/suite-operations.test.ts supabase/functions/_shared/suite-invitations.test.ts",
+    "test:suite:runtime": "deno test --no-lock suite-integrations/tests/access-core.test.ts suite-integrations/tests/tenant-access.test.ts",
+    "test:suite:workforce": "deno test --allow-env --no-lock suite-integrations/tests/workforce-edge.test.ts",
+    "test:suite:runtime-node": "node --test suite-integrations/tests/runtime-node.test.mjs",
+    "test:suite:bridge": "node --test suite-integrations/tests/workforce-bridge.test.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -39,6 +48,7 @@
     "jsbarcode": "^3.11.6",
     "jspdf": "^3.0.1",
     "lucide-react": "^0.344.0",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.0.189",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
@@ -49,6 +59,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@eslint/js": "^9.9.1",
     "@types/jsbarcode": "^3.11.4",
     "@types/react": "^18.3.5",

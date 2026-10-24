@@ -417,7 +417,7 @@ const PatientListWithTimeline: React.FC = () => {
       ];
 
       const billItemRows: ExcelCellValue[][] = [
-        ['Patient Name', 'Patient Number', 'Bill Number', 'Bill ID', 'Item Type', 'Item Name', 'Quantity', 'Unit Price', 'Total Price', 'Discount', 'Tax', 'Refunded Quantity', 'Refunded Amount', 'Last Refund Reason'],
+        ['Patient Name', 'Patient Number', 'Bill Number', 'Bill ID', 'Item Type', 'Item Name', 'Quantity', 'Billed Quantity', 'Unit', 'Pack Size', 'Unit Price', 'Total Price', 'Discount', 'Tax', 'Refunded Quantity', 'Refunded Amount', 'Last Refund Reason'],
         ...bills.flatMap((bill: Bill) =>
           bill.billItems.map((item) => [
             toTitleCase(bill.patient?.name || selectedFilteredPatients.find((patient) => patient.id === bill.patientId)?.name || ''),
@@ -427,6 +427,9 @@ const PatientListWithTimeline: React.FC = () => {
             item.itemType,
             item.itemName,
             item.quantity,
+            item.billedQuantity ?? item.quantity,
+            item.billedUnit || '',
+            item.packSize ?? 1,
             item.unitPrice,
             item.totalPrice,
             item.discount || '',

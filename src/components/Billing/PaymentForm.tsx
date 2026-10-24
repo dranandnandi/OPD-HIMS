@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CreditCard, IndianRupee, Smartphone, FileText, Building, Wallet, Save, X } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { PaymentRecord } from '../../types';
+import { billingService } from '../../services/billingService';
+import { canReceiveBillPayment, validateBillPayment } from '../../utils/billingPayments';
+import { useAuth } from '../Auth/useAuth';
+import { format } from 'date-fns';
 
 interface PaymentFormProps {
   billId: string;
+  billNumber: string;
+  patientName?: string;
   billAmount: number;
   paidAmount: number;
   onPaymentRecorded: (payment: PaymentRecord) => void;
@@ -13,11 +19,15 @@ interface PaymentFormProps {
 
 const PaymentForm: React.FC<PaymentFormProps> = ({
   billId,
+  billNumber,
+  patientName,
   billAmount,
   paidAmount,
   onPaymentRecorded,
   onCancel
 }) => {
+  const { user } = useAuth();
+  const submitting = useRef(false);
   const [formData, setFormData] = useState({
     amount: billAmount - paidAmount, // Default to remaining balance
     paymentMethod: 'cash' as 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet',
@@ -25,7 +35,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
     chequeNumber: '',
     bankName: '',
     notes: '',
-    paymentDate: new Date().toISOString().split('T')[0] // Today's date
+    paymentDate: format(new Date(), 'yyyy-MM-dd')
   });
   
   const [loading, setLoading] = useState(false);
@@ -44,8 +54,9 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current) return;
     
-    if (formData.amount <= 0) {
+    if (!Number.isFinite(formData.amount) || formData.amount <= 0) {
       setError('Payment amount must be greater than 0');
       return;
     }
@@ -55,10 +66,25 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
       return;
     }
 
+    submitting.current = true;
     setLoading(true);
     setError(null);
 
     try {
+      // The list may have been open while another cashier took a payment.
+      const currentBill = await billingService.getBillById(billId, false);
+      if (!currentBill) throw new Error('Unable to load this bill. Refresh the billing list and try again.');
+      const validationError = validateBillPayment(currentBill, formData.amount);
+      if (validationError) throw new Error(validationError);
+      if (!canReceiveBillPayment(user, currentBill)) {
+        throw new Error('You do not have permission to receive payments.');
+      }
+
+      // Preserve today's collection time; historical dates use local midnight.
+      const paymentDate = formData.paymentDate === format(new Date(), 'yyyy-MM-dd')
+        ? new Date()
+        : new Date(`${formData.paymentDate}T00:00:00`);
+      if (!Number.isFinite(paymentDate.getTime())) throw new Error('Select a valid payment date.');
       const payment = await paymentService.recordPayment({
         billId,
         amount: formData.amount,
@@ -67,13 +93,14 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         chequeNumber: formData.chequeNumber || undefined,
         bankName: formData.bankName || undefined,
         notes: formData.notes || undefined,
-        paymentDate: new Date(formData.paymentDate)
+        paymentDate
       });
 
       onPaymentRecorded(payment);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to record payment');
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -82,26 +109,29 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-labelledby="receive-payment-title" className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Record Payment</h3>
+            <h3 id="receive-payment-title" className="text-lg font-semibold text-gray-900">Receive Payment</h3>
             <button
               onClick={onCancel}
+              disabled={loading}
+              aria-label="Close payment form"
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
           <div className="mt-2 text-sm text-gray-600">
+            <p className="font-semibold">Bill {billNumber}{patientName ? ` · ${patientName}` : ''}</p>
             <p>Bill Amount: {formatCurrency(billAmount)}</p>
             <p>Paid Amount: {formatCurrency(paidAmount)}</p>
             <p className="font-semibold">Remaining: {formatCurrency(remainingBalance)}</p>
@@ -109,10 +139,11 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit}>
+          <fieldset disabled={loading} className="p-6 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-sm text-red-600">{error}</p>
+              <p role="alert" className="text-sm text-red-600">{error}</p>
             </div>
           )}
 
@@ -128,7 +159,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
               <input
                 type="number"
                 id="amount"
-                min="0"
+                min="0.01"
                 max={remainingBalance}
                 step="0.01"
                 value={formData.amount}
@@ -282,6 +313,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
               )}
             </button>
           </div>
+          </fieldset>
         </form>
       </div>
     </div>

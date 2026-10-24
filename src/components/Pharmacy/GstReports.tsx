@@ -5,6 +5,7 @@ import { gstService, GstPeriodSummary } from '../../services/gstService';
 import { GstOutwardSummaryRow, GstHsnSummaryRow, GstInwardRegisterRow, GstOutwardRegisterRow } from '../../types';
 import { useAuth } from '../Auth/useAuth';
 import { inr, toCsv, downloadCsv } from '../../utils/gst';
+import { fmtQty } from '../../utils/packUnits';
 
 type Tab = 'summary' | 'outward' | 'hsn' | 'sales' | 'purchases';
 
@@ -253,7 +254,7 @@ const GstReports: React.FC = () => {
                   {hsn.map((r, i) => (
                     <tr key={i} className={r.hsnCode === 'UNMAPPED' ? 'bg-amber-50' : ''}>
                       <td className="px-3 py-2 font-mono">{r.hsnCode}{r.hsnCode === 'UNMAPPED' && <span className="ml-2 text-xs text-amber-700">set HSN on these medicines in Master Data</span>}</td>
-                      <td className={tdR}>{r.gstRate}%</td><td className={tdR}>{r.quantity}</td>
+                      <td className={tdR}>{r.gstRate}%</td><td className={tdR}>{fmtQty(r.quantity)}</td>
                       <td className={tdR}>{n2(r.taxableAmount)}</td><td className={tdR}>{n2(r.cgstAmount)}</td><td className={tdR}>{n2(r.sgstAmount)}</td><td className={tdR}>{n2(r.igstAmount)}</td><td className={`${tdR} font-medium`}>{n2(r.totalAmount)}</td>
                     </tr>
                   ))}

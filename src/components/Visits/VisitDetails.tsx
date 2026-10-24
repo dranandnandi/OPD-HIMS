@@ -503,7 +503,9 @@ const VisitDetails: React.FC = () => {
       {/* Clinical attachments - images, videos, PDFs */}
       {visit.visitImages && visit.visitImages.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6">
-          <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments" />
+          <VisitAttachmentsGallery attachments={visit.visitImages} title="Clinical Attachments"
+            visitId={visit.id} patient={visit.patient}
+            onAttachmentsChange={visitImages => setVisit(current => current ? { ...current, visitImages } : current)} />
         </div>
       )}
 

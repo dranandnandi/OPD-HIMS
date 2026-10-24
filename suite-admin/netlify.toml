@@ -1,0 +1,7 @@
+# Separate Netlify site. If using the OPD repository, set base to suite-admin.
+# If copying this folder into its own repository, leave base empty.
+[build]
+  command = "npm run build"
+  publish = "dist"
+[build.environment]
+  NODE_VERSION = "22"

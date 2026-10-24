@@ -1,0 +1,2026 @@
+[
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/suite-runtime-core.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/suite-runtime-store.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "beforeHash": null,
+    "afterHash": "4242f9d86349be5e97de13eb43bd64def62d213377f367eb0f2c0ce2fe6e9ba0"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/suite-runtime-guard.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "beforeHash": null,
+    "afterHash": "f729bd5682f031bddb02a2d37d3d6ac7f444ea729b1493519d2ac5c6f5053e19"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/suite-runtime-entry.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "beforeHash": null,
+    "afterHash": "44294e6dd220f0dc1790602162ffdac0ab784ee6c2c0716570269432a01f0ced"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/migrations/20261020140000_suite_product_runtime.sql",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "staged": "staged\\provisioning\\opd\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "beforeHash": null,
+    "afterHash": "b918e94e10c5068f409c698aa02a0e5e759be04712d5b532cfd16a3fa453abf4"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/suite-entry/index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\suite-entry\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\suite-entry\\index.ts",
+    "beforeHash": null,
+    "afterHash": "9b03e57b76d23811d7c763c0b51b783d802148454c4ec3d975f61f8451c331f5"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/suite-adapter/index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\suite-adapter\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\suite-adapter\\index.ts",
+    "beforeHash": null,
+    "afterHash": "b46cbdd873fbd378db1b11f112f28cff1daa885b87f8be8ca5b45ed015153580"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/config.toml",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\config.toml",
+    "staged": "staged\\provisioning\\opd\\supabase\\config.toml",
+    "beforeHash": "9d340ac544ae768d430c2a05daa960b9127d80acd1bb23c145c92be9534287a5",
+    "afterHash": "f762b008bfb1aaec2b5790134a6d2b50dbe781489a152aab3157d5d0f20cf83f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-callback\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-callback\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-callback\\index.ts",
+    "beforeHash": "13f5d61fbc627740045429fd3c952676f4773667b8e378231555cac7edeef630",
+    "afterHash": "95bce10f55529f9fb5080475d03464da9dcecc79125fa6ac03a63ae5159bcadb"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-care-context-status\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-care-context-status\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-care-context-status\\index.ts",
+    "beforeHash": "1f8b48db2750a3764375b581403ab73f2a5a9de7aecd95bb1ff32b5fb1115153",
+    "afterHash": "9c804e9ba2ed1ac131e97a1c7db67f8fcce1407b7542cd3b6dbe8ac7f1119657"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-link-carecontext\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-link-carecontext\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-link-carecontext\\index.ts",
+    "beforeHash": "9e48216360f1be7a5d5d007daae3fecac854f487b7200dddcf09f149779aba67",
+    "afterHash": "7f33f5964b4e1b7fafbd596b15773bd299a6b77beb586b715794e3fd92794e8b"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-register-callback\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-register-callback\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-register-callback\\index.ts",
+    "beforeHash": "5dcbaff2f92200bf341a15d53f0928cffe6157f3835e1dc48918ebee17a630d0",
+    "afterHash": "5097dadaef0c26d142f10dade8d149128701318d5f268b0b7a4413dc71de50a2"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-request-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-request-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-request-otp\\index.ts",
+    "beforeHash": "5f105706c38f821797cf4e1a9cc59806f123f2829e742fbeeb95185051c075b1",
+    "afterHash": "529bd01f1376789936b5ce60ce1ff35261efa6393224c4caa1cf5e34a7b89e1b"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abdm-verify-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abdm-verify-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abdm-verify-otp\\index.ts",
+    "beforeHash": "5cedadd0647eac94969a8a685539513b312bdeb9a92792ed704d8a3c3dda29c2",
+    "afterHash": "c31efcedca6b641c12b383ff4526e5c11b8383012909b9cf2bb25d50f6edb28f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-address-create\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-address-create\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-address-create\\index.ts",
+    "beforeHash": "204025a9b593d057907694de8c50fdad46b56ab959598dc23f72972f5be509be",
+    "afterHash": "10b782a2ebb8890e82a8c4d41929c09f53a5e683a5004668126daf51a582bb49"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-address-request-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-address-request-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-address-request-otp\\index.ts",
+    "beforeHash": "d62dfc1c4a12bad90d7b6b903e07f4e38897d3036c34f69119cbc2e44f1718f7",
+    "afterHash": "f0248b8e1ee07449e19f72ea18558d14cf5d8a813472f169d566cc6113a9df78"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-address-search\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-address-search\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-address-search\\index.ts",
+    "beforeHash": "73b9ed82e172d5396398614c966daa9507b1840a6f872bd8ace16e2e2e8c93cb",
+    "afterHash": "7d11d6e690bc63b2172b9bbc7d73947c34c85c9ab0da89fe0a24a63a3fd70049"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-address-suggestions\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-address-suggestions\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-address-suggestions\\index.ts",
+    "beforeHash": "a20fa2fcbf3562a1796507c6ac755d60b5ff15cdb1acc26b6cbb44ae689280e3",
+    "afterHash": "5f2918acab2da1079d070549a0ca694071a673677839ea45bcc67dbd7cbca4d7"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-address-verify\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-address-verify\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-address-verify\\index.ts",
+    "beforeHash": "2957a43047ce1a4c5eedcc2ff00bdeb0908754be2fdc90304692356c5377672b",
+    "afterHash": "91f5002a96ea6782be8b448bd185fefd8e0cbecc30706aa6fed102ea687cdba8"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-enrol-mobile-request-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-enrol-mobile-request-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-enrol-mobile-request-otp\\index.ts",
+    "beforeHash": "834540188e91ccda37964bfee2549d91b820e78861022ca0952f6efa60ec2cbc",
+    "afterHash": "9fd9f87481efab195761874ec363932834f1152b9e0310073ca2e6932a4d80e9"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-enrol-mobile-verify\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-enrol-mobile-verify\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-enrol-mobile-verify\\index.ts",
+    "beforeHash": "e4426bf5377c24f6ad8b1e4ebd078182cbeff803a97fc6a3bf2a0b243f98ea66",
+    "afterHash": "b97c07b685b108bdccd4d3475f34e3e3236cf2c3ea212ae084d4e0c81430b798"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-fetch-request-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-fetch-request-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-fetch-request-otp\\index.ts",
+    "beforeHash": "f9eeaf5342ee1e0d3f408c680931aa46904cfa759ec5e395f600638a994c9f8c",
+    "afterHash": "8c39faaeaacbebbe78a77a404a6914ccb20521fc5901972f6a332f2a8acd911f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-fetch-verify\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-fetch-verify\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-fetch-verify\\index.ts",
+    "beforeHash": "284993e70cf1e40e3a137c0fa380acd13ca7358f3f1462b410ed0f5cfb52608c",
+    "afterHash": "4fab9fa295d26574b47906cb79c3bff5eea5af1dd56f6ed5ef53e48ff599b205"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-get-card\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-get-card\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-get-card\\index.ts",
+    "beforeHash": "4d395b1aec27fea0b4c766c73ac8a23939d8a974709705c01720b62982bda4ec",
+    "afterHash": "d32698bb8537102ab4738a3737b54ad684085078d43658a816f7fe19168f4b59"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-link-patient\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-link-patient\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-link-patient\\index.ts",
+    "beforeHash": "9189b9ee11083d566b018e078fad6a023a5d9f1345a3a8105c1ba8ac1a7537fa",
+    "afterHash": "00db1bc9840e2f49f29afa8013c67c9087babcc8224afaa65980ba8bd35d3fa2"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-login-request-otp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-login-request-otp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-login-request-otp\\index.ts",
+    "beforeHash": "e1cde6634687586c4f9271d222502e482a63754439485469fb4f01912e28dd94",
+    "afterHash": "3343a269ae66d1fd200a014d70af12233968eadfdd6dd42ab253e618ecc0d517"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-login-verify\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-login-verify\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-login-verify\\index.ts",
+    "beforeHash": "a9a3271eb08105e455476b2adbe6fd6e88f8fb45b3efa47ccec6cb36b97e3d23",
+    "afterHash": "f09f529ba68846c5422535f8006a593d7611a55ed08238e720f5307808e96dc2"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-login-verify-user\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-login-verify-user\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-login-verify-user\\index.ts",
+    "beforeHash": "9fcd99ed65744fcd47dece8d3712649f0ea35a68d7fe4e7a4ad1d340284416a6",
+    "afterHash": "8b41da4b1050a3cb6cb4cd5e741923255763895c1017526a29c13a05272f5149"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-search\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-search\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-search\\index.ts",
+    "beforeHash": "09e37358072b6c5f48faa5af43b948477124b71ab427bc6a6ed32a8acc6d9152",
+    "afterHash": "8eab8dbdd19500fec964a27af380d08915303a535f426eaef6dc7c0c7e78750f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\abha-unlink-patient\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\abha-unlink-patient\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\abha-unlink-patient\\index.ts",
+    "beforeHash": "7f7bd67afd9594dfb2256c76693225320a9915431d1054ccf77b3f07c46a55b5",
+    "afterHash": "c0616047e986794167d29c2eb626c1d81894bdb69a4be17ac51c9e9810be5dc6"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-billing-note-audit\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-billing-note-audit\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-billing-note-audit\\index.ts",
+    "beforeHash": "501cc3cce39c5d71b134b5d350e68ef6836c405b578a00a284c57a38071e0383",
+    "afterHash": "1c32153ced09e54ced0a9d5e3c2aab5ee3051bf5379f197e10a4fa16ea00756a"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-charge-capture\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-charge-capture\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-charge-capture\\index.ts",
+    "beforeHash": "3ae2e5136f50cc8deb7a9787097b00104809f738b30dc22280b28f9cbee47533",
+    "afterHash": "75d2b951220c78d8f61d28f2cbf8b492792e52701b4fdba491db8b54dddc88a0"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-discharge-summary\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-discharge-summary\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-discharge-summary\\index.ts",
+    "beforeHash": "53db7515532a3ef65ba2a5b7b53fc750969c420a8a3b390e416c614dc5113d64",
+    "afterHash": "d97fe338b9a8cf7131a0e8a2ee1bdf5b71f1501912a4b5eea385f7ddda91ff33"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-document-assist\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-document-assist\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-document-assist\\index.ts",
+    "beforeHash": "55af0bb67ea87807f3bc2c6949608b3a8626f3616062564817c19a65ec3524de",
+    "afterHash": "dd0756ae2741125deea0f5d10ac279d98908154fadf4cdd8f3a114d8d407c046"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-masters-assistant\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-masters-assistant\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-masters-assistant\\index.ts",
+    "beforeHash": "60973ba4e73cb0bd8495876e5870f8c4ca5f9860df4a0e28688773431f9abc1c",
+    "afterHash": "08d8c3e8c5cf0883d5e0f654589821eb8e4cfa1f766bdb13c6dd720746ba85f8"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\ai-template-assistant\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\ai-template-assistant\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\ai-template-assistant\\index.ts",
+    "beforeHash": "6d98ab84cc415761ce9eb975a4c03225763cd50f65d9a654bc7746dba01bee1b",
+    "afterHash": "ce64e68a576ddef6bef5d84b4def850c855da185f0016d61884cc1ae48c3b64f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\billing-calculator\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\billing-calculator\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\billing-calculator\\index.ts",
+    "beforeHash": "55342d841f23118bbbb402aff871676cb2e8a7feac0573c3ae1830bd9b8e0675",
+    "afterHash": "838ff3771ed2d58812eaf87e6bf4bc0dbdb2fb45b65bc57aee97a73fa3f060db"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\create-inward-receipt\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\create-inward-receipt\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\create-inward-receipt\\index.ts",
+    "beforeHash": "9c91bbfa75a5e85a5a00a3e3934135ec78eb4ccc084a52fa0c79d845fe2ee25b",
+    "afterHash": "57e7cebf70978f62e88b948b05272d0a7eee00038250be1d5ea20669aa723059"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\delete-user\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\delete-user\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\delete-user\\index.ts",
+    "beforeHash": "fc0a8b213ac087059713ed03df10f54727134482fa82c1728a22fa7fdab7b51d",
+    "afterHash": "864fa3a7067b7164934300e6cb9d97343d66d540f0dd266b17b0b85760c18f7e"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\dictate-ipd-document\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\dictate-ipd-document\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\dictate-ipd-document\\index.ts",
+    "beforeHash": "1830389f56c808b35b8595c227e6d1756ff7cb6945b2333dc7aa46f9b1f7b789",
+    "afterHash": "ca423a3292b14b3e985b90701ce2ed328271edf9b706bfcccd9293479a34bdc9"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\dispense-medicine\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\dispense-medicine\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\dispense-medicine\\index.ts",
+    "beforeHash": "4c2ee5dcbd0d6c0a71ebb73e2cd4386a1c2d3f4c7ccea0f60c080329a8dab0d4",
+    "afterHash": "651354c76ffabf4843d71c70ed3bd02bc1159de2ab50966f5c3e5ca9693e7e94"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\fetch-user-profile\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\fetch-user-profile\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\fetch-user-profile\\index.ts",
+    "beforeHash": "8e330e5e9ad1f23345ed30efccfdb0ad0e488fb92d5d5d8dc1f0bbe88b35f115",
+    "afterHash": "912248827151b0801963c2a1ab49fec6ba1703af89b060313327d2bf5ceaafcd"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\gemini-analyze-image\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\gemini-analyze-image\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\gemini-analyze-image\\index.ts",
+    "beforeHash": "a3192ff9489a67908ae85ceea59b4c60c92d51ffc5d0fa025173810c76416093",
+    "afterHash": "66f96d808c3ffb4fe13e65f4f01a6eb7dcc3fd5547e29f2cff3d4adce56d5450"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\gemini-clean-medical-text\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\gemini-clean-medical-text\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\gemini-clean-medical-text\\index.ts",
+    "beforeHash": "3a8e519262870428cf10bfff3117115cb61ff022cb7ac61e560ef64f1c77b0f3",
+    "afterHash": "d0c53e2c3b474facbb1ffc0f97a759b6adc6b2904015b8792f82becb5e5b7af6"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\gemini-master-data-parser\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\gemini-master-data-parser\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\gemini-master-data-parser\\index.ts",
+    "beforeHash": "914fe1d7e086ba779dad2113614b8b4dba3145ee1ff12029d1a4f96f0206851a",
+    "afterHash": "3d483752bdc0e68414948a022f9827457c3024d06aaaf8be68ea1257e41e010f"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\gemini-nlp\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\gemini-nlp\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\gemini-nlp\\index.ts",
+    "beforeHash": "92ac44a4c955ff31c02746210c385ef76e20f9cdaf31cde6765f7bcccdd5cc5e",
+    "afterHash": "176ed5fc72e57fdc3f974cca6bbb906120a82952b8ab7ee20fa7fef83fe2430b"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\gemini-review-generator\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\gemini-review-generator\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\gemini-review-generator\\index.ts",
+    "beforeHash": "30a0fb9ba2838cab86275e99348c1619ae280fdbcb5b6863a5f9632dab1ad61e",
+    "afterHash": "ad4ed3f66b74ddf3fb37817aaba7fe05115f5196478f0095cb4d2639bdf29d09"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\generate-examination-template\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\generate-examination-template\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\generate-examination-template\\index.ts",
+    "beforeHash": "4b4ed5ea6738057e9d648ffe79476f8d846e31be2f5cff9d70b13f06f08d4b91",
+    "afterHash": "946be416f5d8c9afc8d74467926375fa1317b6cee93242c7766e442e01a6e8a3"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\generate-ipd-pdf\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\generate-ipd-pdf\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\generate-ipd-pdf\\index.ts",
+    "beforeHash": "b3411da568d863abd3acfcf6822a67986370f22b86b45d6db4a9b25b945b83d5",
+    "afterHash": "cfafadeb9faf68f930b40b102eaa187e70aaf6b8e931fbe3b0b355de0c51a105"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "beforeHash": "0a51b220c52ae55a79cae708c6d9c040a7cb3e5e6de965edf2ca248e13736308",
+    "afterHash": "7b185bf6842b6cdb3a3b1494d88a4ae2799a4c0006c9788a9e8d187e41f32d45"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\generate-waiting-sequence-templates\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\generate-waiting-sequence-templates\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\generate-waiting-sequence-templates\\index.ts",
+    "beforeHash": "35b840a176fd5e97fb765ef3db7b0e5e4456487db820dc89875dafc2c41b7d68",
+    "afterHash": "ba5181dc3ec1d30e8b5f496705da21e74f4714679e5dc7d5139edee7848685a1"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-book-appointment\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-book-appointment\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-book-appointment\\index.ts",
+    "beforeHash": "fb194bd5719d2c3ae1ec1a859d9e50fc9dd04f8b0fe7520650af0b2ceb2bb766",
+    "afterHash": "87a78fed5c9e87529622319c9f44b7a7a66cc206eef4b6311860789fb55d7c4c"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-cancel-appointment\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-cancel-appointment\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-cancel-appointment\\index.ts",
+    "beforeHash": "8bdd209d3c6e64c23c77e89519a8eb7e14f158b27cdaa1b85f72adc2ebea03e0",
+    "afterHash": "c0b64be040a0544de24e5790bdc51c2aba6f97793be5e470ee97ed56590ac0d5"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-get-appointments\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-get-appointments\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-get-appointments\\index.ts",
+    "beforeHash": "1d062789777ddb8c423b1b3555bf95190fa067a4d850d3f732224238270618c1",
+    "afterHash": "854c335dc599c01173daffc258d7511000333528a9f7376bb43f199dfa81e1f7"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-get-doctors\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-get-doctors\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-get-doctors\\index.ts",
+    "beforeHash": "520528c89681f073167644c97fa9e38c13ed7a2d0d406f2d25eac3863cb86fb0",
+    "afterHash": "243db3c6673e259d440cc01ae6cbdfbcf4d70a5569c04b2c86c0c5d69b2b981a"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-get-slots\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-get-slots\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-get-slots\\index.ts",
+    "beforeHash": "29c10043b150f9189318500e8cf1068fa0b21be5a1ed313fbbd5b3a2a4597b10",
+    "afterHash": "a99bf4a5218b1a12e62d47b61d2aa4bb187be218bf65dfa417fb766289a3b55b"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\hims-order-create\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\hims-order-create\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\hims-order-create\\index.ts",
+    "beforeHash": "65b0631554c7f5f4af8373a41f93c482a51df8898006a9de5afe0035da7a13b9",
+    "afterHash": "187ce85e35c800e052a306a00a2b5afcaf6cbc1efc0cbf10cedce1e9bb3a21c4"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\identify-medicine\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\identify-medicine\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\identify-medicine\\index.ts",
+    "beforeHash": "3cf9be5e860c55648d861bf009697aeb95b309f7b737b3b74bac74f4c8a46b0d",
+    "afterHash": "2e0c0d372e8bd62fe16cf8f095d604e4fefd36b348dc8275fc7e767447b46274"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\imagekit-process\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\imagekit-process\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\imagekit-process\\index.ts",
+    "beforeHash": "fad403792d60dd07863bf31a7be1a193433ac13477599912fe781d21653f412d",
+    "afterHash": "a5226f010c329f176ba097b761a7eaed5c1c2a5a71a080739f3e07e7d365df72"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\lims-receive-result\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\lims-receive-result\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\lims-receive-result\\index.ts",
+    "beforeHash": "1fb38701130b5b361618bf25b83066b0bdb945d7b3b0ac9240d454355a34aa8f",
+    "afterHash": "96d5bd23761abf399f7d745fa475f3f4359afa9e27a5c9e2a6e7ea47610c44af"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\parse-pharmacy-invoice\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\parse-pharmacy-invoice\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\parse-pharmacy-invoice\\index.ts",
+    "beforeHash": "39f25c885fa11d9a6fdbd01cf893092a18e7acabdcd4d1e0752bb5fb53afa2ea",
+    "afterHash": "43d6534a6b55ce725965648fe49f83dee4e80394eaeba9a2ed996bbdaf848789"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\parse-pharmacy-pdf\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\parse-pharmacy-pdf\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\parse-pharmacy-pdf\\index.ts",
+    "beforeHash": "ef51fd9e365cbae37fe55dbc963bdb379a5ffd878b74493be5d150b0520514ba",
+    "afterHash": "9c0be76e257d1e81f215ddfc66f7150ea2f02faf8e2a16894656cc98152ae2b4"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\predict-stock-alerts\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\predict-stock-alerts\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\predict-stock-alerts\\index.ts",
+    "beforeHash": "22261a0a5b1a685ae56e40ae9d500ca81df00f6b1967b57bfa40abf7558f875d",
+    "afterHash": "1fde04411a736988b6d2efaa5f5c05b7f6f6738b6dfa775e1d7473321fe7e233"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\send-blueticks-message\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\send-blueticks-message\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\send-blueticks-message\\index.ts",
+    "beforeHash": "ee54a1d621c5632705dcb6317b4a09b45f0f719a8920361b38c8353e09936a1c",
+    "afterHash": "0267556b322e169573124f1a0a28ee685594cef825a37c4bd39f33f20679a46b"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\transcribe-ipd-audio\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\transcribe-ipd-audio\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\transcribe-ipd-audio\\index.ts",
+    "beforeHash": "157dbc211970203eeb9932a046fb52656c12a4de64c4ca85515670645d20172e",
+    "afterHash": "d7adecb2e7339981d29914611850a3e968f87b41e5cb0e4ce43efc99f917ddca"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\transcribe-medical-audio\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\transcribe-medical-audio\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\transcribe-medical-audio\\index.ts",
+    "beforeHash": "2d14aaf2427a9c69341bfffee5aad479f0b9b1785277d5bc378a47eee252905c",
+    "afterHash": "0d8f6fc3a2e8e098f14e3da73a29fc8406302ebe9a390e89666eccb7468825a4"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\validate-extracted-data\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\validate-extracted-data\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\validate-extracted-data\\index.ts",
+    "beforeHash": "742af11d077325d28add258d26c901b8ee61e0f992a38342c88c6a47b1ed570f",
+    "afterHash": "890c336583817a79aad0c756476f11c60e73507d912fe0b9f8b7a280cce0d5e6"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\vision-ocr\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\vision-ocr\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\vision-ocr\\index.ts",
+    "beforeHash": "0209a74473b3ccba84d974f8c2c5725f885742d9836bc68e22720884259ff71a",
+    "afterHash": "8a0ec097c520eb1918cb55bc1a203f1b74c8fbb366463ebd539c6350716474e7"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\waiting-sequence-upload\\index.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\waiting-sequence-upload\\index.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\waiting-sequence-upload\\index.ts",
+    "beforeHash": "505bfe028f3f1102dc7498b4d020c54b792ca8bb6f63408aefb7eea38fcbf24b",
+    "afterHash": "7784d1377e55e3ea92ebd8103afce0f2dac262466c0276e77b515eb331bc57d9"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\abdmAuthz.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\abdmAuthz.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\abdmAuthz.ts",
+    "beforeHash": "c3daccce17723af2d56820f298ace05bb1ff75f5b9920563111e78d5a9a805d9",
+    "afterHash": "cb0ffe5ade852482aaca131b600e713044fe95b331a667e7e1d6ab9d78fad9cd"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\abdmCallbackAuth.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\abdmCallbackAuth.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\abdmCallbackAuth.ts",
+    "beforeHash": "48f4d6f1bb63a9e80d2324489aa2eafce345c14f9577f82d9678e11447226272",
+    "afterHash": "b33e74186a0514a649efd2847e1cb23c3993a043aedc27f47aa3df1bf8c32f85"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\abdmLinkToken.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\abdmLinkToken.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\abdmLinkToken.ts",
+    "beforeHash": "a2fc7843d1d463a1f5c9c12e48f2cfa06790c5619bdf8ae7bf9e2fe140e0d3cf",
+    "afterHash": "29c971f416b92428045e0a2b00806afcab228d94cb23ca985766b09e09a23662"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\abdmSession.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\abdmSession.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\abdmSession.ts",
+    "beforeHash": "7b5fc25e9192c1ea77276ac3d350a7a8f3601ed1c5668887a05e712d02f00e44",
+    "afterHash": "32e5288e4b54c430c77034fbac496120b805961970719271a3613a7171c150b3"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\abhaProfile.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\abhaProfile.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\abhaProfile.ts",
+    "beforeHash": "f8a0f1f0de1310bbc1448d74f9404a639492d91af7002c326389bcb4f85301fb",
+    "afterHash": "ee2996189dc9e49b935e9199697fd8b3a4944885afd411ea77b0c67cbc13f6a9"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\callbacks\\discover.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\callbacks\\discover.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\callbacks\\discover.ts",
+    "beforeHash": "e0a33edbb30fa512769cbf2fa30c1ab2c5a53133d0dcc946d023d55535fdecf7",
+    "afterHash": "2c0a4a1ddd742bd757eb0182d2d7bac61447ed61e533dd5dec191e9c33b00bb5"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase\\functions\\_shared\\callbacks\\patientShare.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\callbacks\\patientShare.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\callbacks\\patientShare.ts",
+    "beforeHash": "31772788efbee90b1631a9113ecba05b3c64d7194f55b381529b2e3b952f603e",
+    "afterHash": "1c8c7505ab135c2fa6f64439b06749c23f95a440229eccf3c181b6ea82d4a6f8"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify/functions/_shared/suite-runtime-core.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\suite-runtime-core.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\suite-runtime-core.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify/functions/_shared/suite-runtime-guard.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\suite-runtime-guard.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\suite-runtime-guard.ts",
+    "beforeHash": null,
+    "afterHash": "6211545b94c64a48519ef2207bc12e5359940e57be92dbaa9266a6fc12fe2f4e"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\ai-chat.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\ai-chat.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\ai-chat.ts",
+    "beforeHash": "62fd93044b9d59ae850c53c77daaba5cf57ce1e5179d27f12c23de6d9ec8faae",
+    "afterHash": "322bd60559522b237c6cc503879c46a528a2cbe3a75937fc7a1197d38cd0c5cf"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\process-whatsapp-queue.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\process-whatsapp-queue.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\process-whatsapp-queue.ts",
+    "beforeHash": "085981a4e34c79bc048fc96aa38afc72149585d820d2f3743367dee21f1e4cb9",
+    "afterHash": "187b97387da4bd758b64dd9caeb3fdd1bdbcba9cdfd0bd132d66d2c920ad3633"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\queue-auto-reminders.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\queue-auto-reminders.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\queue-auto-reminders.ts",
+    "beforeHash": "cff73ad3188ebcda4138f31ce0f3d02fe777efc4c130e9494d4d2cfe97012efc",
+    "afterHash": "946811a6c6179ecbaf9b43a03452e6f1a87d8a79103eda45b9dbeadb1e9fb7fc"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "beforeHash": "69b2283925f8a2e431de7379b063349a0cafc3444f5a07bcf076fa3af5d257d4",
+    "afterHash": "858b34171b11f7dc007593fae5614d0be8d935f3de1c3233a09709fbe9348d8d"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-connect.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-connect.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-connect.ts",
+    "beforeHash": "3e4c36afdc3cf1876a9d89d8531352b2a4bc2f3ff3e86fa418c5b555ec9dbc35",
+    "afterHash": "ff5dfe08898baaf40b6fb17ed1d2c78e8423afaa0a1cff2006a9578be1acd9a7"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-disconnect.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-disconnect.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-disconnect.ts",
+    "beforeHash": "3825e7efe61161d4277e356c5479c094e6ebfb6e46d1e6c90ee5849d093bdde3",
+    "afterHash": "d87b7b0884b2190b59be8d8b496f9e30f35d587af80dca57b426887cb92af983"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-proxy.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-proxy.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-proxy.ts",
+    "beforeHash": "c531e47813d1a4386bfdc83d5bc86ce52d920c6d0dd8c1777fc567dd3214ba5c",
+    "afterHash": "54d3faa735e04051c22e30c62ee45749ecd9de330802d2997e5090da5201d16d"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-qr.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-qr.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-qr.ts",
+    "beforeHash": "6eea834ef254b9d9ddff609e84788d4bffd21fc1b39a007018db7dbf8f72a2a0",
+    "afterHash": "695dfc60e65b358764313668f35d890e24933a6ece95e56eac80e187b09b2888"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-bill.js",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-bill.js",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-bill.js",
+    "beforeHash": "e94af246a38389fb0e542811a0c2fb0dac5c89627f37be64eed9569ef35f91dc",
+    "afterHash": "ce0486aadb59d928abf127c1d6c0ea2ed3cded17cf8debd6b16da4641df51815"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-document.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-document.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-document.ts",
+    "beforeHash": "1ce179ca9287e5ca789ab2a892e12da5d1aed586a64894b7592fe8b7723f54f8",
+    "afterHash": "c4ff18d929e44b56f2d9bd1770d69b39fda15b1ce95efd52c5d13d38aafafd15"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-file-url.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-file-url.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-file-url.ts",
+    "beforeHash": "c70519f9d98b3a755af025da9f680cbbf83ebd354aad7cd29548727b4259718a",
+    "afterHash": "d16577650a040dd081828ccc2e94d6d31997381ce7399291d412e9adc2fb91b0"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-message.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-message.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-message.ts",
+    "beforeHash": "12e4d8b365e3f4491754e3f63bafb9e20e81b01a3cd9e531b4140e9f9b1a4e86",
+    "afterHash": "ee265572ceafee6a9b64682b43f6dd606cc3509e92119e881061ead318a70bcf"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-report-url.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-report-url.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-report-url.ts",
+    "beforeHash": "2213572bd88702b7910a06a815c0f991b7ccde82dc3eb214931fdfeccd250d33",
+    "afterHash": "b861eb7ca54bd4da966c6b3fae854f696a62839ff2abeda1109ca5f272b890d7"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-send-report.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-send-report.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-send-report.ts",
+    "beforeHash": "e76dbe2e42f135ef8bd20e3449eb9b3d766d2c5a4fe8a1ceec19f38353cb1d25",
+    "afterHash": "8505a629e00465c3ec677ff54fec81e3968ef530fa5dcedb074b7a87fe7f972b"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-status.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-status.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-status.ts",
+    "beforeHash": "90d2cc77ab3e0b42019f33d56cab27dcc870c35e6d0bf06c0bb52c3ee5553d28",
+    "afterHash": "51dc91948f17e5e5b68868a7528127dc757f6b73cacbfbd23169aff7f9a2be84"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\whatsapp-sync-user.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\whatsapp-sync-user.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\whatsapp-sync-user.ts",
+    "beforeHash": "8a0a4e70c47e7b1347cb47a3a10472ee1fbd8bf54699a8e89993848cf27f74ad",
+    "afterHash": "24ed14ae29ba22fdf4a3e0f74f0775729a3e89d238817fdf42306cba29eb06f6"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\_shared\\autoSender.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\autoSender.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\autoSender.ts",
+    "beforeHash": "41316dfb8faeb5cd8f5f6457d820b750ad5a5a78f358dd77f103b4cd3e9ef97c",
+    "afterHash": "a251662c0c7c16a8224bd97e804e658a5672cfb0827d908b1488987b5c107d18"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\_shared\\userLookup.js",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\userLookup.js",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\userLookup.js",
+    "beforeHash": "cb4570ac518649c7c9addf9a32475aaeabcc5bb790a55f1e0213815c3696ceec",
+    "afterHash": "0ce95ad30f67ba04936003dd0b5cec06279e13d7ac69bfe8478ed8ca1d96d8d4"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\_shared\\userLookup.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\userLookup.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\userLookup.ts",
+    "beforeHash": "a5a4169d2cb8f7387285da312fd79880f053d470e0c22cfde9a6738bac96831d",
+    "afterHash": "74cf75f355758d7d60ac6c85614001f7fdc32417d4af84409499643d0c88a138"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify\\functions\\_shared\\whatsappClient.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\whatsappClient.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\whatsappClient.ts",
+    "beforeHash": "42bf47c1d6c8908661f37b94629ea9bd9362189819dd4fcb78986f4b43bc5e70",
+    "afterHash": "92456ff8555e55dacff399bb7b5d4d73f980530e6bc6437e0b3e82e2d6e4b8d5"
+  },
+  {
+    "component": "opd",
+    "relative": "src/suite/SuiteEntry.tsx",
+    "target": "C:\\app folders\\OPD management\\project\\src\\suite\\SuiteEntry.tsx",
+    "staged": "staged\\provisioning\\opd\\src\\suite\\SuiteEntry.tsx",
+    "beforeHash": null,
+    "afterHash": "6ffeb5759307c1513a0f80d76098fcedfbe41a45f7f20e82254a92c2f0082ee7"
+  },
+  {
+    "component": "opd",
+    "relative": "src/suite/SuiteBoundary.tsx",
+    "target": "C:\\app folders\\OPD management\\project\\src\\suite\\SuiteBoundary.tsx",
+    "staged": "staged\\provisioning\\opd\\src\\suite\\SuiteBoundary.tsx",
+    "beforeHash": null,
+    "afterHash": "cb30a85ba849117274f7ac94e581237da1e50e3191d11e8f6147184ed8e5dd59"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/suite-runtime-core.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/suite-runtime-store.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "beforeHash": null,
+    "afterHash": "4242f9d86349be5e97de13eb43bd64def62d213377f367eb0f2c0ce2fe6e9ba0"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/suite-runtime-guard.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "beforeHash": null,
+    "afterHash": "f729bd5682f031bddb02a2d37d3d6ac7f444ea729b1493519d2ac5c6f5053e19"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/suite-runtime-entry.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "beforeHash": null,
+    "afterHash": "44294e6dd220f0dc1790602162ffdac0ab784ee6c2c0716570269432a01f0ced"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/migrations/20261020140000_suite_product_runtime.sql",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "staged": "staged\\provisioning\\growth\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "beforeHash": null,
+    "afterHash": "bc7ba74573e4ae89a0f0e227411ec7def32098ea6d8c590f0afeb58c3ca6395f"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/suite-entry/index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\suite-entry\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\suite-entry\\index.ts",
+    "beforeHash": null,
+    "afterHash": "8356f6227dc49edefedb356a3fe90c38dabd0928112903bb7da99aef01f6b27d"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/suite-adapter/index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\suite-adapter\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\suite-adapter\\index.ts",
+    "beforeHash": null,
+    "afterHash": "674a149536011f70fa007c1707815ef881f4aa905300457669c5a143c05e8322"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/config.toml",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\config.toml",
+    "staged": "staged\\provisioning\\growth\\supabase\\config.toml",
+    "beforeHash": "a506a1733e32e0981e8f343c5ec0a82ca21c5ec3da8614f8a728aa720c5d22e0",
+    "afterHash": "3f7858d692177cbcf48376ae4c5ab2b9d1747370b43a1e2adb6016bd32e5370d"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\ccavenue-callback\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\ccavenue-callback\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\ccavenue-callback\\index.ts",
+    "beforeHash": "59378caed43da574decf6a8ca726bfb02604a02aea65f1601963387432a1b6e6",
+    "afterHash": "7805a3a15c08cc4d8fb0cf1a800657b763a21c544610fdea759401aa9a27e560"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\ccavenue-guest-checkout\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\ccavenue-guest-checkout\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\ccavenue-guest-checkout\\index.ts",
+    "beforeHash": "e4cc812d1c6e476bacfd4542ecdab4b189a71a15ffbc2aa86d85554c099d4cb2",
+    "afterHash": "9abc002529ad11047f3066f63237dfb095a3758987d3188cead826530438bf23"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\ccavenue-initiate\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\ccavenue-initiate\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\ccavenue-initiate\\index.ts",
+    "beforeHash": "de737ab9cf0d27d8162e33dd6f1e0328f9f3d42507dc6e4bd1ccee61a4e3f12a",
+    "afterHash": "3f4e0a8ed667321bc0c9a4aecf04e9971cbc09ca9bc32a8798d556e17ce6e0ec"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\ccavenue-reconcile\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\ccavenue-reconcile\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\ccavenue-reconcile\\index.ts",
+    "beforeHash": "7f679df0c3274b82a197b44d9e0222c0524632d787907378e0d8ab30170da040",
+    "afterHash": "cb4c8a1ca05e69ca0a86cf309007f965cf9206af07215d2120224a2969a265dd"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\create-micro-saas-account\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\create-micro-saas-account\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\create-micro-saas-account\\index.ts",
+    "beforeHash": "1ca394049f1bbbd66af514b8a23543b0b6048639221b0ad13779f0623911cbf5",
+    "afterHash": "f30712b8b78bea8d2036fd40646b53e14a5a29a1f5fc67ac2fb3873ace0fed13"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\generate-pathology-infographic\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\generate-pathology-infographic\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\generate-pathology-infographic\\index.ts",
+    "beforeHash": "f486812178ee6ed7022a759b8fc3b8bab3b507969c58ed13dd458bc6a34df9b8",
+    "afterHash": "56feee8ff1dac07a4311d3cb5917d9dedf305a99665e733ac56902f98805494f"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\generate-review\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\generate-review\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\generate-review\\index.ts",
+    "beforeHash": "80d88608c4fd61489fce38cb353d08d5a433609ee18205de8a192eddca9f9606",
+    "afterHash": "2133bd88113946700882da41223253230d6117f37d6f755647ec06b58c05cc01"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\generate-review-bundle\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\generate-review-bundle\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\generate-review-bundle\\index.ts",
+    "beforeHash": "7ff9ae0bd750bf98ce5e3a9f7faea4b8e121e8c877e4f0ae8dbcb04df79ef2fc",
+    "afterHash": "f1ec91eb7f6fd95b5089599ddacddb8c7b7a7bec624779e41784368d52ff92a1"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\generate-sequence-templates\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\generate-sequence-templates\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\generate-sequence-templates\\index.ts",
+    "beforeHash": "d545836efc53ec29ea1bffc00022e7ffac09b4a73228ac27d08d42ee9ecb6b25",
+    "afterHash": "1017bc9743b986881f9fb4b6ad4e1dfa5a229ae199cc415e2b9e009501691e76"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\generate-simple-review\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\generate-simple-review\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\generate-simple-review\\index.ts",
+    "beforeHash": "e38ae022bf56500bcb101effe63cfa55010aaa3c7f1ebf4995c3009a733b0825",
+    "afterHash": "50d6c29719593faadfe8d87a32aa749ac13094a21564e5d50f1045d4e0e88cdc"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\gmb-action\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\gmb-action\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\gmb-action\\index.ts",
+    "beforeHash": "6f79d8d9d875ee9442de3484f8422df7cc235f74dca2e9b283666745d2c198fc",
+    "afterHash": "93ffab815564665ff14d463ef1fae9d898c55f65d42520175a4be78e07bd40e2"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\gmb-ai-draft\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\gmb-ai-draft\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\gmb-ai-draft\\index.ts",
+    "beforeHash": "8d81c52194eb50c2dbea3da4c9fd1f33bc2fc9f6a374613a0e36c7aba5558a8e",
+    "afterHash": "1fde46d87a3bf541ef6e8e47a03a6927e2b70434e8b4b3615b899823d873de6f"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\gmb-sync\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\gmb-sync\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\gmb-sync\\index.ts",
+    "beforeHash": "b6a263d0177008f5a99e0d5c2a2b3eb75a89f0d09c4609a076f35e315bdc91e7",
+    "afterHash": "c01ce4e9e6a8077577fc3487e18d1bee5de4493cf942b254756792e1def8a043"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\merge-pdfs\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\merge-pdfs\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\merge-pdfs\\index.ts",
+    "beforeHash": "c78a0a3208672a0795d8d2a524f2f143d996aacf50df740d65052b5ef4be6b34",
+    "afterHash": "c7f205878f7af637dfba9f721c830b572fbc3345b370ea7c0f11f96a94df4748"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\sync-user-to-neon\\index.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\sync-user-to-neon\\index.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\sync-user-to-neon\\index.ts",
+    "beforeHash": "636728baf7dd9536b5deb5122a6f652abfd89ba2ed213f6ebee38c63bb5307ca",
+    "afterHash": "874340d06900b4719c3b6977afb1692b1b1123f670e8449213f7ae5cd946b8ea"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\_shared\\gmb-common.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\gmb-common.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\gmb-common.ts",
+    "beforeHash": "d477b70c2fb4f5ecca610167e9c4101897b748698efa4052f2570bc6087aadf9",
+    "afterHash": "65cab9bbfc28116e030b2f42490d5c97a00666a514de0ee33a18f0c8d4fa1136"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase\\functions\\_shared\\windsor.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\windsor.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\windsor.ts",
+    "beforeHash": "0597bc8c97fbc697d3291a09a698eb08fc3a1f8a55470dcfd7be752d1a89812d",
+    "afterHash": "c14b1ac81d8f252b8e5c6450f752d5556d8ce6bd1144fa39fe2c37c93d3f6f5e"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify/functions/_shared/suite-runtime-core.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\suite-runtime-core.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\suite-runtime-core.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify/functions/_shared/suite-runtime-guard.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\suite-runtime-guard.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\suite-runtime-guard.ts",
+    "beforeHash": null,
+    "afterHash": "6211545b94c64a48519ef2207bc12e5359940e57be92dbaa9266a6fc12fe2f4e"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\sync-user-to-whatsapp-db.ts",
+    "beforeHash": "15ea466ff3be952f724611c06b6f0ec6521166fb2d3559b0cfe2603845ff2563",
+    "afterHash": "65d0797e68f20b1123f3c8080b4e9918df9af624eb23e66243c3f9f4040a459d"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\webhook-sync-user.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\webhook-sync-user.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\webhook-sync-user.ts",
+    "beforeHash": "0ffa3fce9af6da71b267cb40010be7731a29d6cf6d58c019eff928272795bf43",
+    "afterHash": "15288a09aad607902008aaa3692631ad513cfa85ba6f86ec4b77dee92625a152"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-connect.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-connect.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-connect.ts",
+    "beforeHash": "daa00a0a97d1e642e2766b56c48143c965d7f5b2281eb6604a5612886bd9267a",
+    "afterHash": "722e3cee394117660d6f1cddb27c6e13f4fbb18a433f28496f37e5351c180878"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-disconnect.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-disconnect.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-disconnect.ts",
+    "beforeHash": "7b29b3cfbd97b871647e03a26b74dbeb9ad93031e229a23a086cd4f99834e9d9",
+    "afterHash": "3ebe71b669c553cdae7170e44018fefb78622b1d24d94a0c46d8e8e65b115637"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-proxy.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-proxy.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-proxy.ts",
+    "beforeHash": "8cc812a126a9840b1b77c6542a97d2685f2d5203bfebf0689554537487b2bf52",
+    "afterHash": "d0b37270bfd34ddf4640ece056dd0679cdd0cdd4a726866cf1ebe3e59773f02b"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-qr.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-qr.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-qr.ts",
+    "beforeHash": "f0de8e4e474cea970ba571025665b5ba6c499754a8dff6ad5be98223aa4b45ae",
+    "afterHash": "21b60be6994316919d45b8a9acb8860a12fe7434ec274f58d162e7c945196c79"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-reconnect.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-reconnect.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-reconnect.ts",
+    "beforeHash": "acd209722f3f6f563f7b7413a11846e8e88ebd258784404c7abf38c56e9efa6d",
+    "afterHash": "5cec4b2f4973fb040def97eb7e03a4263417f5c2a232f465ebce5e36870739fd"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-refresh-qr.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-refresh-qr.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-refresh-qr.ts",
+    "beforeHash": "12f94e1711b3f55be0c2770c49a082510724fcd273003dd3e85bda9d42d00123",
+    "afterHash": "223e86b45d0dbabc9998a3c8f5afb18d797718a1e55d579b53a5057a9c766b5e"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-send-document.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-send-document.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-send-document.ts",
+    "beforeHash": "95f78986fadcaa4bc260a7a91689a3c4fe471275116c1051ddf96c3e09d93c57",
+    "afterHash": "73a6062929ebc9c9546383c7d3ac62a07989c66bbd3300e852251f261e0e5697"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-send-file-url.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-send-file-url.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-send-file-url.ts",
+    "beforeHash": "30f8091db2f5fb6740edf3cd438fb45be73c9d1a219923abe88b8b1fce9c3560",
+    "afterHash": "d586ce44fe589a2df662c61db101b0255312dfe83ed4e326a7633890818a2a2d"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-send-message.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-send-message.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-send-message.ts",
+    "beforeHash": "bbfe07b32d23a92e7a541d6a1d2e274acf1f4612e45df505ffb4e70b13b693d0",
+    "afterHash": "d671f9f166f08581f89b18a49a2bb014adacc49bda0b285da6d7e7ff6ce68716"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-send-report-url.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-send-report-url.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-send-report-url.ts",
+    "beforeHash": "0a6ca57081ad9e8c86927568312e34614db24a13e35b476791fc0a566423851e",
+    "afterHash": "5c9c43fe00659054f90630ebd7615155b96c62d59cd1401081d1f2d8f7813f0c"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-send-report.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-send-report.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-send-report.ts",
+    "beforeHash": "90599bebe73d99510742b42f51ad89895a9ca53e99fd020a30b6d8da44004700",
+    "afterHash": "c075dea30a94d58aae792f0d4f949bdb1d34390f0666b89a80807c012c7340c2"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-status.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-status.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-status.ts",
+    "beforeHash": "ab296542c4022f0f75e843b6f320752f2d51ad22f9d88267c1d5245172d080e9",
+    "afterHash": "e4cdaed4383d8c821f16b17ce9a0545b1cc6a76c12e6a67645c30e50768498e4"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\whatsapp-sync-user.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\whatsapp-sync-user.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\whatsapp-sync-user.ts",
+    "beforeHash": "0a395cc91cbb3c57cd469df1099eda63b29f58577323c22027cdd03fefc104b1",
+    "afterHash": "b73a73d36d64098a0f69663245814c8c4b806d93559f319e48a3008a425a6170"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify\\functions\\_shared\\whatsappClient.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\whatsappClient.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\whatsappClient.ts",
+    "beforeHash": "70c064450c515da7b0163ba30a59ab5a4df54adb90b785b4de39f042535f24af",
+    "afterHash": "b218dfa949c1e057f18e443cb93279c7b30bd4103470b2f353d59ba8728016fb"
+  },
+  {
+    "component": "growth",
+    "relative": "src/suite/SuiteEntry.tsx",
+    "target": "D:\\app\\gmb review system\\project\\src\\suite\\SuiteEntry.tsx",
+    "staged": "staged\\provisioning\\growth\\src\\suite\\SuiteEntry.tsx",
+    "beforeHash": null,
+    "afterHash": "6ffeb5759307c1513a0f80d76098fcedfbe41a45f7f20e82254a92c2f0082ee7"
+  },
+  {
+    "component": "growth",
+    "relative": "src/suite/SuiteBoundary.tsx",
+    "target": "D:\\app\\gmb review system\\project\\src\\suite\\SuiteBoundary.tsx",
+    "staged": "staged\\provisioning\\growth\\src\\suite\\SuiteBoundary.tsx",
+    "beforeHash": null,
+    "afterHash": "cb30a85ba849117274f7ac94e581237da1e50e3191d11e8f6147184ed8e5dd59"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/_shared/suite-runtime-core.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\suite-runtime-core.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/_shared/suite-runtime-store.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\suite-runtime-store.ts",
+    "beforeHash": null,
+    "afterHash": "4242f9d86349be5e97de13eb43bd64def62d213377f367eb0f2c0ce2fe6e9ba0"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/_shared/suite-runtime-guard.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\suite-runtime-guard.ts",
+    "beforeHash": null,
+    "afterHash": "f729bd5682f031bddb02a2d37d3d6ac7f444ea729b1493519d2ac5c6f5053e19"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/_shared/suite-runtime-entry.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\suite-runtime-entry.ts",
+    "beforeHash": null,
+    "afterHash": "44294e6dd220f0dc1790602162ffdac0ab784ee6c2c0716570269432a01f0ced"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/migrations/20261020140000_suite_product_runtime.sql",
+    "target": "D:\\task manager android app\\project\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "staged": "staged\\provisioning\\workforce\\supabase\\migrations\\20261020140000_suite_product_runtime.sql",
+    "beforeHash": null,
+    "afterHash": "cb13963c939775c181313d88d603721848e46338fde6c8fd349c93ddc02038c0"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/suite-entry/index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\suite-entry\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\suite-entry\\index.ts",
+    "beforeHash": null,
+    "afterHash": "97e9944894407b2086bfe24041879e50d2266f35ee3dcf91df9a2da3b0ab575c"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/suite-adapter/index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\suite-adapter\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\suite-adapter\\index.ts",
+    "beforeHash": null,
+    "afterHash": "cbb1add977aca5fc441fcbfc9f4c230cbe360ec08aab9f70cbcc33253d421905"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/config.toml",
+    "target": "D:\\task manager android app\\project\\supabase\\config.toml",
+    "staged": "staged\\provisioning\\workforce\\supabase\\config.toml",
+    "beforeHash": "6cc3003f0244da4564089f4b27c4127f778c36b69d3c1e2c087fb5505983f67a",
+    "afterHash": "e87d50acf6273e866c7f63d5411ec0df13181cc12df4cb45877655548001ff32"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-attendance-basis-explain\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-attendance-basis-explain\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-attendance-basis-explain\\index.ts",
+    "beforeHash": "c10e0ebad3e2b08cf91b8288e8407a7f7de35567c721406e4efcfbc55d006205",
+    "afterHash": "d44bda0b7ce4e2eae5ead718fa6c21e2410fe92f13d255ac22d7d73a3d74207c"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-attendance-import-intake\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-attendance-import-intake\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-attendance-import-intake\\index.ts",
+    "beforeHash": "8c2b398fe4cce09d22a4fd2654171bca40151b08ba10389dee09fcabe692e201",
+    "afterHash": "89078b447a243bf54c5fb9925cac706b30ef73f94a4bbfd73744bbeeab8e6edb"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-attendance-import-validate-apply\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-attendance-import-validate-apply\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-attendance-import-validate-apply\\index.ts",
+    "beforeHash": "8914a7ef39fa9716c5d84bdb38aaedab1db513b5f72fe82c7b63deff4392c1ec",
+    "afterHash": "6bca765cf0b018bde41ef6d74e6e7e6414d6cfd1faac770391e16d9174e36861"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-challan-assist\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-challan-assist\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-challan-assist\\index.ts",
+    "beforeHash": "f580a93d1adf56d798ef1f84434a7625aa669a2c31ddb9354bc728bd2731cd77",
+    "afterHash": "821a763db16a332fb3026789dd11ed4408a669663bfa0cbd43beac42f2452434"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-compensation-assistant\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-compensation-assistant\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-compensation-assistant\\index.ts",
+    "beforeHash": "da5e95a2a2423e26ecb1b44de4c6593deedfa64c85cb1a1dfcbd0c999543419d",
+    "afterHash": "8e78ac9de8ff8081daf78ad8c5a6b7080fdac011329dc63a7c687608117801ac"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-compensation-chat\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-compensation-chat\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-compensation-chat\\index.ts",
+    "beforeHash": "c2e7cfec592c4c836426de700cd91d7c3258ea6896fbb6adedc775e164c45c40",
+    "afterHash": "e7240d80d515e0b079357a0bc1c13419621f64de5695e0761bcfdc9f2c63622d"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-compliance-explainer\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-compliance-explainer\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-compliance-explainer\\index.ts",
+    "beforeHash": "c3a6420ca8f1ef7d2b5a3982e1993ec4094ddbac8fdf2ca83c75a59433922682",
+    "afterHash": "3bd4a27d82079ffdfe2f894c6a72a69889d60de3504beefbf57e5237cae7442b"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-component-mapper\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-component-mapper\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-component-mapper\\index.ts",
+    "beforeHash": "8ddfb241f530be5495766689886f242761be5ff2f0aa2ead49906822e3b909fc",
+    "afterHash": "49186f2c18d36152b8f2db2afb7d173ca15d496691b64c55ea4cc25a30aaa7f9"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-ctc-composer\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-ctc-composer\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-ctc-composer\\index.ts",
+    "beforeHash": "069c3db7d7582045e4aab2a5be6d221d4c7cda87be8c499ad2223dad7b62b60a",
+    "afterHash": "f019daa6e071d9a4594c808bedd91da3a520313a790fa519b301469378f9cf73"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-payroll-audit\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-payroll-audit\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-payroll-audit\\index.ts",
+    "beforeHash": "b1dcbd62d304f76fcf704ebe8a51381f25d40a20f48fec400e7670ed9b6b4dea",
+    "afterHash": "3338c31c983992ff9236b3e08b334b7aef44963010a70326bc3c03d6574c91c3"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-shift-configurator-haiky35\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-shift-configurator-haiky35\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-shift-configurator-haiky35\\index.ts",
+    "beforeHash": "f3f043d57e079825d207d917894bd2b63c2433b4b4cb0fa660fbc3a499848220",
+    "afterHash": "e2f0403c875226e4695678fea7f2ecd2d259b8a008b423669709d7cb3df0c8b0"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\ai-weekly-attendance-hydrator-haiky35\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\ai-weekly-attendance-hydrator-haiky35\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\ai-weekly-attendance-hydrator-haiky35\\index.ts",
+    "beforeHash": "ab5b4b66d26cfec82abed00e1d96f3f4bc57f2bde60e46ea458701595120ad72",
+    "afterHash": "550ff3b18136d8c43771749e09c964451144c4d2971e858ecbef6f1aab7aec1a"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\analyze-conversation\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\analyze-conversation\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\analyze-conversation\\index.ts",
+    "beforeHash": "a08a1abce2368e62af51d435a213452f2c6543538fdcd4517887c642a96e1f2f",
+    "afterHash": "260230ebce6c67ef2ca4eaeb1ceb18027c1d4bf130ce4d14012d4883f03aa461"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-detect-format\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-detect-format\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-detect-format\\index.ts",
+    "beforeHash": "23a61849140b3a499e4b6ec3a1f1af7f217b51da080544d67ea80234bb23f72c",
+    "afterHash": "fc50fcdedabce783a45c86a8877251e3826fdc77e7ed4acfa841a1d4f75e70eb"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-discard-batch\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-discard-batch\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-discard-batch\\index.ts",
+    "beforeHash": "009fd059f454063392f8fdec4991d31acb1be10c973eb639be45c60684cb9b69",
+    "afterHash": "8ff143abd88b3a91ad391913a049e87739de949f1f90299b7e0aa3a0f41c0809"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-latest-batch-for-period\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-latest-batch-for-period\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-latest-batch-for-period\\index.ts",
+    "beforeHash": "7924a926dede1e7a017f43f9e87fa424a8eb92725f7dec7545a0067b1c7acfd0",
+    "afterHash": "c7f06a4558e7897d610aeae8a053149b7239391152e4b24a14604ddb476acdf5"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-parse-and-stage\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-parse-and-stage\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-parse-and-stage\\index.ts",
+    "beforeHash": "7b3346c08ce00ff03fafdff8e18ee78d5fc9589756ab1ae8bec6d065b3fb94f5",
+    "afterHash": "3b858a4fc6380a33b89cb3658a9ce4508e10489739804912d2d2a376ffd07475"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-save-mapping\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-save-mapping\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-save-mapping\\index.ts",
+    "beforeHash": "d2d9a8608f476590ad8007fe7ece0370dbf964e5b1cff2c0e9e4ceca8d7cd95d",
+    "afterHash": "20ceb8343d7a052d930fd0255cc16a7b7bf80f7c9ae529f13ab5023c7f5b2e7f"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-upload-file\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-upload-file\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-upload-file\\index.ts",
+    "beforeHash": "e7781d4201ca858815e9dd814b906cce0107437c4608122f002b4dcd85ed3f85",
+    "afterHash": "17e410f3f5dde42b7c0bb7caad6b623a82d06bd0adcec046da801fa7562f3577"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\attendance-upload-file-chunk\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\attendance-upload-file-chunk\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\attendance-upload-file-chunk\\index.ts",
+    "beforeHash": "0a48d97b0ee6187306162de86dd4a48d3d10aa897d3483f8c0ecc6ddafe7afbe",
+    "afterHash": "db6a609514182fc26ee5ca78ae512f32fd245c1867ae905107305222d01ac446"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\batch-whatsapp\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\batch-whatsapp\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\batch-whatsapp\\index.ts",
+    "beforeHash": "513294ecc999be4ec4a02097938242283d90bfbe5a85860e31a9280eea1ebeba",
+    "afterHash": "55dc7433a9250ce365540b1c4af7c59200e8ac7c56ab57e5fdfcead1aac079ad"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\create-user\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\create-user\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\create-user\\index.ts",
+    "beforeHash": "50cdb4b803e2b0df882cf7d40fde2648441998713469f68e778741d179f5e74d",
+    "afterHash": "92a6589afd31cebdcb0f8de3d58cceff06c7937d70bd0436b0dd50279de36862"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\delete-user\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\delete-user\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\delete-user\\index.ts",
+    "beforeHash": "ff057251414130db846418bac546af97a8b3ddfb5d0b45e8df11e9790eb22062",
+    "afterHash": "eb64398076fa4edc7cf69a63d8cc481e59f196e561501bc661434cf295527cb1"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\fix-whatsapp-numbers\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\fix-whatsapp-numbers\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\fix-whatsapp-numbers\\index.ts",
+    "beforeHash": "4cc0170c47578a2b8a9fe875bb9e6c496f894fe75dc57f953c290c9cb70b4b81",
+    "afterHash": "7ea557b03c9caa3bd55d7e266e7ce32a6fb114c28e4fe4b35627915f4577f330"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\generate-payslip-pdf\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\generate-payslip-pdf\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\generate-payslip-pdf\\index.ts",
+    "beforeHash": "2455a20b6dcff3c5d40287efc428e07536c736b95a51f6c52eb056d908b7f91c",
+    "afterHash": "adf65dfb44d2aee5c4464cecd4fe3a194bd2f8fdf46f8fcd0d924d6648ceb856"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\generate-pdf-from-html\\index.ts",
+    "beforeHash": "aa72cdc68fa0f7bb0a7ee262700c528d57c00ba79a6fe6fa9e1cb805715965da",
+    "afterHash": "5d5f0b33cee338dc9318b2f0666f9003f86c461616b41ba8eb5a5c7f8d688586"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\organizations-list\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\organizations-list\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\organizations-list\\index.ts",
+    "beforeHash": "e86c1f8c34f3062bb036c6e85ad1815264c34bb7aeae049a2438c86e60ead929",
+    "afterHash": "e5cf54a88ecc5a15f2de5ca7a276880a1ddea0ef2c1091dcfcc311acd2545e4e"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\payroll-effective-compensation\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\payroll-effective-compensation\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\payroll-effective-compensation\\index.ts",
+    "beforeHash": "bca5bc521f05f3c8826cc018a859cb1c870751239b88bf8b173289c1156a1454",
+    "afterHash": "f1f2474f7fee95fbe4769803aaff2385b8415b8817a7ab9ab844c6857a008619"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\payroll-finalize-run\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\payroll-finalize-run\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\payroll-finalize-run\\index.ts",
+    "beforeHash": "7e1eeb367fce38101dd73cad60c3fdbcc653c94c4910f07dcbef0b77a3268d49",
+    "afterHash": "65160f080cc917eb24a279f9148ae85c780db53f36b0799cae3b6fa04f88bde6"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\payroll-period-bootstrap\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\payroll-period-bootstrap\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\payroll-period-bootstrap\\index.ts",
+    "beforeHash": "ff84be5999cdcf3acfdeeb7627968d0e56b3efa43eb0e4222acd99ea1a504963",
+    "afterHash": "866fa8e7f678ac0fd103929081b52f1fb8e7f8bc88c2187aa49b73369150b63c"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\payroll-period-fetch\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\payroll-period-fetch\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\payroll-period-fetch\\index.ts",
+    "beforeHash": "c5f2409b246c659531e779d64a71cfd99290fef95654a8423ea00d24df6de725",
+    "afterHash": "bb32e776aa991c69b5004916ad360cd13ff109acfe82d697b311d6649d6e8682"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\payroll-preview-one\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\payroll-preview-one\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\payroll-preview-one\\index.ts",
+    "beforeHash": "b16b7d76cb68ce6dee406dc100a4b277e97bf74546e0effa623adfa273c2ff81",
+    "afterHash": "879742d4392695e8fb96603a51d9ed2fab77f47309afdd916628e30fcafe9160"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\process-conversation\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\process-conversation\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\process-conversation\\index.ts",
+    "beforeHash": "bd4bcc0e6ab2debac88eaa099f1cfc8a03ea49956fca98d92e22f4f888c13649",
+    "afterHash": "a27b44f447ac860c69ca23b3591d3926d3115104cd11a769fdaf2285ab3f3d5c"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\process-whatsapp-queue\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\process-whatsapp-queue\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\process-whatsapp-queue\\index.ts",
+    "beforeHash": "f024aa7ab97fbc55a40589d564b95f8fff53b111661b6f02583132ee4a275dbf",
+    "afterHash": "2875a71f54c72bd5784f355d7f3af5db6a770a91b02458657cfc8b2d380c5b94"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\reset-user-password\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\reset-user-password\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\reset-user-password\\index.ts",
+    "beforeHash": "c768e22e94758bb22ce502ab2f1c64e28356e189a5ffe68b88d5f920296c33df",
+    "afterHash": "7aeafd0c4fe86dd969e2d667542fc8214a00a9fdfa6df71f05a5e4d4aa4b26ad"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\restore-user\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\restore-user\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\restore-user\\index.ts",
+    "beforeHash": "2ec9a5248b25a0c741d98d332e5862a1ab91aa2256589ad36f8d788563419038",
+    "afterHash": "f810907625b3fcb8edd81686f1395c72a5b61b25b1095ddb32211b6213a45514"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\send-push-notification\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\send-push-notification\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\send-push-notification\\index.ts",
+    "beforeHash": "c67f684df18d863f4cb9081cacdca853dc576cf2f51b23674a6b6c755b25778c",
+    "afterHash": "1b24ad9641252eb118fef80b9c86499fa5baa8f2ef6691384daa66e478bd6c72"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\send-whatsapp\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\send-whatsapp\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\send-whatsapp\\index.ts",
+    "beforeHash": "3a6285d5166f6e19332c39f7de226f2c4ddd431a18456a16f04adfc368e84dcc",
+    "afterHash": "c7ab50a4beac87a95ef68520644cf107176b713e9696e376151f32a4e8190961"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\send-whatsapp-batch\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\send-whatsapp-batch\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\send-whatsapp-batch\\index.ts",
+    "beforeHash": "58d16add544b30a135837afa801b16121bf45176ebdb381a492abd6dd424cd88",
+    "afterHash": "71c82caf1e24cea5951bcc6000b9532faedf09f08a1e6af1db7cb685d040ab24"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\simple-analyze\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\simple-analyze\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\simple-analyze\\index.ts",
+    "beforeHash": "40202868123be6af8696d2619e5be6e29fe6ce3f90269259774a0a4d03237603",
+    "afterHash": "df62445ea2aac83b3601c84a56ffa71415790ebd48e75d623981ca45c8637a47"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\test-audio\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\test-audio\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\test-audio\\index.ts",
+    "beforeHash": "475947278682db482451ebf7fc75aebb0f02aa61a0d6a76e70892355e06c174b",
+    "afterHash": "b6d96b4a9b436705af33c693da85721a5311185595db21ad085e9c218338cdcb"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\test-cors\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\test-cors\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\test-cors\\index.ts",
+    "beforeHash": "46344b9cce085a1f1e100eaf8adb7d415271d115ab8e79f4a8fc54c01012d454",
+    "afterHash": "764992a39889dadd28a71a0966b211947c131205c5e7c15e26b318625e253901"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\update-user\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\update-user\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\update-user\\index.ts",
+    "beforeHash": "9690265c239e2a093f2b27efe57106136aa28b98e34ef4366b59e07ab5abda5f",
+    "afterHash": "5e4c8a3255677af02c6e50e4bafd246dde14c4599a63dbfb603885de7a88e28b"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-approve-leave\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-approve-leave\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-approve-leave\\index.ts",
+    "beforeHash": "bedd4011372a10bbe4c47bb7dc3ba074897ab58cc79b1af53ab6a1f11b9c5280",
+    "afterHash": "d4918d67f85f8f0ff5de463bb9444a2f776cbd8e1814f4cbf16c7effcfb174ee"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-complete-task\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-complete-task\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-complete-task\\index.ts",
+    "beforeHash": "82bc7138bb3e323bd9c9311f7fefcc038c24f02be190dd13f5859adb7e97824c",
+    "afterHash": "9bea7cb880a38875c5b2570240d51bb0dcfc70885461781ba5480631cf26a736"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-create-recurring-task\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-create-recurring-task\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-create-recurring-task\\index.ts",
+    "beforeHash": "ce7abe75685d54c33c1d34de6ce701afb7129c8ede1cbeffe72f6d1f74f42dfd",
+    "afterHash": "f2303165c68aabcc30dd005e0899eaa66db00807a66b74358511c71fe1a86ae0"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-create-task\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-create-task\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-create-task\\index.ts",
+    "beforeHash": "50718f3da1e0c8032fe69e2a22a6583f35e71ff9e61673e7a0b4d39337aa3c77",
+    "afterHash": "ea5bac25500e7b0a2fe51b142fa924fdd1e4ac5d471d2cf53aeb4407f65d1fcd"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-delete-task\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-delete-task\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-delete-task\\index.ts",
+    "beforeHash": "9306876b3d38c82ddc5053a8d03da8498af66ff55f6560e8822325e8ca460029",
+    "afterHash": "50eca321fd1e846b0fb8dabc72a3302bd6dcc8c2953a78de7ca698c17e9a9d04"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-get-attendance\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-get-attendance\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-get-attendance\\index.ts",
+    "beforeHash": "4c3335866b491c0f735891902096edeef964dfe2e04007543eb946628918ca80",
+    "afterHash": "0081fcb842ab25ea8f7f97dce679e4782ef7f35989509b82a2a90ad4dc7d3160"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-get-tasks\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-get-tasks\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-get-tasks\\index.ts",
+    "beforeHash": "a663e15faf2df38831f7ca0540516f74924312fe1d36445ac747a7fb5c891dac",
+    "afterHash": "04385a240b0a35e41710e18d32305a34f9ebb6d0aa8ab83af9b0e5596ef9703b"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-get-users\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-get-users\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-get-users\\index.ts",
+    "beforeHash": "eb94b09d7178ced840ca70ffff0b5c9b2229af7e479b8b9e32989f3b1d5787a7",
+    "afterHash": "eba4f8b902ac72250577c370367308ec4f573ecad0b896437ce21116ef033150"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-request-leave\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-request-leave\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-request-leave\\index.ts",
+    "beforeHash": "54ca4c3bcf48aa3e525edee576f01d066470f99f0999a5f3f34eea57ec51e1e9",
+    "afterHash": "396b7b779d14d48186903bd64157b204b4c0d586ffcd48b9644f9154a6320973"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\whatsapp-update-task\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\whatsapp-update-task\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\whatsapp-update-task\\index.ts",
+    "beforeHash": "85ee7b026432e6601fa8a1211e5a5a16e47353032726615a70792c5667fcd3c9",
+    "afterHash": "c51aa5a0c23dc7b8088529de06188f0a17bdf33bc9d07fcc38a49233eb8f10fc"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\workforce-whatsapp\\index.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\workforce-whatsapp\\index.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\workforce-whatsapp\\index.ts",
+    "beforeHash": "f1095ac9eaa6b26735c193f2cfaa267da72d55f2c895b5d614c6b748feb29d8c",
+    "afterHash": "254838368af0994cc11555f563c6c065e72b45951620bd884e07ec1877708477"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase\\functions\\_shared\\utils.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\utils.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\utils.ts",
+    "beforeHash": "79e1838e5e9c4fea3929dacdf370abb96bf9ae4b9d797f2f55693730e4f21dfd",
+    "afterHash": "2090acb5c55abded4a5b6971df1a808121c8c7f958187299c8e62b347ddf3a7f"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/suite/SuiteEntry.tsx",
+    "target": "D:\\task manager android app\\project\\src\\suite\\SuiteEntry.tsx",
+    "staged": "staged\\provisioning\\workforce\\src\\suite\\SuiteEntry.tsx",
+    "beforeHash": null,
+    "afterHash": "6ffeb5759307c1513a0f80d76098fcedfbe41a45f7f20e82254a92c2f0082ee7"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/suite/SuiteBoundary.tsx",
+    "target": "D:\\task manager android app\\project\\src\\suite\\SuiteBoundary.tsx",
+    "staged": "staged\\provisioning\\workforce\\src\\suite\\SuiteBoundary.tsx",
+    "beforeHash": null,
+    "afterHash": "cb30a85ba849117274f7ac94e581237da1e50e3191d11e8f6147184ed8e5dd59"
+  },
+  {
+    "component": "opd",
+    "relative": "src/main.tsx",
+    "target": "C:\\app folders\\OPD management\\project\\src\\main.tsx",
+    "staged": "staged\\provisioning\\opd\\src\\main.tsx",
+    "beforeHash": "519b08593599e33da228ffb23118dc8c2d61bc78fccfb6e83795cb14f3ce00f9",
+    "afterHash": "38b2f18871f79ffdaa245096c82ce7c18539c355b0ae45e0f235bb92640250f9"
+  },
+  {
+    "component": "opd",
+    "relative": "src/suite/productFetch.ts",
+    "target": "C:\\app folders\\OPD management\\project\\src\\suite\\productFetch.ts",
+    "staged": "staged\\provisioning\\opd\\src\\suite\\productFetch.ts",
+    "beforeHash": null,
+    "afterHash": "44af90baf2d713a951f224cad121747304fcec42ab61ab2d5958cb489e460988"
+  },
+  {
+    "component": "opd",
+    "relative": "src/services/whatsappApi.ts",
+    "target": "C:\\app folders\\OPD management\\project\\src\\services\\whatsappApi.ts",
+    "staged": "staged\\provisioning\\opd\\src\\services\\whatsappApi.ts",
+    "beforeHash": "7fa75e25639be03b4445e48ef4dd6fc77392c3cfaecd8617c049a14bdfd3e202",
+    "afterHash": "3f2fad6c22ccb634e3bc466c5f8d94b93dd19e6ad671aff80d62b204de2c8012"
+  },
+  {
+    "component": "growth",
+    "relative": "src/main.tsx",
+    "target": "D:\\app\\gmb review system\\project\\src\\main.tsx",
+    "staged": "staged\\provisioning\\growth\\src\\main.tsx",
+    "beforeHash": "832842269af94b055b2cd42fd27a0f212773b36d20083b631b863cbb5f0fd09e",
+    "afterHash": "5c90f9b66bd63e2bf2000c9a1e148a582d48ef9cbafae4eeb39707ca64a48803"
+  },
+  {
+    "component": "growth",
+    "relative": "src/suite/productFetch.ts",
+    "target": "D:\\app\\gmb review system\\project\\src\\suite\\productFetch.ts",
+    "staged": "staged\\provisioning\\growth\\src\\suite\\productFetch.ts",
+    "beforeHash": null,
+    "afterHash": "5c57ac8f329f60ffed55471a2954d1dff13455ee140e2ccdc06ead8a247d23fa"
+  },
+  {
+    "component": "growth",
+    "relative": "src/services/whatsappApi.ts",
+    "target": "D:\\app\\gmb review system\\project\\src\\services\\whatsappApi.ts",
+    "staged": "staged\\provisioning\\growth\\src\\services\\whatsappApi.ts",
+    "beforeHash": "6e8f67937009dd4873b02943541b32f1f0672f1e65ef5eafa459896811a203e4",
+    "afterHash": "942babef1c1cf9a921622042c290510aa2b3b8d3ca89dcc3de673615e585c2e5"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/main.tsx",
+    "target": "D:\\task manager android app\\project\\src\\main.tsx",
+    "staged": "staged\\provisioning\\workforce\\src\\main.tsx",
+    "beforeHash": "15a1c9e6f3a4654d61d73c63cf39e8de56bb1681be54255b3c8d44dc15e2348e",
+    "afterHash": "89cfde22f638b491b5b9b078d1b58d26b8c3a2b1f717098a61ae95a05cebbf45"
+  },
+  {
+    "component": "workforce",
+    "relative": "src/suite/productFetch.ts",
+    "target": "D:\\task manager android app\\project\\src\\suite\\productFetch.ts",
+    "staged": "staged\\provisioning\\workforce\\src\\suite\\productFetch.ts",
+    "beforeHash": null,
+    "afterHash": "d7fd3af29cfef4c5bfdb11eedd23083696d6c07df28ee203c01a514191374b7f"
+  },
+  {
+    "component": "growth",
+    "relative": "src/suite/profile.ts",
+    "target": "D:\\app\\gmb review system\\project\\src\\suite\\profile.ts",
+    "staged": "staged\\provisioning\\growth\\src\\suite\\profile.ts",
+    "beforeHash": null,
+    "afterHash": "bd9028dcc67be773b4bbed2eb264fc40a16b529d7a03252fc08061cc50c9e897"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/gmb-sync-core.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\gmb-sync-core.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\gmb-sync-core.ts",
+    "beforeHash": "c706b212663a0b1e5672ec5492922eb295644c74e9932f444f6a0a268f192adc",
+    "afterHash": "087bb4e5344716301da2c3fa3972c57ded181d601203c7ecdb433a8336e8309d"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify/functions/_shared/suite-legacy-identity.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\suite-legacy-identity.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\suite-legacy-identity.ts",
+    "beforeHash": null,
+    "afterHash": "e4e8fb9cb7c5d8cbd9ce8543c2a3c86383b95c5c1ca8bfc5cbbf126a8614d567"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify/functions/_shared/suite-legacy-identity.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\suite-legacy-identity.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\suite-legacy-identity.ts",
+    "beforeHash": null,
+    "afterHash": "e4e8fb9cb7c5d8cbd9ce8543c2a3c86383b95c5c1ca8bfc5cbbf126a8614d567"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify/functions/_shared/userLookup.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\userLookup.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\userLookup.ts",
+    "beforeHash": "35d4ba534e82f5cef792cc0e05c4bae97f7f7072438b60ed41cbc5666c367a0f",
+    "afterHash": "61a22bc5e74258e7ad029205a6520a86eb995a89c0977f281a76ada1477b6d79"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteAccessCore.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteAccessCore.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\suiteAccessCore.ts",
+    "beforeHash": "e53fbd6978556109a0901d10e563c5e2d41fe6bf02a90e7add2b696ba5ee557f",
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteNodeStore.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteNodeStore.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\suiteNodeStore.ts",
+    "beforeHash": null,
+    "afterHash": "3d8eb91e6c7c4d036575b8afe3df8ff5b6cbb9c4ad7aaa37287adf9e6b525ac1"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteNodeSchema.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteNodeSchema.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\suiteNodeSchema.ts",
+    "beforeHash": null,
+    "afterHash": "e29ac8e0f78d516f2fa69d7ad71722d987e8a0a2ae26c49f63af4bbf6d2e51a0"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/suiteNodeRuntime.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\suiteNodeRuntime.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\suiteNodeRuntime.ts",
+    "beforeHash": null,
+    "afterHash": "472aff4f41549b075ee5364e3c5585ac7bc8841b996c97f09b420f9f5c695d86"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/index.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\index.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\index.ts",
+    "beforeHash": "832c21d782cccd3988afecc6f7ba80119ad58946e437e26e562365c5dc2cdbad",
+    "afterHash": "b2e74b83e4dec5a7b930468c911d3128e84a52368d1b78399ffbe7d0342cc3f2"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/WhatsAppSessionManager.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\WhatsAppSessionManager.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\WhatsAppSessionManager.ts",
+    "beforeHash": "4567951b4edda5af028839f82bd1115097156a994dd84b4f04c6ba95b0159dff",
+    "afterHash": "fb0fa4fa06a9bd6c2bd07917eb6aa9b4f45757946f2d34a374c4f6d07a83a7b9"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/CloudApiSession.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\CloudApiSession.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\CloudApiSession.ts",
+    "beforeHash": "904bef7c72cc18224ac0b6bc7acdebe901232258734d0f00a2ed185f85664ee1",
+    "afterHash": "bc475f2ad0b971b0beb12374cfae528e7f7b09e2f598b979afcdf7a00ec55545"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/ExternalWhatsAppProxy.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\ExternalWhatsAppProxy.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\ExternalWhatsAppProxy.ts",
+    "beforeHash": "66bdeb3566deff3ef76563eb67b7de87afa575f791b0875862015e0a4c7e6b31",
+    "afterHash": "8d64aa86da22445f867da10827270d31cf39cc253c105652f9a62b59c2542f77"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/authMiddleware.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\authMiddleware.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\authMiddleware.ts",
+    "beforeHash": "070a3deef022d87a81d357864a5a4f02fb3297a13540d5f6d9b15a3a12fea567",
+    "afterHash": "96fa8605cf497bf25ab22a62f0f90a11fab6092ff8706052d3771e7a110cffd6"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/HRChatbotService.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\HRChatbotService.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\HRChatbotService.ts",
+    "beforeHash": "3c93008d9fa80f46231543c905b275cab7f8b3950a7ad9ab70432ba080789496",
+    "afterHash": "322aafdfadaa150a44d0f943e115e3966df2389727122828fa1779d5dff87b98"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "client/src/main.tsx",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\client\\src\\main.tsx",
+    "staged": "staged\\provisioning\\whatsapp\\client\\src\\main.tsx",
+    "beforeHash": "5df52f8fa0b617b6ff92334adc5551e01c4bf771c5a27c6abe58ad162c347b80",
+    "afterHash": "410df0ebe67447c030c1b6cee4f670ef960208fb7cab286bc305bc18156e9ec6"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "client/src/SuiteEntry.tsx",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\client\\src\\SuiteEntry.tsx",
+    "staged": "staged\\provisioning\\whatsapp\\client\\src\\SuiteEntry.tsx",
+    "beforeHash": null,
+    "afterHash": "62ea577865228ab16a298b600fa731b98e515ec738c3614e09a9823ffdac33b5"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/suiteAccessCore.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteAccessCore.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\suiteAccessCore.ts",
+    "beforeHash": null,
+    "afterHash": "8343c71f38be6505ef505377e02b12d4ec0c2f36b20a70c481fb29250458ced2"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/suiteNodeStore.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteNodeStore.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\suiteNodeStore.ts",
+    "beforeHash": null,
+    "afterHash": "3d8eb91e6c7c4d036575b8afe3df8ff5b6cbb9c4ad7aaa37287adf9e6b525ac1"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/suiteNodeSchema.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteNodeSchema.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\suiteNodeSchema.ts",
+    "beforeHash": null,
+    "afterHash": "e29ac8e0f78d516f2fa69d7ad71722d987e8a0a2ae26c49f63af4bbf6d2e51a0"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/suiteNodeRuntime.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\suiteNodeRuntime.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\suiteNodeRuntime.ts",
+    "beforeHash": null,
+    "afterHash": "af9da5197f4677036da17bc0ef96b96bf99585a2533f5d12099227ab0400fc82"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/index.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\index.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\index.ts",
+    "beforeHash": "1d4b071531768aaba52c7f08b89289e36ea2959c4e6ca575d76b916d32fdfa36",
+    "afterHash": "375c309d5486bf28cce5a5666dfbe24406a6c5042e83f383c04d1db33039cd1a"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/services/MultiUserWhatsAppService.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\services\\MultiUserWhatsAppService.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\services\\MultiUserWhatsAppService.ts",
+    "beforeHash": "dd9882d76ff86a5ae99440608c91ab55a8ba11677c838caf58350dbcb95fb081",
+    "afterHash": "630efb4e595e8d35e637bb8270d01ccef9de817dae53d36320a71495b7f286e6"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/suite-legacy-sync.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\suite-legacy-sync.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\suite-legacy-sync.ts",
+    "beforeHash": null,
+    "afterHash": "71d19da9d44da15dba5390d25efe6c97465f182360ae0639567da39bac0f5ff5"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/suite-legacy-sync.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\suite-legacy-sync.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\suite-legacy-sync.ts",
+    "beforeHash": null,
+    "afterHash": "71d19da9d44da15dba5390d25efe6c97465f182360ae0639567da39bac0f5ff5"
+  },
+  {
+    "component": "opd",
+    "relative": "supabase/functions/_shared/notification-context.ts",
+    "target": "C:\\app folders\\OPD management\\project\\supabase\\functions\\_shared\\notification-context.ts",
+    "staged": "staged\\provisioning\\opd\\supabase\\functions\\_shared\\notification-context.ts",
+    "beforeHash": null,
+    "afterHash": "7fed63b109c0b8ce30eaa6ffc620d637776a9e78e8c4f5c5aeab6c917841fbbe"
+  },
+  {
+    "component": "opd",
+    "relative": "netlify/functions/_shared/notification-context.ts",
+    "target": "C:\\app folders\\OPD management\\project\\netlify\\functions\\_shared\\notification-context.ts",
+    "staged": "staged\\provisioning\\opd\\netlify\\functions\\_shared\\notification-context.ts",
+    "beforeHash": null,
+    "afterHash": "74ab7b220ba81f94ec8c4254771f6e5061f7bb54c7d196f529f965358ddebed3"
+  },
+  {
+    "component": "growth",
+    "relative": "supabase/functions/_shared/notification-context.ts",
+    "target": "D:\\app\\gmb review system\\project\\supabase\\functions\\_shared\\notification-context.ts",
+    "staged": "staged\\provisioning\\growth\\supabase\\functions\\_shared\\notification-context.ts",
+    "beforeHash": null,
+    "afterHash": "7fed63b109c0b8ce30eaa6ffc620d637776a9e78e8c4f5c5aeab6c917841fbbe"
+  },
+  {
+    "component": "growth",
+    "relative": "netlify/functions/_shared/notification-context.ts",
+    "target": "D:\\app\\gmb review system\\project\\netlify\\functions\\_shared\\notification-context.ts",
+    "staged": "staged\\provisioning\\growth\\netlify\\functions\\_shared\\notification-context.ts",
+    "beforeHash": null,
+    "afterHash": "74ab7b220ba81f94ec8c4254771f6e5061f7bb54c7d196f529f965358ddebed3"
+  },
+  {
+    "component": "workforce",
+    "relative": "supabase/functions/_shared/notification-context.ts",
+    "target": "D:\\task manager android app\\project\\supabase\\functions\\_shared\\notification-context.ts",
+    "staged": "staged\\provisioning\\workforce\\supabase\\functions\\_shared\\notification-context.ts",
+    "beforeHash": null,
+    "afterHash": "7fed63b109c0b8ce30eaa6ffc620d637776a9e78e8c4f5c5aeab6c917841fbbe"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/routes.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\routes.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\routes.ts",
+    "beforeHash": "0145f8030c33fd51cfe98902f207f1b3c3e3a2827dec07da4fec53cbd9d57fcd",
+    "afterHash": "a0a0c6b1059a5da918ae2b4659cdf4b5bafffa23e442a8d1434b7be07c77c5da"
+  },
+  {
+    "component": "legacy_whatsapp",
+    "relative": "server/services/MultiWhatsAppService.ts",
+    "target": "D:\\app folder\\WHATSAPP-PERSISTENT-multi-users-master\\NodeBackend\\server\\services\\MultiWhatsAppService.ts",
+    "staged": "staged\\provisioning\\legacy_whatsapp\\server\\services\\MultiWhatsAppService.ts",
+    "beforeHash": "2c89bd521579a3948bd703dc0ae344929b5adb8de86e6d06bb60fa0ba2afa727",
+    "afterHash": "ef7087c26b3c079360de49375cd13565bfb990173f7a50a8a8c89f26fb1a8ef1"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/ChatbotService.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\ChatbotService.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\ChatbotService.ts",
+    "beforeHash": "59ab4929320d0f28ea317a527773f6e263ef3cb1e98389bf91d0c560f0b7063f",
+    "afterHash": "e7e45ddad6dc2d27e2705e0c730cd289cd85bdc0f7951081dc4e063074e4f3ab"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/services/HIMSChatbotService.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\services\\HIMSChatbotService.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\services\\HIMSChatbotService.ts",
+    "beforeHash": "d99966dc26407a9e30aa89c2dfc15fd1661dfa1975022f6df843224380e9fd84",
+    "afterHash": "e1d83cba64ad3a27fee786ea8a6e59b4a2d02fa9740553f1164cc6578168e1b8"
+  },
+  {
+    "component": "whatsapp",
+    "relative": "server/workforceBridge.ts",
+    "target": "D:\\app folder\\Whatsapp new app multi user\\whatsapp multi user bulk\\NodeBackend\\server\\workforceBridge.ts",
+    "staged": "staged\\provisioning\\whatsapp\\server\\workforceBridge.ts",
+    "beforeHash": "2356de5c6542dd511a23ca2bd990efdc0a3ff256c2926c1f84468df010327683",
+    "afterHash": "e874e7f085129b3ecaffb900dbdff7553f7d05e2fe1b3f3396ba2b40feee426a"
+  }
+]

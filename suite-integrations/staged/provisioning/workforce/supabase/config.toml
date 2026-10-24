@@ -1,0 +1,16 @@
+
+[functions.suite-connector]
+# Server-only credential checked by the handler.
+verify_jwt = false
+
+[functions.workforce-whatsapp]
+# Calls Auth.getUser and checks active organisation admin on each request.
+verify_jwt = false
+
+[functions.suite-adapter]
+# Scoped adapter credential / one-use customer ticket validated inside the handler.
+verify_jwt = false
+
+[functions.suite-entry]
+# Scoped adapter credential / one-use customer ticket validated inside the handler.
+verify_jwt = false

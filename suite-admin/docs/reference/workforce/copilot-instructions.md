@@ -1,0 +1,27 @@
+> Archived reference copied 18 October 2026 from `D:/task manager android app/project/.github/copilot-instructions.md`. Applies to its original product, not to Suite Admin. Historical implementation/deployment claims require verification. The current suite MEMORY and messaging plan take precedence for suite design. Credential-related lines may be omitted.
+
+# DCP Task Management Copilot Instructions
+- **Scope**: Hybrid React + Capacitor + Supabase platform for pathology lab ops (tasks, HR attendance, payroll, WhatsApp outreach, AI insights).
+- **Front Door**: `src/App.tsx` manages Supabase auth bootstrap, lazy-loaded routes, and shared refresh helpers—extend via the existing `ProtectedRoute` + modal patterns.
+- **Routing**: Web entry uses `src/main.tsx` (`BrowserRouter`); Capacitor builds rely on `src/main.web.tsx`. New major pages should be added as `lazy` imports in `App.tsx` to keep bundle size low.
+- **State & Context**: `OrganizationProvider` (`src/contexts/OrganizationContext.tsx`) supplies `organizationId` across dashboards; most services assume this context instead of prop drilling.
+- **Models**: Canonical DTOs live in `src/models/*` (`task.ts`, `attendance.ts`, payroll types). Update these before touching Supabase queries to keep client/server contracts aligned.
+- **Supabase Client**: `src/utils/supabaseClient.ts` creates the client and exposes `retryOperation` with exponential backoff—wrap network mutations in it and respect the existing auth/permission short-circuiting.
+- **Edge Calls**: `callEdge` (`src/lib/edgeClient.ts`) posts to Supabase Edge functions and injects anon auth headers. For file uploads or binary downloads pass a custom `init` (method, headers, body) instead of relying on the JSON helper defaults.
+- **Task Engine**: `App.tsx` normalizes Supabase responses for `tasks`, `personal_tasks`, and team lists (see helpers around lines 300-800). Follow the manual mapping and batch refresh approach when extending task flows.
+- **Attendance Services**: `src/services/attendanceService.ts` owns shift lifecycle, selfie uploads to the `attendance-selfies` bucket, and regularization updates—mirror its structured logging and safe defaults.
+- **Payroll Shell**: `src/payroll/PayrollShell.tsx` drives all payroll routes, deriving month/year from query params and providing them via `PayrollContext`.
+- **Import Wizard**: `src/payroll/AttendanceImportWizard/*` orchestrates batch ingestion through edge functions like `attendance-upload-file`, `attendance-detect-format`, and `attendance-parse-and-stage`; reuse `BatchSummary` / `StageSummary` types when adding steps.
+- **Payroll Data**: Screens such as `PayrollPreview.tsx` and `CompensationEditor.tsx` query `employee_compensation`, `pay_components`, etc.; use the provided `formatCurrency` + fallback component labels for consistency.
+- **Edge Functions**: Deno handlers live in `supabase/functions/*`; shared utilities (Supabase admin client, Gemini helper) are in `_shared/utils.ts`. Deploy in bulk with `./deploy-functions.ps1` or `.sh` after exporting `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`.
+- **WhatsApp Integration Edge Functions**: Functions `whatsapp-create-task`, `whatsapp-get-attendance`, `whatsapp-get-users` are called by DO Serverless Functions (from `Digital ocean function JS` repo) to enable HR chatbot features via WhatsApp; they verify service-role key, not user JWT.
+- **Attendance Pipeline**: Edge functions persist batches into `attendance_import_batches` → `attendance_import_rows`; consult `src/schema.md` when adjusting statuses or payload structure.
+- **AI Integrations**: Functions prefixed `ai-` call Google Gemini via `ALLGOOGLE_KEY`; keep prompts server-side and never expose the service-role key to the client.
+- **WhatsApp Flow**: Admin UIs under `src/components/WhatsApp*` feed `whatsapp_queue`; delivery is handled by `send-whatsapp` / `process-whatsapp-queue` functions hitting the external API.
+- **Mobile Build**: Capacitor config (`capacitor.config.ts`) and native Android project (`android/`) must be synced with `npx cap sync android` after web asset changes; release signing is documented in `android/app/build.gradle`.
+- **Styling**: Tailwind utilities dominate; `index.css` wires the Tailwind layers and `vite.config.ts` performs manual chunk splitting (`vendor`, `ui`, `supabase`).
+- **Environment**: `.env` requires `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_FUNCTIONS_URL`, `VITE_GOOGLE_AI_API_KEY`; attendance selfie uploads expect the `attendance-selfies` storage bucket.
+- **Build/Test Commands**: `npm run dev` (Vite dev server), `npm run build` (tsc + Vite), `npm run preview`; use `npx cap run android` for device testing—no automated tests exist yet.
+- **Docs & Checklists**: Operational guides sit in `to-be-read/` and `docs/`; `tablescema.md` provides current RLS-aware schema for attendance/payroll tables.
+- **Security**: RLS is enabled—use Supabase Edge functions or service-role functions for privileged operations rather than direct client mutations.
+- **Debug Tips**: `supabaseClient` attaches the client to `window.supabase`; verbose console logging is intentional—match the existing tone when instrumenting new features.

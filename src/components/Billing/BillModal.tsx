@@ -501,15 +501,21 @@ const BillModal: React.FC<BillModalProps> = ({
 
   const initializeBillItems = () => {
     if (prefillItems && prefillItems.length > 0) {
-      const newItems = prefillItems.map((item) => ({
-        itemType: 'medicine' as const,
-        itemName: item.medicine?.name || item.medicineName || 'Medicine',
-        quantity: item.quantity || 1,
-        unitPrice: item.sellingPriceAtDispense || item.unitPrice || 0,
-        totalPrice: (item.quantity || 1) * (item.sellingPriceAtDispense || item.unitPrice || 0),
-        discount: 0,
-        tax: 0
-      }));
+      const newItems = prefillItems.map((item) => {
+        // sellingPriceAtDispense is per BILLED unit, so the quantity that goes
+        // with it is the billed one (5 tablets), not the stocked one (0.5 strips).
+        const billedQty = item.billedQuantity ?? item.quantity ?? 1;
+        const rate = item.sellingPriceAtDispense || item.unitPrice || 0;
+        return {
+          itemType: 'medicine' as const,
+          itemName: item.medicine?.name || item.medicineName || 'Medicine',
+          quantity: billedQty,
+          unitPrice: rate,
+          totalPrice: billedQty * rate,
+          discount: 0,
+          tax: 0
+        };
+      });
       setBillItems(newItems);
     } else {
       // Add default consultation item

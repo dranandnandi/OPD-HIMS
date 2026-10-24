@@ -5,6 +5,7 @@ import { masterDataService } from '../../services/masterDataService';
 import { pharmacyService } from '../../services/pharmacyService';
 import { getCurrentProfile } from '../../services/profileService';
 import { useAuth } from '../Auth/useAuth';
+import { packSpec, stockBreakdown, round3, fmtQty } from '../../utils/packUnits';
 
 interface StockAdjustmentModalProps {
   onSave: () => void;
@@ -55,6 +56,9 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
     const medicine = getSelectedMedicine();
     return medicine?.currentStock || 0;
   };
+
+  /** Pack rules of the selected medicine, so the form can speak in its units. */
+  const spec = () => packSpec(getSelectedMedicine());
 
   const getNewStockLevel = () => {
     const currentStock = getCurrentStock();
@@ -173,7 +177,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
               <option value="">Select a medicine</option>
               {medicines.map(medicine => (
                 <option key={medicine.id} value={medicine.id}>
-                  {medicine.name} (Current Stock: {medicine.currentStock})
+                  {medicine.name} (Current Stock: {stockBreakdown(medicine.currentStock, packSpec(medicine))})
                 </option>
               ))}
             </select>
@@ -182,7 +186,10 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
           {formData.medicineId && (
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="text-sm text-blue-700">
-                <div><strong>Current Stock:</strong> {getCurrentStock()}</div>
+                <div><strong>Current Stock:</strong> {stockBreakdown(getCurrentStock(), spec())}</div>
+                {spec().packSize > 1 && (
+                  <div><strong>Pack:</strong> 1 {spec().stockUnit} = {fmtQty(spec().packSize)} {spec().dispenseUnit}</div>
+                )}
                 {getSelectedMedicine()?.batchNumber && (
                   <div><strong>Batch:</strong> {getSelectedMedicine()?.batchNumber}</div>
                 )}
@@ -227,17 +234,24 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Quantity *
+              Quantity * ({spec().stockUnit}s)
             </label>
             <input
               type="number"
-              min="1"
+              min="0"
+              step="0.001"
               required
               value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+              onChange={(e) => setFormData({ ...formData, quantity: round3(parseFloat(e.target.value) || 0) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter quantity"
             />
+            {spec().packSize > 1 && (
+              <p className="text-xs text-gray-500 mt-1">
+                In {spec().stockUnit.toLowerCase()}s. For loose {spec().dispenseUnit.toLowerCase()}s use a fraction —
+                5 {spec().dispenseUnit.toLowerCase()} out of {fmtQty(spec().packSize)} is {round3(5 / spec().packSize)}.
+              </p>
+            )}
           </div>
 
           {formData.medicineId && formData.quantity > 0 && (
@@ -256,7 +270,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
                     <AlertTriangle className="w-4 h-4" />
                   )}
                   <span>
-                    <strong>New Stock Level:</strong> {getNewStockLevel()}
+                    <strong>New Stock Level:</strong> {stockBreakdown(getNewStockLevel(), spec())}
                   </span>
                 </div>
                 {!isValidAdjustment() && (

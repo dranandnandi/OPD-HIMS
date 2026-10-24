@@ -40,6 +40,7 @@ const convertDatabaseBill = (
   roundOff: Number(dbBill.round_off || 0),
   createdAt: new Date(dbBill.created_at),
   updatedAt: new Date(dbBill.updated_at),
+  sourceUpdatedAt: dbBill.updated_at,
   billItems,
   paymentRecords: paymentRecords.length > 0 ? paymentRecords : undefined,
   patient,
@@ -52,7 +53,12 @@ const convertDatabaseBillItem = (dbBillItem: DatabaseBillItem): BillItem => ({
   billId: dbBillItem.bill_id,
   itemType: dbBillItem.item_type,
   itemName: dbBillItem.item_name,
-  quantity: dbBillItem.quantity,
+  quantity: Number(dbBillItem.quantity),
+  packSize: dbBillItem.pack_size != null ? Number(dbBillItem.pack_size) : 1,
+  billedQuantity: dbBillItem.billed_quantity != null
+    ? Number(dbBillItem.billed_quantity)
+    : Number(dbBillItem.quantity),
+  billedUnit: dbBillItem.billed_unit ?? undefined,
   unitPrice: dbBillItem.unit_price,
   totalPrice: dbBillItem.total_price,
   discount: dbBillItem.discount,
@@ -78,9 +84,17 @@ const convertDatabaseBillItem = (dbBillItem: DatabaseBillItem): BillItem => ({
 export interface PharmacyBillLineInput {
   medicineId: string;
   itemName: string;
+  /** Stocked units sold; 0.5 when half a strip was broken open. */
   quantity: number;
-  /** Unit price as charged (MRP) */
+  /** Quantity as charged, in billedUnit. Defaults to quantity. */
+  billedQuantity?: number;
+  /** Dispense units in one stocked unit at the time of the sale. */
+  packSize?: number;
+  /** Unit that billedQuantity and unitPrice are both in. */
+  billedUnit?: string;
+  /** Rate per billed unit: per tablet on a loose sale, per pack otherwise. */
   unitPrice: number;
+  /** MRP of the whole pack, which is what has to be printed. */
   mrp?: number;
   batchId?: string;
   batchNumber?: string;
@@ -117,6 +131,28 @@ export interface PharmacyBillInput {
 }
 
 export const billingService = {
+  /** Pharmacy-only register. The RPC keeps patient search, totals and paging on the server under RLS. */
+  async getPharmacyBills(filters: { page?: number; search?: string; status?: string; source?: string; from?: string; to?: string } = {}): Promise<{ bills: Bill[]; total: number; sales: number; outstanding: number }> {
+    if (!supabase) throw new Error('Database connection is unavailable.');
+    const profile = await getCurrentProfile();
+    if (!profile?.clinicId) throw new Error('User is not assigned to a clinic.');
+    const end = filters.to ? new Date(`${filters.to}T00:00:00`) : null;
+    if (end) end.setDate(end.getDate() + 1);
+    const { data, error } = await supabase.rpc('pharmacy_bill_register', {
+      p_clinic_id: profile.clinicId, p_search: (filters.search || '').trim(),
+      p_status: filters.status || 'all', p_source: filters.source || 'all',
+      p_from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : null,
+      p_to: end?.toISOString() || null, p_page: Math.max(0, filters.page || 0),
+    });
+    if (error) throw new Error(`Could not load pharmacy bills: ${error.message}`);
+    return { total: Number(data.total), sales: Number(data.sales), outstanding: Number(data.outstanding),
+      bills: (data.bills || []).map((row: DatabaseBill & { patients?: Patient & { patient_number?: string; created_at: string } }) =>
+        convertDatabaseBill(row, [], [], row.patients?.id ? {
+          ...row.patients, patientNumber: row.patients.patient_number, createdAt: new Date(row.patients.created_at),
+        } : undefined)),
+    };
+  },
+
   // Generate a unique bill number
   generateBillNumber(): string {
     const now = new Date();
@@ -602,6 +638,9 @@ export const billingService = {
       item_type: 'medicine',
       item_name: line.itemName,
       quantity: line.quantity,
+      pack_size: line.packSize && line.packSize > 0 ? line.packSize : 1,
+      billed_quantity: line.billedQuantity ?? line.quantity,
+      billed_unit: line.billedUnit || null,
       unit_price: line.unitPrice,
       amount: line.totalPrice,
       total_price: line.totalPrice,
