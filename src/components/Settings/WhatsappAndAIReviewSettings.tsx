@@ -4,6 +4,7 @@ import { ClinicSetting } from '../../types';
 import { clinicSettingsService } from '../../services/clinicSettingsService';
 import { useAuth } from '../Auth/useAuth';
 import WhatsAppConnectionCard from '../WhatsApp/WhatsAppConnectionCard';
+import OPDBotSettings from './OPDBotSettings';
 
 const WhatsappAndAIReviewSettings: React.FC = () => {
   const { user } = useAuth();
@@ -112,6 +113,7 @@ const WhatsappAndAIReviewSettings: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <WhatsAppConnectionCard />
+      <OPDBotSettings />
 
       <div className="flex items-center justify-between">
         <div>

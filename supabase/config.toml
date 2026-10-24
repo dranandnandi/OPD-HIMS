@@ -58,3 +58,7 @@ verify_jwt = false
 # forget it.
 [functions.abdm-callback]
 verify_jwt = false
+
+# Authenticates the HIMS bot secret or a verified clinic user inside the handler.
+[functions.hims-opd-bot]
+verify_jwt = false
