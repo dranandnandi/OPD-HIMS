@@ -1,0 +1,57 @@
+{
+  "siteId": "834b9451-04b7-4103-a60f-7372a434979e",
+  "domainAliases": [
+    "opdapp.anprohealthtech.com"
+  ],
+  "previousDeployId": "6ae42d7d719e50233e6f2ede",
+  "previousDeployUrl": "https://6ae42d7d719e50233e6f2ede--beautiful-caramel-ebc094.netlify.app",
+  "checkedAt": "2026-10-30T05:42:23.664Z",
+  "draft": {
+    "id": "6ae42f3386b8dee3c4f2b81b",
+    "url": "https://6ae42f3386b8dee3c4f2b81b--beautiful-caramel-ebc094.netlify.app",
+    "logUrl": "https://app.netlify.com/projects/beautiful-caramel-ebc094/deploys/6ae42f3386b8dee3c4f2b81b",
+    "at": "2026-10-30T05:47:10.534Z",
+    "bundle": "/assets/index-BkNVqgx3.js",
+    "checks": {
+      "route": 200,
+      "bundle": 200,
+      "customPrimaryHost": true,
+      "primaryKeyMatchesProject": true,
+      "fallbackDisabled": true,
+      "prescriptionForm": true,
+      "expiryIndicator": true,
+      "register": true,
+      "merge": true,
+      "customApiPermissionGuard": true
+    },
+    "verified": true
+  },
+  "cliResult": {
+    "site_id": "834b9451-04b7-4103-a60f-7372a434979e",
+    "site_name": "beautiful-caramel-ebc094",
+    "deploy_id": "6ae42f3386b8dee3c4f2b81b",
+    "deploy_url": "https://6ae42f3386b8dee3c4f2b81b--beautiful-caramel-ebc094.netlify.app",
+    "logs": "https://app.netlify.com/projects/beautiful-caramel-ebc094/deploys/6ae42f3386b8dee3c4f2b81b",
+    "function_logs": "https://app.netlify.com/projects/beautiful-caramel-ebc094/logs/functions?scope=deploy:6ae42f3386b8dee3c4f2b81b",
+    "edge_function_logs": "https://app.netlify.com/projects/beautiful-caramel-ebc094/logs/edge-functions?scope=deployid:6ae42f3386b8dee3c4f2b81b"
+  },
+  "production": {
+    "id": "6ae42f3386b8dee3c4f2b81b",
+    "publishedAt": "2026-10-30T05:50:30.830Z",
+    "verified": true,
+    "bundle": "/assets/index-BkNVqgx3.js",
+    "checks": {
+      "route": 200,
+      "bundle": 200,
+      "customPrimaryHost": true,
+      "primaryKeyMatchesProject": true,
+      "fallbackDisabled": true,
+      "prescriptionForm": true,
+      "expiryIndicator": true,
+      "register": true,
+      "merge": true,
+      "customApiPermissionGuard": true
+    },
+    "url": "https://opdapp.anprohealthtech.com/pharmacy"
+  }
+}

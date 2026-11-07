@@ -1,0 +1,83 @@
+{
+  "projectRef": "kiezgfhonvwryxpubfvl",
+  "migration": "20261107091500_visit_types.sql",
+  "sha256": "35aa601635b5c608e53588d959b467398cea8c97ffe5245002f52c6bdfb7b88b",
+  "applied": true,
+  "alreadyApplied": false,
+  "checkedAt": "2026-11-07T04:40:56.702Z",
+  "effects": [
+    {
+      "command": "UPDATE",
+      "rows": 85
+    }
+  ],
+  "counts": [
+    {
+      "visit_type": "follow_up",
+      "visits": 5
+    },
+    {
+      "visit_type": "new",
+      "visits": 79
+    },
+    {
+      "visit_type": "unclassified",
+      "visits": 1022
+    }
+  ],
+  "mapping": {
+    "follow_up": "follow_up",
+    "emergency": "emergency",
+    "new": "new",
+    "unknown": null
+  },
+  "schema": {
+    "history": [
+      {
+        "version": "20261107091500",
+        "name": "visit_types"
+      }
+    ],
+    "columns": [
+      {
+        "column_name": "visit_type",
+        "data_type": "text",
+        "is_nullable": "YES",
+        "column_default": null
+      }
+    ],
+    "constraints": [
+      {
+        "conname": "visits_visit_type_check",
+        "definition": "CHECK ((visit_type = ANY (ARRAY['new'::text, 'follow_up'::text, 'emergency'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "tgname": "set_updated_at",
+        "definition": "CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()"
+      },
+      {
+        "tgname": "trg_document_links_cleanup",
+        "definition": "CREATE TRIGGER trg_document_links_cleanup AFTER DELETE ON public.visits FOR EACH ROW EXECUTE FUNCTION delete_document_links_for_parent('visit')"
+      },
+      {
+        "tgname": "trigger_set_clinic_id_visits",
+        "definition": "CREATE TRIGGER trigger_set_clinic_id_visits BEFORE INSERT ON public.visits FOR EACH ROW WHEN ((new.clinic_id IS NULL)) EXECUTE FUNCTION set_clinic_id_from_user()"
+      },
+      {
+        "tgname": "trigger_update_patient_last_visit",
+        "definition": "CREATE TRIGGER trigger_update_patient_last_visit AFTER INSERT ON public.visits FOR EACH ROW EXECUTE FUNCTION update_patient_last_visit()"
+      },
+      {
+        "tgname": "visits_prefill_visit_type",
+        "definition": "CREATE TRIGGER visits_prefill_visit_type BEFORE INSERT ON public.visits FOR EACH ROW EXECUTE FUNCTION prefill_visit_type_from_appointment()"
+      }
+    ],
+    "index": [
+      {
+        "indexdef": "CREATE INDEX visits_clinic_type_date_idx ON public.visits USING btree (clinic_id, visit_type, date)"
+      }
+    ]
+  }
+}

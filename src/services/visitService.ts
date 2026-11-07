@@ -1,8 +1,30 @@
 import { supabase } from '../lib/supabase';
-import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patient, Profile, VisitImage } from '../types';
+import { Visit, Symptom, Diagnosis, Prescription, TestOrdered, TestResult, Patient, Profile } from '../types';
 import { getCurrentProfile } from './profileService';
 import { limsService } from './limsService';
+import { buildVisitSavePayload, assertVisitDetailsLoaded, type VisitSaveOptions } from '../utils/visitSave';
 import type { DatabaseVisit, DatabaseSymptom, DatabaseDiagnosis, DatabasePrescription, DatabaseTestOrdered, DatabaseTestResult } from '../lib/supabase';
+
+// PostgREST caps each response. Fetch every page for visit totals and exports.
+async function collectPages<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const rows: T[] = [];
+  const pageSize = 500;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+    if (error) throw new Error('Failed to fetch complete visit data');
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) return rows;
+  }
+}
+
+async function collectRelated<T>(ids: string[], fetchPage: (ids: string[], from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>) {
+  const data: T[] = [];
+  // Bound URL length as well as the number of rows returned.
+  for (let index = 0; index < ids.length; index += 100) {
+    data.push(...await collectPages((from, to) => fetchPage(ids.slice(index, index + 100), from, to)));
+  }
+  return { data, error: null };
+}
 
 const deduplicatePrescriptions = <T extends {
   medicine: string;
@@ -49,6 +71,7 @@ const convertDatabaseVisit = (
   patientId: dbVisit.patient_id,
   doctorId: dbVisit.doctor_id,
   appointmentId: dbVisit.appointment_id,
+  visitType: dbVisit.visit_type ?? null,
   date: new Date(dbVisit.date),
   chiefComplaint: dbVisit.chief_complaint || '',
   symptoms,
@@ -65,8 +88,14 @@ const convertDatabaseVisit = (
   doctorNotes: dbVisit.doctor_notes || '',
   caseImageUrl: dbVisit.case_image_url,
   visitImages: (dbVisit as any).visit_images || undefined,
+  pdf_url: dbVisit.pdf_url || undefined,
+  pdf_generated_at: dbVisit.pdf_generated_at ? new Date(dbVisit.pdf_generated_at) : undefined,
+  print_pdf_url: dbVisit.print_pdf_url || undefined,
+  print_pdf_generated_at: dbVisit.print_pdf_generated_at ? new Date(dbVisit.print_pdf_generated_at) : undefined,
+  compact_print_pdf_url: dbVisit.compact_print_pdf_url || undefined,
   createdAt: new Date(dbVisit.created_at),
   updatedAt: new Date(dbVisit.updated_at),
+  saveVersion: dbVisit.updated_at,
   patient,
   doctor
 });
@@ -113,6 +142,7 @@ const convertDatabaseTestOrdered = (dbTestOrdered: DatabaseTestOrdered): TestOrd
   id: dbTestOrdered.id,
   visitId: dbTestOrdered.visit_id,
   testName: dbTestOrdered.testName,
+  testId: dbTestOrdered.test_id || undefined,
   testType: dbTestOrdered.test_type,
   instructions: dbTestOrdered.instructions,
   urgency: dbTestOrdered.urgency,
@@ -149,8 +179,9 @@ export const visitService = {
       throw new Error('User not assigned to a clinic.');
     }
 
-    // Get visits
-    const { data: visits, error: visitsError } = await supabase
+    // Get every visit, with stable ordering across pages.
+    const client = supabase;
+    const visits = await collectPages((from, to) => client
       .from('visits')
       .select(`
         *, clinic_id,
@@ -159,22 +190,22 @@ export const visitService = {
       `)
       .eq('clinic_id', profile.clinicId)
       .eq('patients.is_hidden', false)
-      .order('created_at', { ascending: false });
-
-    if (visitsError) {
-      throw new Error('Failed to fetch visits');
-    }
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to));
 
     // Get related data for all visits
     const visitIds = visits.map(visit => visit.id);
 
     const [symptomsData, diagnosesData, prescriptionsData, testsOrderedData, testResultsData] = await Promise.all([
-      supabase.from('symptoms').select('*').in('visit_id', visitIds),
-      supabase.from('diagnoses').select('*').in('visit_id', visitIds),
-      supabase.from('prescriptions').select('*').in('visit_id', visitIds),
-      supabase.from('tests_ordered').select('*').in('visit_id', visitIds),
-      supabase.from('test_results').select('*').in('visit_id', visitIds)
+      collectRelated(visitIds, (ids, from, to) => client.from('symptoms').select('*').in('visit_id', ids).order('id').range(from, to)),
+      collectRelated(visitIds, (ids, from, to) => client.from('diagnoses').select('*').in('visit_id', ids).order('id').range(from, to)),
+      collectRelated(visitIds, (ids, from, to) => client.from('prescriptions').select('*').in('visit_id', ids).order('id').range(from, to)),
+      collectRelated(visitIds, (ids, from, to) => client.from('tests_ordered').select('*').in('visit_id', ids).order('id').range(from, to)),
+      collectRelated(visitIds, (ids, from, to) => client.from('test_results').select('*').in('visit_id', ids).order('id').range(from, to))
     ]);
+
+    assertVisitDetailsLoaded([symptomsData, diagnosesData, prescriptionsData, testsOrderedData, testResultsData]);
 
     // Group related data by visit ID
     const symptomsByVisit = new Map<string, Symptom[]>();
@@ -296,6 +327,8 @@ export const visitService = {
       supabase.from('test_results').select('*').in('visit_id', visitIds)
     ]);
 
+    assertVisitDetailsLoaded([symptomsData, diagnosesData, prescriptionsData, testsOrderedData, testResultsData]);
+
     // Group related data by visit ID
     const symptomsByVisit = new Map<string, Symptom[]>();
     const diagnosesByVisit = new Map<string, Diagnosis[]>();
@@ -378,144 +411,30 @@ export const visitService = {
     ));
   },
 
-  // Add a new visit with all related data
-  async addVisit(visit: Omit<Visit, 'id' | 'createdAt' | 'updatedAt' | 'patient' | 'doctor'>): Promise<Visit> {
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
+  // The RPC owns the transaction. Never fall back to separate writes: a
+  // missing deployment or failed child insert must leave the form open.
+  async addVisit(visit: Omit<Visit, 'id' | 'createdAt' | 'updatedAt' | 'patient' | 'doctor'>, options: VisitSaveOptions = {}): Promise<Visit> {
+    if (!supabase) throw new Error('Supabase client not initialized');
+    const payload = buildVisitSavePayload({ ...visit, prescriptions: deduplicatePrescriptions(visit.prescriptions) });
+    payload.main.id = options.newVisitId || options.requestId || crypto.randomUUID();
+    const details: Record<string, unknown> = payload.details;
+    if (visit.testResults.length) details.test_results = visit.testResults.map(result => ({
+      id: result.id || undefined, test_ordered_id: result.testOrderedId,
+      result: result.result, normal_range: result.normalRange, is_abnormal: result.isAbnormal,
+      result_date: result.resultDate.toISOString(), report_url: result.reportUrl,
+    }));
+    const { data: visitId, error } = await supabase.rpc('save_visit_with_details', {
+      p_visit_id: null, p_visit: payload.main, p_details: details,
+      p_request_id: options.requestId || crypto.randomUUID(), p_expected_updated_at: null,
+    });
+    if (error) throw new Error(`Visit was not saved: ${error.message}`);
+    if (!visitId) throw new Error('The server did not confirm the visit save. Retry using this form.');
+    const createdVisit = await this.getVisit(visitId);
+    if (!createdVisit) throw new Error('Could not reload the saved visit. Retry using this form.');
+    if (createdVisit.testsOrdered.length && createdVisit.patient) {
+      this.sendTestsToLimsIfEnabled(visitId, createdVisit.patient, createdVisit.testsOrdered, createdVisit.doctor?.name);
     }
-
-    const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
-    }
-
-    const { data: clinicProfile } = await supabase
-    try {
-      // Insert the main visit record
-      const { data: visitData, error: visitError } = await supabase
-        .from('visits')
-        .insert([{
-          clinic_id: profile.clinicId,
-          patient_id: visit.patientId,
-          doctor_id: visit.doctorId,
-          appointment_id: visit.appointmentId,
-          date: visit.date.toISOString(),
-          chief_complaint: visit.chiefComplaint,
-          vitals: visit.vitals,
-          advice: visit.advice,
-          advice_language: visit.adviceLanguage || 'english',
-          advice_regional: visit.adviceRegional || '',
-          follow_up_date: visit.followUpDate?.toISOString(),
-          physical_examination: visit.physicalExamination || {},
-          doctor_notes: visit.doctorNotes,
-          case_image_url: visit.caseImageUrl,
-          visit_images: visit.visitImages || null
-        }])
-        .select()
-        .single();
-
-      if (visitError) {
-        throw new Error('Failed to create visit');
-      }
-
-      const visitId = visitData.id;
-
-      // Insert related data
-      const insertPromises = [];
-
-      // Insert symptoms
-      if (visit.symptoms.length > 0) {
-        const symptomsToInsert = visit.symptoms.map(symptom => ({
-          visit_id: visitId,
-          name: symptom.name,
-          severity: symptom.severity,
-          duration: symptom.duration,
-          notes: symptom.notes
-        }));
-        insertPromises.push(supabase.from('symptoms').insert(symptomsToInsert));
-      }
-
-      // Insert diagnoses
-      if (visit.diagnoses.length > 0) {
-        const diagnosesToInsert = visit.diagnoses.map(diagnosis => ({
-          visit_id: visitId,
-          name: diagnosis.name,
-          icd10_code: diagnosis.icd10Code,
-          is_primary: diagnosis.isPrimary,
-          notes: diagnosis.notes
-        }));
-        insertPromises.push(supabase.from('diagnoses').insert(diagnosesToInsert));
-      }
-
-      // Insert prescriptions
-      if (visit.prescriptions.length > 0) {
-        const prescriptionsToInsert = deduplicatePrescriptions(visit.prescriptions).map(prescription => ({
-          visit_id: visitId,
-          medicine: prescription.medicine,
-          dosage: prescription.dosage || null,
-          frequency: prescription.frequency || null,
-          duration: prescription.duration || null,
-          instructions: prescription.instructions || null,
-          quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
-          refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0,
-          route: prescription.route?.trim() || null
-        }));
-        insertPromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
-      }
-
-      // Insert tests ordered
-      if (visit.testsOrdered.length > 0) {
-        const testsToInsert = visit.testsOrdered.map(test => ({
-          visit_id: visitId,
-          clinic_id: profile.clinicId,
-          test_name: test.testName,
-          test_type: test.testType,
-          instructions: test.instructions,
-          urgency: test.urgency,
-          status: test.status,
-          ordered_date: test.orderedDate.toISOString(),
-          expected_date: test.expectedDate?.toISOString()
-        }));
-        insertPromises.push(supabase.from('tests_ordered').insert(testsToInsert));
-      }
-
-      // Insert test results
-      if (visit.testResults.length > 0) {
-        const resultsToInsert = visit.testResults.map(result => ({
-          test_ordered_id: result.testOrderedId,
-          visit_id: visitId,
-          result: result.result,
-          normal_range: result.normalRange,
-          is_abnormal: result.isAbnormal,
-          result_date: result.resultDate.toISOString(),
-          report_url: result.reportUrl,
-          notes: result.notes
-        }));
-        insertPromises.push(supabase.from('test_results').insert(resultsToInsert));
-      }
-
-      // Wait for all inserts to complete
-      await Promise.all(insertPromises);
-
-      // Fetch the complete visit with all related data
-      const visits = await this.getPatientVisits(visit.patientId);
-      const createdVisit = visits.find(v => v.id === visitId);
-
-      if (!createdVisit) {
-        throw new Error('Failed to retrieve created visit');
-      }
-
-      // Send tests to LIMS if enabled (non-blocking)
-      if (visit.testsOrdered.length > 0 && createdVisit.patient) {
-        this.sendTestsToLimsIfEnabled(visitId, createdVisit.patient, visit.testsOrdered, createdVisit.doctor?.name);
-      }
-
-      return createdVisit;
-
-    } catch (error) {
-      console.error('Error creating visit:', error);
-      throw new Error('Failed to create visit with related data');
-    }
+    return createdVisit;
   },
 
   // Helper: Send tests to LIMS if integration is enabled (fire-and-forget)
@@ -579,11 +498,13 @@ export const visitService = {
       supabase.from('test_results').select('*').eq('visit_id', id)
     ]);
 
+    assertVisitDetailsLoaded([symptomsData, diagnosesData, prescriptionsData, testsOrderedData, testResultsData]);
+
     const symptoms = symptomsData.data?.map(convertDatabaseSymptom) || [];
     const diagnoses = diagnosesData.data?.map(convertDatabaseDiagnosis) || [];
     const prescriptions = prescriptionsData.data?.map(convertDatabasePrescription) || [];
     const testsOrdered = testsOrderedData.data?.map(convertDatabaseTestOrdered) || [];
-    const testResults = testResultsData.data?.map(convertDatabaseTestResult) || [];
+    const testResults = testResultsData.data?.map(result => convertDatabaseTestResult(result)) || [];
 
     return convertDatabaseVisit(
       visit,
@@ -629,156 +550,25 @@ export const visitService = {
     );
   },
 
-  // Update a visit
-  async updateVisit(id: string, visit: Partial<Omit<Visit, 'id' | 'createdAt' | 'updatedAt' | 'patient' | 'doctor'>>): Promise<Visit> {
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
+  // Partial updates (e.g. billing's doctor change) omit untouched arrays.
+  async updateVisit(id: string, visit: Partial<Omit<Visit, 'id' | 'createdAt' | 'updatedAt' | 'patient' | 'doctor'>>, options: VisitSaveOptions = {}): Promise<Visit> {
+    if (!supabase) throw new Error('Supabase client not initialized');
+    const payload = buildVisitSavePayload({ ...visit,
+      prescriptions: visit.prescriptions ? deduplicatePrescriptions(visit.prescriptions) : undefined,
+    });
+    const { data: savedId, error } = await supabase.rpc('save_visit_with_details', {
+      p_visit_id: id, p_visit: payload.main, p_details: payload.details,
+      p_request_id: options.requestId || crypto.randomUUID(),
+      p_expected_updated_at: options.expectedUpdatedAt || null,
+    });
+    if (error) throw new Error(`Visit was not updated: ${error.message}`);
+    if (savedId !== id) throw new Error('The server did not confirm the visit update. Retry using this form.');
+    const updatedVisit = await this.getVisit(id);
+    if (!updatedVisit) throw new Error('Could not reload the saved visit. Retry using this form.');
+    if (visit.testsOrdered?.length && updatedVisit.patient) {
+      this.sendTestsToLimsIfEnabled(id, updatedVisit.patient, updatedVisit.testsOrdered, updatedVisit.doctor?.name);
     }
-
-    const profile = await getCurrentProfile();
-    if (!profile?.clinicId) {
-      throw new Error('User not assigned to a clinic.');
-    }
-
-    try {
-      // First update the main visit record
-      const dbVisit: any = {};
-
-      if (visit.patientId) dbVisit.patient_id = visit.patientId;
-      if (visit.doctorId) dbVisit.doctor_id = visit.doctorId;
-      dbVisit.clinic_id = profile.clinicId;
-
-      if (visit.appointmentId !== undefined) dbVisit.appointment_id = visit.appointmentId;
-      if (visit.date) dbVisit.date = visit.date.toISOString();
-      if (visit.chiefComplaint !== undefined) dbVisit.chief_complaint = visit.chiefComplaint;
-      if (visit.vitals) dbVisit.vitals = visit.vitals;
-      if (visit.advice) dbVisit.advice = visit.advice;
-      if (visit.adviceLanguage !== undefined) dbVisit.advice_language = visit.adviceLanguage;
-      if (visit.adviceRegional !== undefined) dbVisit.advice_regional = visit.adviceRegional;
-      if (visit.followUpDate !== undefined) dbVisit.follow_up_date = visit.followUpDate?.toISOString();
-      if (visit.doctorNotes !== undefined) dbVisit.doctor_notes = visit.doctorNotes;
-      if (visit.physicalExamination !== undefined) dbVisit.physical_examination = visit.physicalExamination;
-      if (visit.caseImageUrl !== undefined) dbVisit.case_image_url = visit.caseImageUrl;
-      if (visit.visitImages !== undefined) dbVisit.visit_images = visit.visitImages || null;
-
-      // IMPORTANT: Clear cached PDF URLs when visit data is updated so new ones are generated
-      dbVisit.pdf_url = null;
-      dbVisit.print_pdf_url = null;
-      dbVisit.compact_print_pdf_url = null;
-
-      const { error } = await supabase
-        .from('visits')
-        .update(dbVisit)
-        .eq('id', id)
-        .eq('clinic_id', profile.clinicId);
-
-      if (error) {
-        throw new Error('Failed to update visit');
-      }
-
-      // Handle related data updates
-      const updatePromises = [];
-
-      // Update symptoms if provided
-      if (visit.symptoms) {
-        // Delete existing symptoms and insert new ones
-        await supabase.from('symptoms').delete().eq('visit_id', id);
-
-        if (visit.symptoms.length > 0) {
-          const symptomsToInsert = visit.symptoms.map(symptom => ({
-            visit_id: id,
-            clinic_id: profile.clinicId,
-            name: symptom.name,
-            severity: symptom.severity,
-            duration: symptom.duration,
-            notes: symptom.notes
-          }));
-          updatePromises.push(supabase.from('symptoms').insert(symptomsToInsert));
-        }
-      }
-
-      // Update diagnoses if provided
-      if (visit.diagnoses) {
-        // Delete existing diagnoses and insert new ones
-        await supabase.from('diagnoses').delete().eq('visit_id', id);
-
-        if (visit.diagnoses.length > 0) {
-          const diagnosesToInsert = visit.diagnoses.map(diagnosis => ({
-            visit_id: id,
-            clinic_id: profile.clinicId,
-            name: diagnosis.name,
-            icd10_code: diagnosis.icd10Code,
-            is_primary: diagnosis.isPrimary,
-            notes: diagnosis.notes
-          }));
-          updatePromises.push(supabase.from('diagnoses').insert(diagnosesToInsert));
-        }
-      }
-
-      // Update prescriptions if provided
-      if (visit.prescriptions) {
-        // Delete existing prescriptions and insert new ones
-        await supabase.from('prescriptions').delete().eq('visit_id', id);
-
-        const uniquePrescriptions = deduplicatePrescriptions(visit.prescriptions);
-        if (uniquePrescriptions.length > 0) {
-          const prescriptionsToInsert = uniquePrescriptions.map(prescription => ({
-            visit_id: id,
-            clinic_id: profile.clinicId,
-            medicine: prescription.medicine,
-            dosage: prescription.dosage || null,
-            frequency: prescription.frequency || null,
-            duration: prescription.duration || null,
-            instructions: prescription.instructions || null,
-            quantity: (prescription.quantity as any) != null && (prescription.quantity as any) !== '' ? Number(prescription.quantity) : null,
-            refills: (prescription.refills as any) != null && (prescription.refills as any) !== '' ? Number(prescription.refills) : 0,
-            route: prescription.route?.trim() || null
-          }));
-          updatePromises.push(supabase.from('prescriptions').insert(prescriptionsToInsert));
-        }
-      }
-
-      // Update tests ordered if provided
-      if (visit.testsOrdered) {
-        // Delete existing tests ordered and insert new ones
-        await supabase.from('tests_ordered').delete().eq('visit_id', id);
-
-        if (visit.testsOrdered.length > 0) {
-          const testsToInsert = visit.testsOrdered.map(test => ({
-            visit_id: id,
-            clinic_id: profile.clinicId,
-            testName: test.testName,
-            test_type: test.testType,
-            instructions: test.instructions,
-            urgency: test.urgency,
-            status: test.status,
-            ordered_date: test.orderedDate.toISOString(),
-            expected_date: test.expectedDate?.toISOString()
-          }));
-          updatePromises.push(supabase.from('tests_ordered').insert(testsToInsert));
-        }
-      }
-
-      // Wait for all related data updates to complete
-      await Promise.all(updatePromises);
-
-      // Return the updated visit
-      const updatedVisit = await this.getVisit(id);
-      if (!updatedVisit) {
-        throw new Error('Failed to retrieve updated visit');
-      }
-
-      // Send tests to LIMS if enabled (non-blocking)
-      if (visit.testsOrdered && visit.testsOrdered.length > 0 && updatedVisit.patient) {
-        this.sendTestsToLimsIfEnabled(id, updatedVisit.patient, visit.testsOrdered, updatedVisit.doctor?.name);
-      }
-
-      return updatedVisit;
-
-    } catch (error) {
-      console.error('Error updating visit:', error);
-      throw new Error('Failed to update visit with related data');
-    }
+    return updatedVisit;
   },
 
   // Get visits with follow-up dates for follow-up management
@@ -819,6 +609,8 @@ export const visitService = {
       supabase.from('tests_ordered').select('*').in('visit_id', visitIds),
       supabase.from('test_results').select('*').in('visit_id', visitIds)
     ]);
+
+    assertVisitDetailsLoaded([symptomsData, diagnosesData, prescriptionsData, testsOrderedData, testResultsData]);
 
     // Group related data by visit ID
     const symptomsByVisit = new Map<string, Symptom[]>();

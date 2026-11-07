@@ -1,0 +1,7 @@
+{
+  "projectRef": "kiezgfhonvwryxpubfvl",
+  "checkedAt": "2026-10-30T05:44:10.857Z",
+  "login_role": "cli_login_postgres",
+  "postgres_membership": true,
+  "inherits_memberships": false
+}

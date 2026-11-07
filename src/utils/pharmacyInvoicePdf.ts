@@ -1,13 +1,22 @@
 import { jsPDF } from 'jspdf';
-import type { Bill, ClinicSetting, Patient } from '../types';
+import type { Bill, BillItem, ClinicSetting, Patient } from '../types';
 
 export interface InvoiceImage { data: string; width: number; height: number }
 export interface PharmacyInvoiceDocument {
   bill: Bill; patient: Patient; clinic: ClinicSetting;
   images?: { logo?: InvoiceImage; header?: InvoiceImage; footer?: InvoiceImage; letterhead?: InvoiceImage };
 }
-export const PHARMACY_PDF_VERSION = 'local-pharmacy-v1';
+export const PHARMACY_PDF_VERSION = 'local-pharmacy-v2-percentages';
 const money = (value?: number) => Number(value || 0).toFixed(2);
+const percent = (value: number) => `${Number(value)}%`;
+function discountPercentage(item: BillItem): string | null {
+  const saved = item.saleDiscountPercent;
+  if (saved != null && Number.isFinite(saved) && saved >= 0 && saved <= 100) return percent(saved);
+  const gross = Math.round(Number(item.billedQuantity ?? item.quantity) * Number(item.unitPrice) * 100) / 100;
+  if (!Number(item.discount)) return '0%';
+  if (!(gross > 0)) return null;
+  return `~${percent(Number((Number(item.discount) / gross * 100).toFixed(1)))}`;
+}
 const date = (value?: Date | string) => value && !Number.isNaN(new Date(value).getTime())
   ? new Date(value).toLocaleDateString('en-IN') : '-';
 
@@ -121,7 +130,7 @@ export function createPharmacyInvoicePdf(input: PharmacyInvoiceDocument): jsPDF 
   function ensure(height: number) { if (y + height > limit) nextPage(); }
   const weights = [5, 30, 14, 10, 11, 10, 10, 12];
   const widths = weights.map(n => width * n / weights.reduce((a, b) => a + b));
-  const labels = ['#', 'Medicine / HSN', 'Batch / Exp.', 'Qty / Unit', 'Pack MRP', 'Rate', composition ? 'Taxable' : 'GST / Tax', 'Total'];
+  const labels = ['#', 'Medicine / HSN', 'Batch / Exp.', 'Qty / Unit', 'Pack MRP', 'Rate', composition ? 'Taxable' : 'GST % / Tax', 'Total'];
   function tableHead() {
     pdf.setFillColor(239, 246, 255); pdf.rect(margin, y, width, 10, 'F');
     let x = margin;
@@ -132,8 +141,11 @@ export function createPharmacyInvoicePdf(input: PharmacyInvoiceDocument): jsPDF 
   bill.billItems.forEach((item, index) => {
     const qty = item.billedQuantity ?? item.quantity;
     const tax = Number(item.cgstAmount || 0) + Number(item.sgstAmount || 0) + Number(item.igstAmount || 0);
+    const discountRate = discountPercentage(item);
+    const discountText = Number(item.discount) || Number(item.saleDiscountPercent)
+      ? `\nSale discount${discountRate ? ` ${discountRate}` : ''}: ${money(item.discount)}` : '';
     const cells = [String(index + 1),
-      `${item.itemName}\nHSN: ${item.hsnCode || '-'}${Number(item.discount) ? `\nDiscount: ${money(item.discount)}` : ''}\nTaxable: ${money(item.taxableAmount)}`,
+      `${item.itemName}\nHSN: ${item.hsnCode || '-'}${discountText}\nTaxable: ${money(item.taxableAmount)}`,
       `${item.batchNumber || '-'}\n${item.expiryDate ? new Date(item.expiryDate).toLocaleDateString('en-IN', { month: '2-digit', year: '2-digit' }) : '-'}`,
       `${Number(qty)}\n${item.billedUnit || 'Pack'}`,
       `${money(item.mrp ?? item.unitPrice)}\n${Number(item.packSize || 1)} units`,
@@ -156,20 +168,30 @@ export function createPharmacyInvoicePdf(input: PharmacyInvoiceDocument): jsPDF 
     }
   });
   y += 7;
+  const discountRates = [...new Set(bill.billItems.map(discountPercentage))];
+  const discountLabel = discountRates.length === 1 && discountRates[0] && discountRates[0] !== '0%'
+    ? `Sale discount ${discountRates[0]} (already applied)` : 'Sale discount (see items; already applied)';
+  function taxLabel(kind: 'CGST' | 'SGST' | 'IGST') {
+    const applicable = bill.billItems.filter(i => kind === 'IGST' ? Number(i.igstAmount) > 0 : !(Number(i.igstAmount) > 0));
+    const values = [...new Set(applicable.map(i => Number(i.gstRate || 0) / (kind === 'IGST' ? 1 : 2)))];
+    return `${kind}${values.length === 1 ? ` ${percent(values[0])}` : values.length > 1 ? ' (see rate breakdown)' : ''}`;
+  }
   const totals = [
-    ['Taxable value', bill.taxableAmount], ['Discount', bill.discountAmount],
-    ...(!composition ? [['CGST', bill.cgstAmount], ['SGST', bill.sgstAmount], ['IGST', bill.igstAmount]] : []),
+    ...(Number(bill.discountAmount) ? [[discountLabel, bill.discountAmount]] : []),
+    ['Taxable value', bill.taxableAmount],
+    ...(!composition ? [[taxLabel('CGST'), bill.cgstAmount], [taxLabel('SGST'), bill.sgstAmount],
+      ...(Number(bill.igstAmount) ? [[taxLabel('IGST'), bill.igstAmount]] : [])] : []),
     ...(Number(bill.roundOff) ? [['Round off', bill.roundOff]] : []),
     ['Invoice total', bill.totalAmount], ['Paid', bill.paidAmount], ['Balance', bill.balanceAmount],
     ...(Number(bill.totalRefundedAmount) ? [['Refunded', bill.totalRefundedAmount]] : []),
   ];
   ensure(totals.length * 6 + 14); text('AMOUNTS IN INR', margin, y, font, true); y += 6;
   for (const [label, value] of totals) {
-    if (['IGST', 'Discount'].includes(String(label)) && !Number(value)) continue;
-    ensure(7);
+    const labelLines = wrap(label, width - 29, font + (label === 'Invoice total' ? 1 : 0));
+    ensure(Math.max(7, labelLines.length * lineHeight + 2));
     const strong = label === 'Invoice total';
-    text(String(label), margin, y, font + (strong ? 1 : 0), strong);
-    text(money(Number(value)), W - right - 24, y, font + (strong ? 1 : 0), strong); y += 6;
+    labelLines.forEach((line, i) => text(line, margin, y + i * lineHeight, font + (strong ? 1 : 0), strong));
+    text(money(Number(value)), W - right - 24, y, font + (strong ? 1 : 0), strong); y += Math.max(6, labelLines.length * lineHeight + 2);
   }
   const rates = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number }>();
   bill.billItems.forEach(i => {
@@ -180,12 +202,14 @@ export function createPharmacyInvoicePdf(input: PharmacyInvoiceDocument): jsPDF 
   if (!composition) {
     y += 3;
     for (const [rate, r] of [...rates].sort((a, b) => a[0] - b[0])) {
-      for (const l of wrap(`GST ${rate}% | Taxable ${money(r.taxable)} | CGST ${money(r.cgst)} | SGST ${money(r.sgst)}${r.igst ? ` | IGST ${money(r.igst)}` : ''}`, width)) {
+      const splitTax = r.cgst || r.sgst || !r.igst ? ` | CGST ${percent(rate / 2)}: ${money(r.cgst)} | SGST ${percent(rate / 2)}: ${money(r.sgst)}` : '';
+      for (const l of wrap(`GST ${percent(rate)} | Taxable ${money(r.taxable)}${splitTax}${r.igst ? ` | IGST ${percent(rate)}: ${money(r.igst)}` : ''}`, width)) {
         ensure(lineHeight + 2); text(l, margin, y, font - 0.5); y += lineHeight;
       }
     }
   }
   const notes = [composition ? 'Composition scheme - tax is not collected separately.' : 'Prices shown include applicable GST.',
+    discountRates.some(rate => rate?.startsWith('~')) ? '~ Discount percentage estimated from the saved rounded amount.' : '',
     bill.paymentMethod ? `Payment: ${bill.paymentMethod.replace(/_/g, ' ')}` : '', bill.notes || ''].filter(Boolean).join('\n');
   y += 5;
   for (const l of wrap(notes, width, font - 0.5)) { ensure(lineHeight + 2); text(l, margin, y, font - 0.5); y += lineHeight; }

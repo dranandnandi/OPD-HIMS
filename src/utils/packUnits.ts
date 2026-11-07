@@ -109,6 +109,11 @@ export const stockBreakdown = (stockQty: number, spec: PackSpec): string => {
   return `${whole} ${spec.stockUnit} + ${fmtQty(loose)} ${spec.dispenseUnit}`;
 };
 
+/** Put the saleable loose count first, including when all packs are still full. */
+export const stockDisplay = (stockQty: number, spec: PackSpec): string => spec.packSize > 1
+  ? `${fmtQty(toDispenseUnits(stockQty, spec.packSize))} ${spec.dispenseUnit} (${stockBreakdown(stockQty, spec)})`
+  : stockBreakdown(stockQty, spec);
+
 /**
  * Pull a pack size out of the free text a distributor prints in the pack
  * column: "1x10", "1*10", "10'S", "15 TAB", "100ML" all state the loose count

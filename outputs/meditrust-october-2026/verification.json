@@ -1,0 +1,215 @@
+{
+  "cutoff": "2026-10-30T07:48:22.099Z",
+  "checks": [
+    {
+      "name": "Recorded visits",
+      "difference": 0
+    },
+    {
+      "name": "Eligible billed value",
+      "difference": 0
+    },
+    {
+      "name": "All bill headers",
+      "difference": 0
+    },
+    {
+      "name": "Payment receipts",
+      "difference": -3.637978807091713e-12
+    },
+    {
+      "name": "Refunds paid",
+      "difference": 0
+    },
+    {
+      "name": "Purchase receipt value",
+      "difference": -2.9103830456733704e-11
+    },
+    {
+      "name": "Doctor recorded visits",
+      "difference": 0
+    },
+    {
+      "name": "Doctor manual consultations",
+      "difference": 0
+    },
+    {
+      "name": "Daily manual consultations",
+      "difference": 0
+    },
+    {
+      "name": "Daily manual daycare",
+      "difference": 0
+    },
+    {
+      "name": "Daily billed value",
+      "difference": -1.8189894035458565e-12
+    },
+    {
+      "name": "Training clinical sessions",
+      "difference": 0
+    },
+    {
+      "name": "Training staff sessions",
+      "difference": 0
+    },
+    {
+      "name": "September payroll payable",
+      "difference": 0
+    },
+    {
+      "name": "September payroll calculation",
+      "difference": -1.4551915228366852e-11
+    },
+    {
+      "name": "Bill-line/header reconciliation",
+      "difference": -1.8189894035458565e-12
+    },
+    {
+      "name": "Paid-field/ledger net reconciliation",
+      "difference": 0
+    }
+  ],
+  "keyResults": {
+    "recordedVisits": 19,
+    "manualConsultations": 12,
+    "allConsultations": 31,
+    "daycare": 5,
+    "serviceEncounters": 36,
+    "recordedBilled": 8892.02,
+    "manualBilled": 8500,
+    "adjustedBilled": 17392.02,
+    "netRecordedCash": 7392.019999999997,
+    "trainingDates": 24,
+    "trainingSessions": 48,
+    "septemberPayroll": 358000,
+    "recordedClinical": [
+      {
+        "indicator": "Recorded visits",
+        "count": 19,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "Unique recorded patients",
+        "count": 19,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "First visits in the registry",
+        "count": 18,
+        "denominator": 19,
+        "rate": 0.9473684210526315
+      },
+      {
+        "indicator": "Returning visits in the registry",
+        "count": 1,
+        "denominator": 19,
+        "rate": 0.05263157894736842
+      },
+      {
+        "indicator": "Chief complaint documented",
+        "count": 15,
+        "denominator": 19,
+        "rate": 0.7894736842105263
+      },
+      {
+        "indicator": "Structured symptoms documented",
+        "count": 7,
+        "denominator": 19,
+        "rate": 0.3684210526315789
+      },
+      {
+        "indicator": "Diagnosis documented",
+        "count": 14,
+        "denominator": 19,
+        "rate": 0.7368421052631579
+      },
+      {
+        "indicator": "ICD-10 coded visits",
+        "count": 2,
+        "denominator": 19,
+        "rate": 0.10526315789473684
+      },
+      {
+        "indicator": "Visits with prescriptions",
+        "count": 15,
+        "denominator": 19,
+        "rate": 0.7894736842105263
+      },
+      {
+        "indicator": "Prescription lines",
+        "count": 56,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "Any vitals documented",
+        "count": 14,
+        "denominator": 19,
+        "rate": 0.7368421052631579
+      },
+      {
+        "indicator": "Five core vitals documented",
+        "count": 10,
+        "denominator": 19,
+        "rate": 0.5263157894736842
+      },
+      {
+        "indicator": "Follow-up date documented",
+        "count": 13,
+        "denominator": 19,
+        "rate": 0.6842105263157895
+      },
+      {
+        "indicator": "Valid follow-up date",
+        "count": 12,
+        "denominator": 19,
+        "rate": 0.631578947368421
+      },
+      {
+        "indicator": "Clinical advice documented",
+        "count": 3,
+        "denominator": 19,
+        "rate": 0.15789473684210525
+      },
+      {
+        "indicator": "Visits with test orders",
+        "count": 9,
+        "denominator": 19,
+        "rate": 0.47368421052631576
+      },
+      {
+        "indicator": "Test orders linked to cohort",
+        "count": 23,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "Test orders dated in October",
+        "count": 25,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "Results recorded in the application",
+        "count": 0,
+        "denominator": null,
+        "rate": null
+      },
+      {
+        "indicator": "Completed appointment records",
+        "count": 10,
+        "denominator": 11,
+        "rate": 0.9090909090909091
+      },
+      {
+        "indicator": "Past scheduled appointments",
+        "count": 1,
+        "denominator": null,
+        "rate": null
+      }
+    ]
+  }
+}

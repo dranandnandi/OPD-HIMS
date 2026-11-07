@@ -1,0 +1,87 @@
+{
+  "clinic": "Meditrust Clinics",
+  "clinicId": "238307be-362b-4fff-bb9a-3f2f9ff44519",
+  "drugLicence": "GJ-ADR-272601",
+  "asOf": "2026-10-30",
+  "live": {
+    "genericNamesSavedAndVerified": 175,
+    "activeCatalogueProducts": 790,
+    "stockQuantitiesChanged": false,
+    "licence": "Already matched supplied licence"
+  },
+  "preparedClinicClassification": {
+    "nrx": 16,
+    "h1": 35,
+    "distinctProducts": 41,
+    "appliedLive": true
+  },
+  "remainingGenericReview": {
+    "medicalDevices": 14,
+    "skinCare": 3,
+    "medicineVariants": 3,
+    "unidentifiedEntry": 1
+  },
+  "localSoftware": {
+    "globalFeatures": [
+      "Shared dosage forms, stocked units and therapeutic categories",
+      "NRx and H1 master flags and purchase/sale badges",
+      "Prescription details and immutable paginated supply register with CSV export",
+      "Same-MRP product merge preserving batches and history",
+      "FIFO batch allocation with separate batch prices",
+      "Loose-unit stock display",
+      "Invoice matching with ambiguous-duplicate review",
+      "Batch-aware expiry indicators with separate expired and expiring filters",
+      "India calendar-date expiry boundaries, unknown-date warnings, and date-correction preservation",
+      "Sales-screen expired-stock validation and pooled-stock separation"
+    ],
+    "deployed": true,
+    "migrations": [
+      "20261026160000_pharmacy_generic_name_reviews.sql",
+      "20261026180000_pharmacy_generic_name_cleanup.sql",
+      "20261026190000_pharmacy_generic_name_claude.sql",
+      "20261030090000_pharmacy_catalogue_options.sql",
+      "20261030091000_pharmacy_controlled_sale_register.sql",
+      "20261030092000_pharmacy_product_merge.sql",
+      "20261030093000_meditrust_drug_licence.sql",
+      "20261030094000_meditrust_controlled_medicine_flags.sql"
+    ],
+    "releaseOrder": [
+      "Review installation migration history and dependencies; do not push unrelated pending migrations blindly",
+      "Apply catalogue options and commit before using enum labels",
+      "Apply register/merge schema migrations, leaving product flags false",
+      "Deploy the updated frontend with required prescription-detail collection",
+      "Apply reviewed Meditrust positive flags; confirm guarded rows still match the current catalogue"
+    ]
+  },
+  "validation": {
+    "productionBuild": "passed",
+    "pharmacyTests": 127,
+    "pharmacyTestsFailed": 0,
+    "targetedGenericNameTests": "passed",
+    "typescript": "Full app typecheck has pre-existing repository errors; production Vite build passed."
+  },
+  "expiryReview": {
+    "implemented": true,
+    "deployed": true,
+    "statuses": {
+      "red": "Expired",
+      "orange": "Today through 7 days",
+      "yellow": "8 through 30 days",
+      "green": "More than 30 days",
+      "grey": "Expiry not recorded"
+    },
+    "stockDataChanged": false,
+    "validation": "127 pharmacy tests and production build passed; full typecheck retains existing repository errors."
+  },
+  "release": {
+    "databaseProjectRef": "kiezgfhonvwryxpubfvl",
+    "sessionMigrationsAppliedAndVerified": 8,
+    "frontendDeployId": "6ae42f3386b8dee3c4f2b81b",
+    "frontendUrl": "https://opdapp.anprohealthtech.com/pharmacy",
+    "frontendVerified": true,
+    "genericLookupFunctionDeployed": true,
+    "verifiedAt": "2026-10-30T05:52:01.500Z",
+    "medicineStockAndGenericFingerprintsUnchangedAcrossAllClinics": true,
+    "meditrustFlagUpdates": 41
+  }
+}

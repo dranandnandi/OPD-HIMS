@@ -1,0 +1,42 @@
+﻿Medicine,Current generic,NRx,H1,Identified controlled ingredients,Sources
+AKT 3MG TAB,Isoniazid + Rifampicin + Ethambutol,False,True,ethambutol; isoniazid; rifampicin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+AKT 4MG TAB,Isoniazid + Rifampicin + Ethambutol + Pyrazinamide,False,True,ethambutol; isoniazid; pyrazinamide; rifampicin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+AKURIT 3MG TAB,Isoniazid + Rifampicin +Ethambutol,False,True,ethambutol; isoniazid; rifampicin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+AKURIT 4MG TAB,Isoniazid + Rifampicin + Ethambutol + Pyrazinamide,False,True,ethambutol; isoniazid; pyrazinamide; rifampicin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ALPRAX 0.25 TAB,ALPRAZOLAM,True,True,alprazolam,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+ALPRAX 1MG TAB,ALPRAZOLAM,True,True,alprazolam,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+ALPRAX PLUS TAB,ALPRAZOLAM+SERTALINE,True,True,alprazolam,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+ANXIT 0.25 TAB,ALPRAZOLAM,True,True,alprazolam,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+CEFTAS 200 MG TAB,Cefixime,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+CEFTAS 400 TAB,Cefixime,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+CEFTAS-50 PINEAP FLAV DRY 30ML,Cefixime,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+CEPODEM 200 TAB  ,Cefpodoxime,False,True,cefpodoxime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+CEPODEM XP 325 MG TAB,CEFPODOXIME+CLAVULANATE,False,True,cefpodoxime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+CIZASPA X TAB,Mebeverine + Chlordiazepoxide,True,True,chlordiazepoxide,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+CONTRAMAL 50 DT TAB,TRAMADOL,True,True,tramadol,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/en/notifications/circulars_notifications/"
+FRISIUM 10 TAB,Clobazam,True,False,clobazam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+FRISIUM 5 TAB,Clobazam,True,False,clobazam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+GB 29 TOTAL,PREGABALIN+NORTRIPTYLIN+METHYLCOBALAMIN,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+LEVOFLOX 750 MG,Levofloxacin,False,True,levofloxacin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+LOXOF 500MG TAB,Levofloxacin,False,True,levofloxacin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+MOXIF 400 MG ,Moxifloxacin,False,True,moxifloxacin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+MOXIF EYE DROP 10 ML ,Moxifloxacin,False,True,moxifloxacin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+NEXITO PLUS TAB,Escitalopram + Clonazepam,True,False,clonazepam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+PETRIL 0.5,Clonazepam,True,False,clonazepam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+PETRIL BETA,Clonazepam + Propranolol,True,False,clonazepam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+PREGABID 75 CAP,PREGABALIN,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+PREGABID NT TAB,PREGABALIN+NORTRIPTYLINE,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+PREGASON 75MG CAP 1X10,PREGABALIN,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+PREGASON M XR TAB,PREGABALIN+METHYLCOBALAMIN,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+PREGASON NT TAB,PREGABALIN + NORTRIPTYLINE ,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+PREGASON TOTAL XR TAB,PREGABALINE + METHYLCOBALMINE + NORTRIPTILINE ,False,True,pregabalin,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6"
+TEXIDEP 0.25 TAB,ALPRAZOLAM,True,True,alprazolam,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"
+ULTRACET SEMI TAB,TRAMADOL+ACETAMINOPHEN,True,True,tramadol,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/en/notifications/circulars_notifications/"
+ULTRACET TAB,PARACETAMOL+TRAMADOL,True,True,tramadol,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/en/notifications/circulars_notifications/"
+ZAPIZ 0.25MG TAB,CLONAZEPAM,True,False,clonazepam,https://www.cbn.gov.in/pdf/qtynotif.pdf
+ZIFI 100  MG TAB,CEFIXIME,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ZIFI DT 50 TAB,CEFIXIME,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ZIFI O 200MG TAB,CEFIXIME+OFLOXACIN,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ZIFI Oral Drops 10ML,CEFIXIME,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ZIFI REDYMIX 50MG SYRUP 60ML,CEFIXIME ORAL SUSPENSION,False,True,cefixime,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf"
+ZOLFRESH 5 MG TAB ,ZOLPIDEM,True,True,zolpidem,"https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf; https://www.cbn.gov.in/pdf/qtynotif.pdf"

@@ -267,11 +267,17 @@ export interface VisitImage {
   reportGeneratedAt?: string;
 }
 
+export type VisitType = 'new' | 'follow_up' | 'emergency';
+
 export interface Visit {
+  /** Exact database timestamp for detecting a stale edit without losing precision. */
+  saveVersion?: string;
   id: string;
   patientId: string;
   doctorId: string | null;
   appointmentId?: string;
+  /** Null/absent means a historical visit has not been classified. */
+  visitType?: VisitType | null;
   date: Date;
   chiefComplaint: string;
   symptoms: Symptom[];
@@ -345,6 +351,7 @@ export interface Prescription {
 export interface TestOrdered {
   id: string;
   visitId: string;
+  testId?: string;
   testName: string;
   testType: 'lab' | 'radiology' | 'procedure' | 'other';
   instructions?: string;
@@ -535,6 +542,8 @@ export interface BillItem {
   unitPrice: number;
   totalPrice: number;
   discount?: number;
+  /** Explicit customer sale percentage; absent on legacy amount-only invoices. */
+  saleDiscountPercent?: number;
   tax?: number;
   refundedQuantity?: number;
   refundedAmount?: number;
@@ -830,6 +839,8 @@ export interface MedicineMaster {
   barcode?: string;
   /** Long-term medicine: refill reminder is pre-ticked when sold. */
   isChronic?: boolean;
+  isNrx?: boolean;
+  isScheduleH1?: boolean;
   hsnCode?: string;
   /** Default GST % for the SKU (12 for most medicines). */
   gstRate?: number;
@@ -953,10 +964,11 @@ export interface PharmacyInwardReceipt {
 }
 
 export interface PharmacyInwardItem {
+  effectiveUnitCost?: number;
   id: string;
   receiptId: string;
   medicineId: string;
-  /** Packs received (purchases are always whole packs). */
+  /** Paid packs invoiced; freeQuantity is additional stock. */
   quantity: number;
   /** Dispense units in one purchased pack, from the distributor invoice. */
   packSize?: number;
@@ -988,6 +1000,7 @@ export interface PharmacyDispensedItem {
   visitId?: string | null;
   prescriptionId?: string;
   medicineId: string;
+  controlledSaleDetails?: ControlledSaleDetails;
   /** Stocked units consumed; 0.5 when half a strip was sold. */
   quantity: number;
   /** Pack size as it stood at the sale, so an old row still reads correctly. */
@@ -1022,6 +1035,7 @@ export interface PharmacyDispensedItem {
 }
 
 export interface MedicineBatch {
+  effectiveCost?: number;
   id: string;
   clinicId: string;
   medicineId: string;
@@ -1039,6 +1053,10 @@ export interface MedicineBatch {
 }
 
 export interface PharmacyDebitNoteItem {
+  inwardItemId?: string;
+  paidQuantity?: number;
+  freeQuantity?: number;
+  creditAmount?: number;
   id: string;
   debitNoteId: string;
   medicineId: string;
@@ -1056,7 +1074,12 @@ export interface PharmacyDebitNoteItem {
   medicine?: MedicineMaster;
 }
 
+export type SupplierCreditType = 'gst_credit' | 'commercial_credit' | 'stock_only';
+
 export interface PharmacyDebitNote {
+  creditType?: SupplierCreditType;
+  creditReference?: string;
+  creditDate?: string;
   id: string;
   clinicId: string;
   supplierId: string;
@@ -1185,6 +1208,8 @@ export interface ClinicTestPrice {
 export interface MedicineWithPrice extends MedicineMaster {
   sellingPrice?: number;
   costPrice?: number;
+  /** Supplier on the earliest-expiring batch that still has stock. */
+  supplierName?: string;
 }
 
 export interface TestWithPrice extends TestMaster {
@@ -1213,4 +1238,34 @@ export interface AppointmentType {
   color: string;
   feeType: 'consultation' | 'followup' | 'emergency' | 'custom';
   customFee?: number; // Only used when feeType is 'custom'
+}
+
+/** Captured at supply, independently of later patient/master edits. */
+export interface ControlledSaleDetails {
+  prescriptionVerified?: boolean;
+  patientName?: string;
+  patientAddress?: string;
+  prescriberName?: string;
+  prescriberAddress?: string;
+  prescriptionReference?: string;
+  prescriptionDate?: string;
+  pharmacistName?: string;
+  pharmacistRegistration?: string;
+}
+export interface ControlledSaleRecord {
+  id: number;
+  clinic_name: string;
+  drug_license_number: string | null;
+  supplied_at: string;
+  is_nrx: boolean;
+  is_schedule_h1: boolean;
+  medicine_name: string;
+  manufacturer: string | null;
+  batch_number: string | null;
+  expiry_date: string | null;
+  quantity: number;
+  unit: string;
+  mrp: number | null;
+  bill_number: string | null;
+  details: ControlledSaleDetails;
 }

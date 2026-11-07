@@ -62,6 +62,7 @@ const convertDatabaseBillItem = (dbBillItem: DatabaseBillItem): BillItem => ({
   unitPrice: dbBillItem.unit_price,
   totalPrice: dbBillItem.total_price,
   discount: dbBillItem.discount,
+  saleDiscountPercent: dbBillItem.sale_discount_percent == null ? undefined : Number(dbBillItem.sale_discount_percent),
   tax: dbBillItem.tax,
   refundedQuantity: dbBillItem.refunded_quantity,
   refundedAmount: dbBillItem.refunded_amount,
@@ -102,6 +103,7 @@ export interface PharmacyBillLineInput {
   hsnCode?: string;
   gstRate: number;
   discountAmount: number;
+  saleDiscountPercent?: number;
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
@@ -645,6 +647,7 @@ export const billingService = {
       amount: line.totalPrice,
       total_price: line.totalPrice,
       discount: line.discountAmount,
+      sale_discount_percent: line.saleDiscountPercent ?? null,
       tax: line.gstRate,
       medicine_id: line.medicineId,
       batch_id: line.batchId || null,

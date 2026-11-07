@@ -3,6 +3,11 @@
 # allowlist. It does not rely on gateway JWT checks or clinic role metadata.
 verify_jwt = false
 
+[functions.lookup-generic-names]
+# Auth is verified with /auth/v1/user inside the handler; medicine reads and
+# suggestion writes use that user's token and the existing clinic checks.
+verify_jwt = false
+
 [functions.suite-member]
 # Validates the actual verified Auth user before accepting an invitation.
 verify_jwt = false

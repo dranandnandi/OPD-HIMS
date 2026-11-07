@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+public/medicine-reference/
 dist-suite-admin
 *.local
 

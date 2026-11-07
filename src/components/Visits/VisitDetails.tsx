@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, BedDouble, Download } from 'lucide-react';
 import { Visit, Bill } from '../../types';
 import { visitService } from '../../services/visitService';
+import { getVisitTypeLabel } from '../../utils/visitTypes';
 import { billingService } from '../../services/billingService';
 import { useAuth } from '../Auth/useAuth';
 import { format } from 'date-fns';
@@ -260,6 +261,7 @@ const VisitDetails: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Visit Date</p>
               <p className="font-semibold text-gray-800">{format(visit.date, 'PPP')}</p>
+              <p className="text-sm text-gray-600">{getVisitTypeLabel(visit.visitType)}</p>
             </div>
           </div>
           

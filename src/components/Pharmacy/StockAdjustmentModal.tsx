@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Save, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
-import { MedicineWithPrice } from '../../types';
+import { MedicineWithPrice, MedicineBatch } from '../../types';
 import { masterDataService } from '../../services/masterDataService';
 import { pharmacyService } from '../../services/pharmacyService';
 import { getCurrentProfile } from '../../services/profileService';
 import { useAuth } from '../Auth/useAuth';
-import { packSpec, stockBreakdown, round3, fmtQty } from '../../utils/packUnits';
+import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
 
 interface StockAdjustmentModalProps {
   onSave: () => void;
@@ -15,6 +15,10 @@ interface StockAdjustmentModalProps {
 const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onClose }) => {
   const { user } = useAuth();
   const [medicines, setMedicines] = useState<MedicineWithPrice[]>([]);
+  const [batches, setBatches] = useState<MedicineBatch[]>([]);
+  const [batchId, setBatchId] = useState('');
+  const request = useRef<{ id: string; payload?: { medicineId: string; quantity: number; reason: string; batchId: string } }>({ id: crypto.randomUUID() });
+  const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,8 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
       setError(null);
       
       const clinicId = user?.clinicId;
-      const medicinesData = await masterDataService.getMedicines(clinicId);
+      const [medicinesData, batchData] = await Promise.all([masterDataService.getMedicines(clinicId), pharmacyService.getBatches(undefined, true)]);
+      setBatches(batchData);
       setMedicines(medicinesData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load medicines');
@@ -68,7 +73,10 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
 
   const isValidAdjustment = () => {
     const newStock = getNewStockLevel();
-    return newStock >= 0;
+    const batchStock = batchId ? batches.find(b => b.id === batchId)?.quantity || 0
+      : getCurrentStock() - batches.filter(b => b.medicineId === formData.medicineId).reduce((sum, b) => sum + b.quantity, 0);
+    return newStock >= 0 && (formData.adjustmentType === 'increase' || batchStock >= formData.quantity)
+      && (formData.adjustmentType !== 'increase' || !!batchId || !batches.some(b => b.medicineId === formData.medicineId));
   };
 
   const handleSave = async () => {
@@ -107,12 +115,10 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
       
       const quantityChange = formData.adjustmentType === 'increase' ? formData.quantity : -formData.quantity;
       
-      await pharmacyService.adjustStock(
-        formData.medicineId,
-        quantityChange,
-        formData.reason,
-        user.id
-      );
+      request.current.payload ||= { medicineId: formData.medicineId, quantity: quantityChange, reason: formData.reason, batchId };
+      setSubmitted(true);
+      const payload = request.current.payload;
+      await pharmacyService.adjustStock(payload.medicineId, payload.quantity, payload.reason, user.id, payload.batchId, request.current.id);
       
       alert('Stock adjustment recorded successfully!');
       onSave();
@@ -121,6 +127,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
     } catch (error) {
       console.error('Error adjusting stock:', error);
       alert(error instanceof Error ? error.message : 'Failed to record stock adjustment');
+      if ((error as { requestRejected?: boolean })?.requestRejected) { request.current = { id: crypto.randomUUID() }; setSubmitted(false); }
     } finally {
       setSaving(false);
     }
@@ -158,6 +165,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
         </div>
 
         <div className="p-6 space-y-4">
+          <fieldset disabled={saving || submitted} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               {error}
@@ -171,7 +179,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
             <select
               required
               value={formData.medicineId}
-              onChange={(e) => setFormData({ ...formData, medicineId: e.target.value })}
+              onChange={(e) => { setFormData({ ...formData, medicineId: e.target.value }); setBatchId(''); }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select a medicine</option>
@@ -183,6 +191,13 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
             </select>
           </div>
 
+          <p className="text-xs text-blue-700">For scheme goods, use Paid quantity + Free quantity on the purchase receipt. This adjustment changes stock only, not the purchase register.</p>
+          {formData.medicineId && <label className="block text-sm">Batch
+            <select value={batchId} onChange={e => setBatchId(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+              <option value="">Unbatched stock</option>
+              {batches.filter(b => b.medicineId === formData.medicineId).map(b => <option key={b.id} value={b.id}>{b.batchNumber} ({stockBreakdown(b.quantity, spec())})</option>)}
+            </select>
+          </label>}
           {formData.medicineId && (
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="text-sm text-blue-700">
@@ -239,17 +254,17 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
             <input
               type="number"
               min="0"
-              step="0.001"
+              step="any"
               required
               value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: round3(parseFloat(e.target.value) || 0) })}
+              onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter quantity"
             />
             {spec().packSize > 1 && (
               <p className="text-xs text-gray-500 mt-1">
                 In {spec().stockUnit.toLowerCase()}s. For loose {spec().dispenseUnit.toLowerCase()}s use a fraction —
-                5 {spec().dispenseUnit.toLowerCase()} out of {fmtQty(spec().packSize)} is {round3(5 / spec().packSize)}.
+                5 {spec().dispenseUnit.toLowerCase()} out of {fmtQty(spec().packSize)} is {Number((5 / spec().packSize).toFixed(12))}.
               </p>
             )}
           </div>
@@ -306,6 +321,8 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
             </div>
           </div>
 
+          </fieldset>
+          {submitted && <p className="text-xs text-amber-700">Retry reuses the same request. To change rejected details, close and reopen after checking stock movements.</p>}
           <div className="flex justify-end gap-3 pt-4">
             <button
               onClick={onClose}
@@ -323,7 +340,7 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ onSave, onC
               }`}
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Processing...' : 'Record Adjustment'}
+              {saving ? 'Processing...' : submitted ? 'Retry same request' : 'Record Adjustment'}
             </button>
           </div>
         </div>

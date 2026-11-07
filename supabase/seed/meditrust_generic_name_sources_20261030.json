@@ -1,0 +1,1068 @@
+{
+  "clinicId": "238307be-362b-4fff-bb9a-3f2f9ff44519",
+  "clinicName": "Meditrust Clinics",
+  "drugLicence": "GJ-ADR-272601",
+  "sourceCheckedOn": "2026-10-30",
+  "groups": [
+    {
+      "names": [
+        "BILASURE M TAB"
+      ],
+      "generic": "Montelukast + Bilastine",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "CEPODEM 200 TAB"
+      ],
+      "generic": "Cefpodoxime",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "LACTIHEP LEMON FLV SYP 200ML"
+      ],
+      "generic": "Lactitol",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "LEVIPIL 500 TAB"
+      ],
+      "generic": "Levetiracetam",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "LOXOF 500MG TAB"
+      ],
+      "generic": "Levofloxacin",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "NEXITO PLUS TAB"
+      ],
+      "generic": "Escitalopram + Clonazepam",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "ZOLE F OINT 15GM"
+      ],
+      "generic": "Fluocinolone + Miconazole",
+      "source": "https://sunpharma.com/india-products/"
+    },
+    {
+      "names": [
+        "BIGBRO 100 MG TAB",
+        "BIGBRO OD TAB 200MG"
+      ],
+      "generic": "Acebrophylline",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "CALINTA XT TAB"
+      ],
+      "generic": "Calcium carbonate + Methylcobalamin + L-methylfolate + Vitamin D3 + Pyridoxal-5-phosphate",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "CEFTAS 200 MG",
+        "CEFTAS 400 TAB"
+      ],
+      "generic": "Cefixime",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "CILNY 20MG"
+      ],
+      "generic": "Cilnidipine",
+      "source": "https://www.intaspharma.com/products/",
+      "note": "Name says 20 mg but stored strength is 10. Generic only; strength requires pack review."
+    },
+    {
+      "names": [
+        "LEVERA 1000 TAB",
+        "LEVERA 250 TAB",
+        "LEVERA 500 TAB",
+        "LEVERA 750 TAB",
+        "LEVERA XR 500 TAB"
+      ],
+      "generic": "Levetiracetam",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "LIPICURE 10 TAB",
+        "LIPICURE 20 TAB",
+        "LIPICURE 5 TAB"
+      ],
+      "generic": "Atorvastatin",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "LOOZ SOLUTION 240 ML"
+      ],
+      "generic": "Lactulose",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "NIFTAS 100MG TAB"
+      ],
+      "generic": "Nitrofurantoin",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "RISDONE 3 TAB"
+      ],
+      "generic": "Risperidone",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "CORBIS 2.5"
+      ],
+      "generic": "Bisoprolol",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "CORVADIL A TAB"
+      ],
+      "generic": "Amlodipine + Atenolol",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "LOPAMIDE"
+      ],
+      "generic": "Loperamide",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "LOSAR"
+      ],
+      "generic": "Losartan",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "LOSAR H"
+      ],
+      "generic": "Losartan + Hydrochlorothiazide",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "MOXIF 400 MG",
+        "MOXIF EYE DROP 10 ML"
+      ],
+      "generic": "Moxifloxacin",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEBICARD 10",
+        "NEBICARD 5"
+      ],
+      "generic": "Nebivolol",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEBICARD H"
+      ],
+      "generic": "Nebivolol + Hydrochlorothiazide",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEBICARD SM"
+      ],
+      "generic": "Nebivolol + S-Amlodipine",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEBICARD T"
+      ],
+      "generic": "Nebivolol + Telmisartan",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEXPRO 40 TAB",
+        "NEXPRO JUNIOR 1GM SACHET"
+      ],
+      "generic": "Esomeprazole",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEXPRO IT CAP"
+      ],
+      "generic": "Esomeprazole + Itopride",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "NEXPRO RD 20 CAP",
+        "NEXPRO RD 40"
+      ],
+      "generic": "Esomeprazole + Domperidone",
+      "source": "https://www.torrentpharma.com/pi/IN/products/"
+    },
+    {
+      "names": [
+        "CIPLADINE OINT 10GM",
+        "CIPLADINE OINT 20GM",
+        "CIPLADINE OINT 30GM",
+        "CIPLADINE POW 10GM"
+      ],
+      "generic": "Povidone-iodine",
+      "source": "https://www.ciplahealth.in/brand/cipladine"
+    },
+    {
+      "names": [
+        "CIPLOX TZ TAB"
+      ],
+      "generic": "Ciprofloxacin + Tinidazole",
+      "source": "https://www.ciplamed.com/product-index/ciplox-tz-tablets"
+    },
+    {
+      "names": [
+        "CIPLOX D EYE DROP 10ML"
+      ],
+      "generic": "Ciprofloxacin + Dexamethasone",
+      "source": "https://www.ciplamed.com/product-index/ciplox-d-eyeear-drops"
+    },
+    {
+      "names": [
+        "TENOVATE GN CREAM 20GM"
+      ],
+      "generic": "Clobetasol propionate + Neomycin sulphate",
+      "source": "https://india-pharma.gsk.com/media/r5gi5nxr/tenovate-gn.pdf"
+    },
+    {
+      "names": [
+        "BETNESOL TAB"
+      ],
+      "generic": "Betamethasone",
+      "source": "https://india-pharma.gsk.com/media/6345/betnesol-tablet-and-betnesol-forte-tablets.pdf"
+    },
+    {
+      "names": [
+        "CEFTUM 250 TAB",
+        "CEFTUM 500 TAB"
+      ],
+      "generic": "Cefuroxime axetil",
+      "source": "https://india-pharma.gsk.com/media/6357/ceftum-tablets.pdf"
+    },
+    {
+      "names": [
+        "COBADEX CZS TAB (1X15)"
+      ],
+      "generic": "Pyridoxine + Nicotinamide + Cyanocobalamin + Folic acid + Chromium + Zinc + Selenium",
+      "source": "https://india-pharma.gsk.com/media/6362/cobadex-czs.pdf"
+    },
+    {
+      "names": [
+        "TENOVATE CREAM 30GM"
+      ],
+      "generic": "Clobetasol propionate",
+      "source": "https://india-pharma.gsk.com/media/6414/tenovate.pdf"
+    },
+    {
+      "names": [
+        "CIPLOX 250 TAB",
+        "CIPLOX 500 TAB"
+      ],
+      "generic": "Ciprofloxacin",
+      "source": "https://www.ciplamed.com/product-index/ciplox-tablets"
+    },
+    {
+      "names": [
+        "CIPLAR LA 20",
+        "CIPLAR LA 40"
+      ],
+      "generic": "Propranolol",
+      "source": "https://www.ciplamed.com/product-index/ciplar-tablets"
+    },
+    {
+      "names": [
+        "BUDECORT 0.5 RESPULES"
+      ],
+      "generic": "Budesonide",
+      "source": "https://rwandafda.gov.rw/wp-content/uploads/2025/04/Budecort0.5mgRespules-BudesonideInhalationSuspension0.5mg2ml-SmPC.pdf"
+    },
+    {
+      "names": [
+        "CLOPIVAS TAB 75 MG"
+      ],
+      "generic": "Clopidogrel",
+      "source": "https://www.saflii.org/za/gaz/ZAGovGaz/2009/113.pdf"
+    },
+    {
+      "names": [
+        "AVIL 25 MG TAB",
+        "AVIL 50MG TAB"
+      ],
+      "generic": "Pheniramine maleate",
+      "source": "https://www.sanofi.com/assets/countries/india/docs/consumer-healthcare/for-healthcare-professionals/products-information/avil-api-july-2019.pdf"
+    },
+    {
+      "names": [
+        "LANZOL  JUNIOR 15 TABLET",
+        "LANZOL JUNIOR 30"
+      ],
+      "generic": "Lansoprazole",
+      "source": "https://smvmch.ac.in/files/Footer/drugs_formulary_edition_III_2023.pdf"
+    },
+    {
+      "names": [
+        "BUDECORT 200 ROTACAP",
+        "BUDECORT 400 ROTACAP"
+      ],
+      "generic": "Budesonide",
+      "source": "https://nppa.gov.in/uploads/tender/UPLOAD-06.03.2024.pdf"
+    },
+    {
+      "names": [
+        "CORTEL 20 TAB",
+        "CORTEL 40 TAB"
+      ],
+      "generic": "Telmisartan",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "CORTEL 3D 12.5"
+      ],
+      "generic": "Telmisartan + Cilnidipine + Chlorthalidone",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "CORTEL A TAB"
+      ],
+      "generic": "Telmisartan + Amlodipine",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "CORTEL M 25 TAB",
+        "CORTEL M 50 TAB"
+      ],
+      "generic": "Telmisartan + Metoprolol",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "LINABITE TAB"
+      ],
+      "generic": "Linagliptin",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "MYORIL 4 CAP",
+        "MYORIL 8 TAB"
+      ],
+      "generic": "Thiocolchicoside",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "MYORIL MAXX TAB"
+      ],
+      "generic": "Thiocolchicoside + Paracetamol + Aceclofenac",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "MYORIL PLUS TAB"
+      ],
+      "generic": "Thiocolchicoside + Paracetamol",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "OBIMET GX 1 TAB",
+        "OBIMET GX 2 TAB",
+        "OBIMET GX 3 TAB"
+      ],
+      "generic": "Metformin + Glimepiride",
+      "source": "https://www.coronaremedies.com/"
+    },
+    {
+      "names": [
+        "CLAVAM BID DRY SYRUP 30 ML"
+      ],
+      "generic": "Amoxicillin + Clavulanic acid",
+      "source": "https://www.alkemlabs.com/our-offerings/rx-products"
+    },
+    {
+      "names": [
+        "MOXIKIND CV 375 TAB",
+        "MOXIKIND CV 625 TAB",
+        "MOXIKIND CV DRY SYRUP",
+        "MOXIKIND CV FORTE DRY SYP",
+        "MOXIKIND CV KID TAB"
+      ],
+      "generic": "Amoxicillin + Clavulanic acid",
+      "source": "https://www.mankindpharma.com/products/all-products/"
+    },
+    {
+      "names": [
+        "CARDACE 2.5 TAB",
+        "CARDACE 5 TAB"
+      ],
+      "generic": "Ramipril",
+      "source": "https://www.sanofi.com/en/india/our-science/pharmaceutical-products"
+    },
+    {
+      "names": [
+        "CLAVAM 625 MG TABLETS"
+      ],
+      "generic": "Amoxicillin + Clavulanic acid",
+      "source": "https://www.alkemlabs.com/our-offerings/rx-products"
+    },
+    {
+      "names": [
+        "METPURE XL 25 TAB",
+        "METPURE XL 50 TAB"
+      ],
+      "generic": "S-Metoprolol",
+      "source": "https://www.efda.gov.et/wp-content/uploads/2023/08/Metoprolol-Succinate-and-Metoprolol-tartrate-Metpure-XL-50_Emcure-Pharmaceuticals-Limited.pdf"
+    },
+    {
+      "names": [
+        "LEVOFLOX 750 MG"
+      ],
+      "generic": "Levofloxacin",
+      "source": "https://www.ciplamed.com/product-index/levoflox-tablets"
+    },
+    {
+      "names": [
+        "PETRIL 0.5"
+      ],
+      "generic": "Clonazepam",
+      "source": "https://nppa.gov.in/storage/uploads/tender/d6715c5b94fc73e8722a9ab8b484d152.pdf"
+    },
+    {
+      "names": [
+        "CIZASPA X TAB"
+      ],
+      "generic": "Mebeverine + Chlordiazepoxide",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf"
+    },
+    {
+      "names": [
+        "CIZASPA SR TAB"
+      ],
+      "generic": "Mebeverine",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf"
+    },
+    {
+      "names": [
+        "LTK 25 TAB",
+        "LTK 50 TAB"
+      ],
+      "generic": "Losartan",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "LTK AM TAB"
+      ],
+      "generic": "Losartan + Amlodipine",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "LTK H TAB"
+      ],
+      "generic": "Losartan + Hydrochlorothiazide",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "MPROL 25MG",
+        "MPROL 50MG"
+      ],
+      "generic": "Metoprolol",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "MPROL AM 25/5 MG"
+      ],
+      "generic": "Metoprolol + Amlodipine",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "TELMIRIDE 20",
+        "TELMIRIDE 40"
+      ],
+      "generic": "Telmisartan",
+      "source": "https://www.unisonpharmaceuticals.com/cardiology/"
+    },
+    {
+      "names": [
+        "L DIO 1 M TAB",
+        "L DIO 1 M KID TAB"
+      ],
+      "generic": "Montelukast + Levocetirizine",
+      "source": "https://www.unisonpharmaceuticals.com/respiratory-system/"
+    },
+    {
+      "names": [
+        "L DIO-1 TAB"
+      ],
+      "generic": "Levocetirizine",
+      "source": "https://www.unisonpharmaceuticals.com/respiratory-system/"
+    },
+    {
+      "names": [
+        "PETRIL BETA"
+      ],
+      "generic": "Clonazepam + Propranolol",
+      "source": "https://www.truemeds.in/medicine/petril-beta-02510-mg-tablet-15-tm-tacr1-078932"
+    },
+    {
+      "names": [
+        "NUCOXIA 120 TAB",
+        "NUCOXIA 90 TAB"
+      ],
+      "generic": "Etoricoxib",
+      "source": "https://www.zydushealthcare.com/brand/nucoxia/"
+    },
+    {
+      "names": [
+        "NUCOXIA MR"
+      ],
+      "generic": "Etoricoxib + Thiocolchicoside",
+      "source": "https://www.zydushealthcare.com/brand/nucoxia/"
+    },
+    {
+      "names": [
+        "NUCOXIA P TAB"
+      ],
+      "generic": "Etoricoxib + Paracetamol",
+      "source": "https://www.zydushealthcare.com/brand/nucoxia/"
+    },
+    {
+      "names": [
+        "UDAPA TRIO TAB",
+        "UDAPA TRIO FORTE TAB"
+      ],
+      "generic": "Dapagliflozin + Sitagliptin + Metformin",
+      "source": "https://journal-api.s3.ap-south-1.amazonaws.com/issues/japi-72-7.pdf"
+    },
+    {
+      "names": [
+        "UDAPA 10 TAB"
+      ],
+      "generic": "Dapagliflozin",
+      "source": "https://nppa.gov.in/uploads/tender/99eac39c4e62ab00524aa0275fad7979.pdf"
+    },
+    {
+      "names": [
+        "MUCAINE GEL 200ML"
+      ],
+      "generic": "Aluminium hydroxide + Magnesium hydroxide + Oxetacaine",
+      "source": "https://labeling.pfizer.com/ShowLabeling.aspx?id=14808"
+    },
+    {
+      "names": [
+        "MUCOMIX 600 TAB"
+      ],
+      "generic": "Acetylcysteine",
+      "source": "https://samarthlife.com/product-register?page=1"
+    },
+    {
+      "names": [
+        "CONCOR AM 2.5",
+        "CONCOR AM 5"
+      ],
+      "generic": "Bisoprolol + Amlodipine",
+      "source": "https://registrasiobat.pom.go.id/files/assesment-reports/obat_baru/Concor%20AM%20Tablet%205mg%2B5mg_Bisoprolol%20Fumarat%2BAmlodipin_DKI1952900110A1_2019.pdf"
+    },
+    {
+      "names": [
+        "CONCOR T 5"
+      ],
+      "generic": "Bisoprolol + Telmisartan",
+      "source": "https://moph.gov.lb/en/Drugs/view/1520"
+    },
+    {
+      "names": [
+        "UDAPA S 10/100 TAB"
+      ],
+      "generic": "Dapagliflozin + Sitagliptin",
+      "source": "https://rbi.org.in/hindi1/Upload/content/PDFs/CESHRMD03012024_HAN.pdf"
+    },
+    {
+      "names": [
+        "AUTRIN CAPS"
+      ],
+      "generic": "Ferrous fumarate + Folic acid + Cyanocobalamin",
+      "source": "https://www.apollopharmacy.in/otc/autrin-capsule"
+    },
+    {
+      "names": [
+        "CANDID CREAM 30GM"
+      ],
+      "generic": "Clotrimazole",
+      "source": "https://indianrailways.gov.in/railwayboard/uploads/directorate/health/Product_List/GLENMARK%20PRODUCT%20LIST%202023.pdf"
+    },
+    {
+      "names": [
+        "CLOBEN G SKIN CREAM 5 GM"
+      ],
+      "generic": "Clotrimazole + Beclomethasone dipropionate + Gentamicin",
+      "source": "https://www.indoco.com/product-lists/formulations/emergingmkt-prdts.htm"
+    },
+    {
+      "names": [
+        "CYCLOPAM TAB (INDOCO)"
+      ],
+      "generic": "Dicyclomine + Paracetamol",
+      "source": "https://www.indoco.com/product-lists/formulations/emergingmkt-prdts.htm"
+    },
+    {
+      "names": [
+        "CYCLOPAM SYP 60 ML"
+      ],
+      "generic": "Dicyclomine + Simethicone",
+      "source": "https://www.indoco.com/product-lists/formulations/emergingmkt-prdts.htm"
+    },
+    {
+      "names": [
+        "COMBIFLAM TAB"
+      ],
+      "generic": "Ibuprofen + Paracetamol",
+      "source": "https://www.sanofi.com/en/india/consumer-healthcare/consumer-healthcare-products/all-products"
+    },
+    {
+      "names": [
+        "CONCOR  2.5",
+        "CONCOR 5"
+      ],
+      "generic": "Bisoprolol",
+      "source": "https://quest3plus.bpfk.gov.my/pmo2/detail.php?id=MAL20020792A&type=product"
+    },
+    {
+      "names": [
+        "COMBIFLAM SYP 60ML"
+      ],
+      "generic": "Ibuprofen + Paracetamol",
+      "source": "https://www.sanofi.com/assets/countries/india/docs/consumer-healthcare/for-healthcare-professionals/products-information/combiflam-suspension-clean-api-apr-2025.pdf"
+    },
+    {
+      "names": [
+        "LASIX 40 TAB"
+      ],
+      "generic": "Furosemide",
+      "source": "https://www.sanofi.com/assets/countries/india/docs/science-and-innovation/for-healthcare-professionals/product-information/pharmaceuticals/lasix-api.pdf"
+    },
+    {
+      "names": [
+        "MEGANEURON OD PLUS CAP"
+      ],
+      "generic": "Methylcobalamin + Pyridoxine + Benfotiamine + Alpha lipoic acid + Folic acid + Biotin",
+      "source": "https://www.aristopharma.co.in/product/meganeuron-od-plus-1500mcg/"
+    },
+    {
+      "names": [
+        "MEGA CV 228.5 DRY SYP",
+        "MEGA CV 625 TAB"
+      ],
+      "generic": "Amoxicillin + Clavulanic acid",
+      "source": "https://indianrailways.gov.in/railwayboard/uploads/directorate/health/Product_List/Aristo%20Pharmaceuticals%20Pvt_%20Ltd.pdf"
+    },
+    {
+      "names": [
+        "METROGYL O TAB"
+      ],
+      "generic": "Metronidazole + Ofloxacin",
+      "source": "https://jbpharma.com/our-therapies/"
+    },
+    {
+      "names": [
+        "NICARDIA RETARD 10MG TAB"
+      ],
+      "generic": "Nifedipine",
+      "source": "https://jbpharma.com/our-therapies/"
+    },
+    {
+      "names": [
+        "MAXTRA SYP"
+      ],
+      "generic": "Phenylephrine + Chlorpheniramine",
+      "source": "https://www.zuventus.com/products/maxtra-syrup"
+    },
+    {
+      "names": [
+        "MAXTRA P SYP 60ML"
+      ],
+      "generic": "Paracetamol + Phenylephrine + Chlorpheniramine",
+      "source": "https://www.zuventus.com/products/maxtra-p-syrup"
+    },
+    {
+      "names": [
+        "DAPAVEL S 10/100 TAB"
+      ],
+      "generic": "Dapagliflozin + Sitagliptin",
+      "source": "https://www.intaspharma.com/products/"
+    },
+    {
+      "names": [
+        "ARACHITOL NANO SOLITION"
+      ],
+      "generic": "Cholecalciferol (Vitamin D3)",
+      "source": "https://www.abbott.in/products/a.html"
+    },
+    {
+      "names": [
+        "MAZETOL 200 TAB",
+        "MAZETOL 400 TAB"
+      ],
+      "generic": "Carbamazepine",
+      "source": "https://www.abbott.in/products/m.html"
+    },
+    {
+      "names": [
+        "LIMCEE CHEW 500 TAB"
+      ],
+      "generic": "Ascorbic acid + Sodium ascorbate",
+      "source": "https://5.imimg.com/data5/SELLER/Doc/2025/2/487162224/LY/MC/YQ/236621512/limcee-500-mg.pdf"
+    },
+    {
+      "names": [
+        "LANUM 667 MG TAB"
+      ],
+      "generic": "Calcium acetate",
+      "source": "https://www.larenon.com/wp-content/uploads/2019/07/5-7.-Lanum-Series.pdf"
+    },
+    {
+      "names": [
+        "SOBISIS TAB",
+        "SOBISIS FORTE TAB"
+      ],
+      "generic": "Sodium bicarbonate",
+      "source": "https://www.larenon.com/wp-content/uploads/2017/12/Sobisis-Sobisis-Forte.pdf"
+    },
+    {
+      "names": [
+        "LEVOLIN 0.31 RESPULES"
+      ],
+      "generic": "Levosalbutamol",
+      "source": "https://www.dps.gov.in/uploads/Oct-Dec%202017.pdf"
+    },
+    {
+      "names": [
+        "LEVOLIN 0.63 RESPULES"
+      ],
+      "generic": "Levosalbutamol",
+      "source": "https://5.imimg.com/data5/SELLER/Doc/2025/3/497186680/IN/EL/SR/236621512/levolin-respules-0-63.pdf"
+    },
+    {
+      "names": [
+        "DUOLIN 3ML RESPULES"
+      ],
+      "generic": "Levosalbutamol + Ipratropium bromide",
+      "source": "https://www.ciplamed.com/product-index/duolin-respules"
+    },
+    {
+      "names": [
+        "COMBIMIST L INH 200MDI - CI"
+      ],
+      "generic": "Levosalbutamol + Ipratropium bromide",
+      "source": "https://www.zydushealthcare.com/therapies/respiratory/"
+    },
+    {
+      "names": [
+        "NORFLOX 400 TAB"
+      ],
+      "generic": "Norfloxacin + Lactic acid bacillus",
+      "source": "https://www.ciplamed.com/product-index/norflox-tablets"
+    },
+    {
+      "names": [
+        "DIGENE GEL MINT 200ML"
+      ],
+      "generic": "Magnesium hydroxide + Simethicone + Sodium carboxymethylcellulose + Dried aluminium hydroxide gel",
+      "source": "https://www.abbott.in/products/d.html"
+    },
+    {
+      "names": [
+        "CYBLEX MV 80.2",
+        "CYBLEX MV 80.3 TAB"
+      ],
+      "generic": "Gliclazide + Metformin + Voglibose",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Eris%20Price%20List%20Form%20V%20-New%20GST.pdf"
+    },
+    {
+      "names": [
+        "MONTEK LC TAB"
+      ],
+      "generic": "Montelukast + Levocetirizine",
+      "source": "https://indianrailways.gov.in/railwayboard/uploads/directorate/health/2024/Sun%20Pharma%20Labioratories%20Ltd-270504.pdf"
+    },
+    {
+      "names": [
+        "COLIMEX SUSP 60ML"
+      ],
+      "generic": "Dicyclomine + Activated dimethicone",
+      "source": "https://wallacepharma.com/all-products/"
+    },
+    {
+      "names": [
+        "MBSON SL TAB"
+      ],
+      "generic": "Methylcobalamin",
+      "source": "https://www.unisonpharmaceuticals.com/vitamin-nutrition/"
+    },
+    {
+      "names": [
+        "CREMAFFIN MF SYRUP 225 ML",
+        "CREMAFFIN MINT SYP 225ML"
+      ],
+      "generic": "Liquid paraffin + Magnesium hydroxide (Milk of magnesia)",
+      "source": "https://www.abbott.in/products/c.html"
+    },
+    {
+      "names": [
+        "JANUMET 50/500MG TAB"
+      ],
+      "generic": "Sitagliptin + Metformin",
+      "source": "https://www.msd.com.hk/product/prescription-products/"
+    },
+    {
+      "names": [
+        "NOVELON TAB"
+      ],
+      "generic": "Desogestrel + Ethinylestradiol",
+      "source": "https://www.apollopharmacy.in/medicine/novelon-tablet-21s"
+    },
+    {
+      "names": [
+        "LINID TAB"
+      ],
+      "generic": "Linezolid",
+      "source": "https://www.zydushealthcare.com/brand/linid/"
+    },
+    {
+      "names": [
+        "LNBLOC 10",
+        "LNBLOC 5"
+      ],
+      "generic": "Cilnidipine",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Eris%20Price%20List%20Form%20V%20-New%20GST.pdf"
+    },
+    {
+      "names": [
+        "LOBET TAB"
+      ],
+      "generic": "Labetalol",
+      "source": "https://samarthlife.com/node/3036"
+    },
+    {
+      "names": [
+        "LARIAGO DS TAB 1X5",
+        "LARIAGO SYP 120ML",
+        "LARIAGO TAB"
+      ],
+      "generic": "Chloroquine phosphate",
+      "source": "https://ipca.com/wp-content/pdf/Product-List-for-Patients.pdf"
+    },
+    {
+      "names": [
+        "ECOSPRIN 150MG TAB"
+      ],
+      "generic": "Aspirin (Acetylsalicylic acid)",
+      "source": "https://rbi.org.in/hindi1/Upload/content/PDFs/CESHRMD03012024_HAN.pdf"
+    },
+    {
+      "names": [
+        "SHELCAL XT TAB"
+      ],
+      "generic": "Calcium carbonate + Cholecalciferol + Methylcobalamin + L-methylfolate calcium + Pyridoxal-5-phosphate",
+      "source": "https://www.torrentpharma.com/assets/RXY_4_GT_5x_OU_0_Kalpzsu_X2_b35fd6a6d2.pdf"
+    },
+    {
+      "names": [
+        "MICRODOX LBX"
+      ],
+      "generic": "Doxycycline + Lactobacillus",
+      "source": "https://5.imimg.com/data5/SELLER/Doc/2025/7/526594246/GB/EI/DW/241955244/microdox-lbx-cap.pdf"
+    },
+    {
+      "names": [
+        "NOVASTAT GOLD 10 TAB",
+        "NOVASTAT GOLD 20 TAB"
+      ],
+      "generic": "Rosuvastatin + Aspirin + Clopidogrel",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf"
+    },
+    {
+      "names": [
+        "MONTICOPE TAB"
+      ],
+      "generic": "Montelukast + Levocetirizine",
+      "source": "https://products.pharmacyboardkenya.org/uploads/MONTICOPE_10_5_MG_TABLET.pdf"
+    },
+    {
+      "names": [
+        "COLICAID DROP 15ML"
+      ],
+      "generic": "Simethicone + Dill oil + Fennel oil",
+      "source": "https://fdaghana.gov.gh/wp-content/uploads/2025/12/Colicaid-Drops-Simethicone-Smpc.pdf"
+    },
+    {
+      "names": [
+        "ENVAS 2.5"
+      ],
+      "generic": "Enalapril maleate",
+      "source": "https://indianrailways.gov.in/railwayboard/uploads/directorate/health/Product_List/Cadila%20Pharmaceuticals%20Ltd..pdf"
+    },
+    {
+      "names": [
+        "BANDY SYP 10ML"
+      ],
+      "generic": "Albendazole",
+      "source": "https://www.retailershakti.com/medicine/bandy-suspension-10-ml-wholesale-13517"
+    },
+    {
+      "names": [
+        "BURNOL  25 MG"
+      ],
+      "generic": "Aminacrine hydrochloride + Cetrimide",
+      "source": "https://health.drmorepen.com/products/dr-morepen-burnol-15-gm",
+      "note": "Catalogue says 25 MG; verify the tube size and unit from the pack. Only generic ingredients are supplied here."
+    },
+    {
+      "names": [
+        "CCM BOTTLE"
+      ],
+      "generic": "Calcium citrate malate + Cholecalciferol + Folic acid",
+      "source": "https://india-pharma.gsk.com/media/c0opj250/ccm-tablets.pdf"
+    },
+    {
+      "names": [
+        "CEFTAS-50 PINEAP FLAV DRY 30ML"
+      ],
+      "generic": "Cefixime",
+      "source": "https://www.apollopharmacy.in/medicine/ceftas-50-pineapple-flavour-dry-syrup-30-ml"
+    },
+    {
+      "names": [
+        "DAPAGLYN 10 TAB"
+      ],
+      "generic": "Dapagliflozin",
+      "source": "https://nppa.gov.in/uploads/tender/99eac39c4e62ab00524aa0275fad7979.pdf"
+    },
+    {
+      "names": [
+        "HYOCIMAX S TAB"
+      ],
+      "generic": "Hyoscyamine sulphate",
+      "source": "https://www.zydushealthcare.com/brands/page/8/"
+    },
+    {
+      "names": [
+        "LEVOCET M SYP"
+      ],
+      "generic": "Levocetirizine + Montelukast",
+      "source": "https://www.nppa.gov.in/storage/uploads/tender/e9a29c54992dce5da460ffff6747f158.pdf"
+    },
+    {
+      "names": [
+        "LIVOGEN"
+      ],
+      "generic": "Ferrous fumarate + Folic acid",
+      "source": "https://livogen.in/doctors-corner/product-information"
+    },
+    {
+      "names": [
+        "LIVOGEN Z"
+      ],
+      "generic": "Ferrous fumarate + Folic acid + Zinc sulphate",
+      "source": "https://www.mims.com/india/drug/info/livogen-z"
+    },
+    {
+      "names": [
+        "MET XL"
+      ],
+      "generic": "Metoprolol succinate",
+      "source": "https://www.nda.or.ug/wp-content/uploads/2024/01/NATIONAL-DRUG-REGISTER-OF-UGANDA-HUMAN-MEDICINES-JANUARY-2024.pdf"
+    },
+    {
+      "names": [
+        "TENOVATE M OINT 10GM"
+      ],
+      "generic": "Clobetasol propionate + Miconazole nitrate",
+      "source": "https://india-pharma.gsk.com/media/lmtpx0ji/tenovate-m.pdf",
+      "note": "Manufacturer describes skin cream; catalogue says ointment. Verify dosage form on the pack. This change supplies ingredients only."
+    },
+    {
+      "names": [
+        "WFI 10ML"
+      ],
+      "generic": "Sterile water for injection",
+      "source": "https://lakhanipharma.com/laksol-wfi/"
+    }
+  ],
+  "reviewedCorrections": [
+    {
+      "id": "2fcfce40-b5b1-4434-a9fc-4185c61ad534",
+      "name": "CEFTAS 200 MG TAB",
+      "previousGeneric": "CEFEXIM",
+      "generic": "Cefixime",
+      "source": "https://www.intaspharma.com/products/",
+      "note": "Source-verified correction: correct cefixime spelling. Current product name and all stock fields are preserved."
+    },
+    {
+      "id": "a53202db-ce49-4ce4-8c50-af42375fe795",
+      "name": "COBADEX CZS TAB",
+      "previousGeneric": "PYRIDOXINE+NICOTINAMIDE+CYNOCOBALAMIN+FOLIC ACID+ZINC+SELENIUM",
+      "generic": "Pyridoxine + Nicotinamide + Cyanocobalamin + Folic acid + Chromium + Zinc + Selenium",
+      "source": "https://india-pharma.gsk.com/media/6362/cobadex-czs.pdf",
+      "note": "Source-verified correction: include chromium in the complete seven-ingredient manufacturer composition. Current product name and all stock fields are preserved."
+    },
+    {
+      "id": "8439b78e-8204-4d8a-a402-f92c7e6ea833",
+      "name": "AKT 3MG TAB",
+      "previousGeneric": "Isoniazid + Rifampicin",
+      "generic": "Isoniazid + Rifampicin + Ethambutol",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf",
+      "note": "Complete combination ingredients from the manufacturer Form V. Catalogue 3mg/4mg denotes a brand variant incorrectly recorded as strength; do not use that value for prescribing or merging before pack verification. Strength and pack rules are preserved."
+    },
+    {
+      "id": "8555921e-4b5f-4690-b94d-520c1eb033a1",
+      "name": "AKT 4MG TAB",
+      "previousGeneric": "Isoniazid + Rifampicin",
+      "generic": "Isoniazid + Rifampicin + Ethambutol + Pyrazinamide",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf",
+      "note": "Complete combination ingredients from the manufacturer Form V. Catalogue 3mg/4mg denotes a brand variant incorrectly recorded as strength; do not use that value for prescribing or merging before pack verification. Strength and pack rules are preserved."
+    },
+    {
+      "id": "3fc7b65c-46fc-46b0-83c0-72b8339a8337",
+      "name": "AKURIT 4MG TAB",
+      "previousGeneric": "Isoniazid + Rifampicin +Ethambutol",
+      "generic": "Isoniazid + Rifampicin + Ethambutol + Pyrazinamide",
+      "source": "https://apiv2.netmeds.com/images/NPPA_Pharma_pdf/Lupin%20Ltd%20Price%20List%20Form%20V-New%20GST.pdf",
+      "note": "Complete combination ingredients from the manufacturer Form V. Catalogue 3mg/4mg denotes a brand variant incorrectly recorded as strength; do not use that value for prescribing or merging before pack verification. Strength and pack rules are preserved."
+    }
+  ]
+}

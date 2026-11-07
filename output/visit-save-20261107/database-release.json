@@ -1,0 +1,22 @@
+{
+  "projectRef": "kiezgfhonvwryxpubfvl",
+  "file": "20261107110000_atomic_visit_save.sql",
+  "status": "applied",
+  "sha256": "439579c3829070c9365bb078a7803fc93a4170ced062381ae460b99a0610ac37",
+  "verifiedAt": "2026-11-07T04:45:45.767Z",
+  "checks": {
+    "migrationRecorded": true,
+    "functionMatchesMigration": true,
+    "securityInvoker": true,
+    "searchPathRestricted": true,
+    "authenticatedExecute": true,
+    "anonymousExecuteDenied": true,
+    "receiptsRlsEnabled": true,
+    "receiptsClinicPolicy": true,
+    "receiptsReadableAndInsertable": true,
+    "receiptsMutationRestricted": true,
+    "receiptsAnonymousAccessDenied": true,
+    "authGuardRejected": true
+  },
+  "scope": "Only atomic_visit_save; no clinical records changed"
+}

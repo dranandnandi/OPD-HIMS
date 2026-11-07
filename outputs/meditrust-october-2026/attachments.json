@@ -1,0 +1,932 @@
+{
+  "salary process Sep 2026 (2).xlsx": {
+    "path": "C:\\Users\\Lenovo\\Downloads\\salary process Sep 2026 (2).xlsx",
+    "sheets": [
+      {
+        "name": "Sheet1",
+        "rows": [
+          [
+            {
+              "cell": "A1",
+              "value": "Sr. No."
+            },
+            {
+              "cell": "B1",
+              "value": "Name"
+            },
+            {
+              "cell": "C1",
+              "value": "Type"
+            },
+            {
+              "cell": "D1",
+              "value": "Designation"
+            },
+            {
+              "cell": "E1",
+              "value": "Monthly Salary"
+            },
+            {
+              "cell": "F1",
+              "value": "Month Days"
+            },
+            {
+              "cell": "G1",
+              "value": "Pay Days "
+            },
+            {
+              "cell": "H1",
+              "value": "Payable Salary"
+            }
+          ],
+          [
+            {
+              "cell": "A2",
+              "value": 1
+            },
+            {
+              "cell": "B2",
+              "value": "Ritesh Kumar Patel"
+            },
+            {
+              "cell": "C2",
+              "value": "Employee"
+            },
+            {
+              "cell": "D2",
+              "value": "Front Desk"
+            },
+            {
+              "cell": "E2",
+              "value": 21000
+            },
+            {
+              "cell": "F2",
+              "value": 30
+            },
+            {
+              "cell": "G2",
+              "value": 30
+            },
+            {
+              "cell": "H2",
+              "value": 21000,
+              "formula": "=E2*G2/30"
+            }
+          ],
+          [
+            {
+              "cell": "A3",
+              "value": 2
+            },
+            {
+              "cell": "B3",
+              "value": "Khushali Kikani"
+            },
+            {
+              "cell": "C3",
+              "value": "Employee"
+            },
+            {
+              "cell": "D3",
+              "value": "Front Desk"
+            },
+            {
+              "cell": "E3",
+              "value": 21000
+            },
+            {
+              "cell": "F3",
+              "value": 30
+            },
+            {
+              "cell": "G3",
+              "value": 30
+            },
+            {
+              "cell": "H3",
+              "value": 21000,
+              "formula": "=E3*G3/30"
+            }
+          ],
+          [
+            {
+              "cell": "A4",
+              "value": 3
+            },
+            {
+              "cell": "B4",
+              "value": "Muskan Tosavada "
+            },
+            {
+              "cell": "C4",
+              "value": "Employee"
+            },
+            {
+              "cell": "D4",
+              "value": "Staff Nusre "
+            },
+            {
+              "cell": "E4",
+              "value": 20000
+            },
+            {
+              "cell": "F4",
+              "value": 30
+            },
+            {
+              "cell": "G4",
+              "value": 30
+            },
+            {
+              "cell": "H4",
+              "value": 20000,
+              "formula": "=E4*G4/30"
+            }
+          ],
+          [
+            {
+              "cell": "A5",
+              "value": 4
+            },
+            {
+              "cell": "B5",
+              "value": "Dr Rutvik Patel"
+            },
+            {
+              "cell": "C5",
+              "value": "Employee"
+            },
+            {
+              "cell": "D5",
+              "value": "MO"
+            },
+            {
+              "cell": "E5",
+              "value": 60000
+            },
+            {
+              "cell": "F5",
+              "value": 30
+            },
+            {
+              "cell": "G5",
+              "value": 30
+            },
+            {
+              "cell": "H5",
+              "value": 60000,
+              "formula": "=E5*G5/30"
+            }
+          ],
+          [
+            {
+              "cell": "A6",
+              "value": 5
+            },
+            {
+              "cell": "B6",
+              "value": "Kinjal Patel"
+            },
+            {
+              "cell": "C6",
+              "value": "Employee"
+            },
+            {
+              "cell": "D6",
+              "value": "Pharmacist"
+            },
+            {
+              "cell": "E6",
+              "value": 35000
+            },
+            {
+              "cell": "F6",
+              "value": 30
+            },
+            {
+              "cell": "G6",
+              "value": 15
+            },
+            {
+              "cell": "H6",
+              "value": 17500,
+              "formula": "=E6*G6/30"
+            }
+          ],
+          [
+            {
+              "cell": "A7",
+              "value": 6
+            },
+            {
+              "cell": "B7",
+              "value": "Ilaben Jitendrakumar Solanki"
+            },
+            {
+              "cell": "C7",
+              "value": "Employee"
+            },
+            {
+              "cell": "D7",
+              "value": "Pharmacy Assistant"
+            },
+            {
+              "cell": "E7",
+              "value": 22000
+            },
+            {
+              "cell": "F7",
+              "value": 30
+            },
+            {
+              "cell": "G7",
+              "value": 15
+            },
+            {
+              "cell": "H7",
+              "value": 11000,
+              "formula": "=E7*G7/30"
+            }
+          ],
+          [
+            {
+              "cell": "A8",
+              "value": 7
+            },
+            {
+              "cell": "B8",
+              "value": "Dr Swetank Anand"
+            },
+            {
+              "cell": "C8",
+              "value": "Consultant"
+            },
+            {
+              "cell": "D8",
+              "value": "Clinical Protocol Consultant"
+            },
+            {
+              "cell": "E8",
+              "value": 125000
+            },
+            {
+              "cell": "F8",
+              "value": 30
+            },
+            {
+              "cell": "G8",
+              "value": 30
+            },
+            {
+              "cell": "H8",
+              "value": 125000,
+              "formula": "=E8*G8/30"
+            }
+          ],
+          [
+            {
+              "cell": "A9",
+              "value": 8
+            },
+            {
+              "cell": "B9",
+              "value": "Dr Amit Agarwal"
+            },
+            {
+              "cell": "C9",
+              "value": "Consultant"
+            },
+            {
+              "cell": "D9",
+              "value": "Physician"
+            },
+            {
+              "cell": "E9",
+              "value": 135000
+            },
+            {
+              "cell": "F9",
+              "value": 30
+            },
+            {
+              "cell": "G9",
+              "value": 10
+            },
+            {
+              "cell": "H9",
+              "value": 45000,
+              "formula": "=E9*G9/30"
+            }
+          ],
+          [
+            {
+              "cell": "A10",
+              "value": 9
+            },
+            {
+              "cell": "B10",
+              "value": "Dr. Rensi Rathod"
+            },
+            {
+              "cell": "C10",
+              "value": "Consultant"
+            },
+            {
+              "cell": "D10",
+              "value": "MD Pediatrics"
+            },
+            {
+              "cell": "E10",
+              "value": 75000
+            },
+            {
+              "cell": "F10",
+              "value": 30
+            },
+            {
+              "cell": "G10",
+              "value": 15
+            },
+            {
+              "cell": "H10",
+              "value": 37500,
+              "formula": "=E10*G10/30"
+            }
+          ]
+        ],
+        "max_row": 22,
+        "max_column": 11,
+        "merged": []
+      }
+    ]
+  },
+  "October_2026_Training_Schedule (1).xlsx": {
+    "path": "C:\\Users\\Lenovo\\Downloads\\October_2026_Training_Schedule (1).xlsx",
+    "sheets": [
+      {
+        "name": "October 2026",
+        "rows": [
+          [
+            {
+              "cell": "A1",
+              "value": "Date"
+            },
+            {
+              "cell": "B1",
+              "value": "Day"
+            },
+            {
+              "cell": "C1",
+              "value": "Clinical Training"
+            },
+            {
+              "cell": "D1",
+              "value": "General / Staff Training"
+            }
+          ],
+          [
+            {
+              "cell": "A2",
+              "value": "01-Oct-2026"
+            },
+            {
+              "cell": "B2",
+              "value": "Thursday"
+            },
+            {
+              "cell": "C2",
+              "value": "Chest pain"
+            },
+            {
+              "cell": "D2",
+              "value": "Biomedical waste segregation"
+            }
+          ],
+          [
+            {
+              "cell": "A3",
+              "value": "03-Oct-2026"
+            },
+            {
+              "cell": "B3",
+              "value": "Saturday"
+            },
+            {
+              "cell": "C3",
+              "value": "Hypertension"
+            },
+            {
+              "cell": "D3",
+              "value": "Needle-stick injury"
+            }
+          ],
+          [
+            {
+              "cell": "A4",
+              "value": "05-Oct-2026"
+            },
+            {
+              "cell": "B4",
+              "value": "Monday"
+            },
+            {
+              "cell": "C4",
+              "value": "Stroke"
+            },
+            {
+              "cell": "D4",
+              "value": "Hand hygiene"
+            }
+          ],
+          [
+            {
+              "cell": "A5",
+              "value": "06-Oct-2026"
+            },
+            {
+              "cell": "B5",
+              "value": "Tuesday"
+            },
+            {
+              "cell": "C5",
+              "value": "Sinusitis"
+            },
+            {
+              "cell": "D5",
+              "value": "Basic life support & AED awareness"
+            }
+          ],
+          [
+            {
+              "cell": "A6",
+              "value": "07-Oct-2026"
+            },
+            {
+              "cell": "B6",
+              "value": "Wednesday"
+            },
+            {
+              "cell": "C6",
+              "value": "Rhinorrhoea"
+            },
+            {
+              "cell": "D6",
+              "value": "Fire safety & evacuation"
+            }
+          ],
+          [
+            {
+              "cell": "A7",
+              "value": "08-Oct-2026"
+            },
+            {
+              "cell": "B7",
+              "value": "Thursday"
+            },
+            {
+              "cell": "C7",
+              "value": "Sore throat"
+            },
+            {
+              "cell": "D7",
+              "value": "OPD triage"
+            }
+          ],
+          [
+            {
+              "cell": "A8",
+              "value": "09-Oct-2026"
+            },
+            {
+              "cell": "B8",
+              "value": "Friday"
+            },
+            {
+              "cell": "C8",
+              "value": "Antibiotic stewardship"
+            },
+            {
+              "cell": "D8",
+              "value": "Peripheral IV cannula awareness"
+            }
+          ],
+          [
+            {
+              "cell": "A9",
+              "value": "10-Oct-2026"
+            },
+            {
+              "cell": "B9",
+              "value": "Saturday"
+            },
+            {
+              "cell": "C9",
+              "value": "Nausea and vomiting"
+            },
+            {
+              "cell": "D9",
+              "value": "Spill management"
+            }
+          ],
+          [
+            {
+              "cell": "A10",
+              "value": "12-Oct-2026"
+            },
+            {
+              "cell": "B10",
+              "value": "Monday"
+            },
+            {
+              "cell": "C10",
+              "value": "Constipation"
+            },
+            {
+              "cell": "D10",
+              "value": "OPD emergency response & referral"
+            }
+          ],
+          [
+            {
+              "cell": "A11",
+              "value": "13-Oct-2026"
+            },
+            {
+              "cell": "B11",
+              "value": "Tuesday"
+            },
+            {
+              "cell": "C11",
+              "value": "Urinary tract infection"
+            },
+            {
+              "cell": "D11",
+              "value": "Patient identification"
+            }
+          ],
+          [
+            {
+              "cell": "A12",
+              "value": "14-Oct-2026"
+            },
+            {
+              "cell": "B12",
+              "value": "Wednesday"
+            },
+            {
+              "cell": "C12",
+              "value": "Lower back pain"
+            },
+            {
+              "cell": "D12",
+              "value": "Safe positioning and assisted transfer"
+            }
+          ],
+          [
+            {
+              "cell": "A13",
+              "value": "15-Oct-2026"
+            },
+            {
+              "cell": "B13",
+              "value": "Thursday"
+            },
+            {
+              "cell": "C13",
+              "value": "Liver function tests"
+            },
+            {
+              "cell": "D13",
+              "value": "Medication administration checks"
+            }
+          ],
+          [
+            {
+              "cell": "A14",
+              "value": "16-Oct-2026"
+            },
+            {
+              "cell": "B14",
+              "value": "Friday"
+            },
+            {
+              "cell": "C14",
+              "value": "Cough"
+            },
+            {
+              "cell": "D14",
+              "value": "High-alert medicines awareness"
+            }
+          ],
+          [
+            {
+              "cell": "A15",
+              "value": "17-Oct-2026"
+            },
+            {
+              "cell": "B15",
+              "value": "Saturday"
+            },
+            {
+              "cell": "C15",
+              "value": "Dyspnoea"
+            },
+            {
+              "cell": "D15",
+              "value": "Look-alike / sound-alike drugs"
+            }
+          ],
+          [
+            {
+              "cell": "A16",
+              "value": "19-Oct-2026"
+            },
+            {
+              "cell": "B16",
+              "value": "Monday"
+            },
+            {
+              "cell": "C16",
+              "value": "Abdominal pain"
+            },
+            {
+              "cell": "D16",
+              "value": "Injection and day-care observation safety"
+            }
+          ],
+          [
+            {
+              "cell": "A17",
+              "value": "20-Oct-2026"
+            },
+            {
+              "cell": "B17",
+              "value": "Tuesday"
+            },
+            {
+              "cell": "C17",
+              "value": "GERD"
+            },
+            {
+              "cell": "D17",
+              "value": "Fall prevention"
+            }
+          ],
+          [
+            {
+              "cell": "A18",
+              "value": "21-Oct-2026"
+            },
+            {
+              "cell": "B18",
+              "value": "Wednesday"
+            },
+            {
+              "cell": "C18",
+              "value": "Irritable bowel syndrome"
+            },
+            {
+              "cell": "D18",
+              "value": "Blood sample collection"
+            }
+          ],
+          [
+            {
+              "cell": "A19",
+              "value": "22-Oct-2026"
+            },
+            {
+              "cell": "B19",
+              "value": "Thursday"
+            },
+            {
+              "cell": "C19",
+              "value": "Vertigo"
+            },
+            {
+              "cell": "D19",
+              "value": "Day-care quality indicators"
+            }
+          ],
+          [
+            {
+              "cell": "A20",
+              "value": "23-Oct-2026"
+            },
+            {
+              "cell": "B20",
+              "value": "Friday"
+            },
+            {
+              "cell": "C20",
+              "value": "Knee joint pain"
+            },
+            {
+              "cell": "D20",
+              "value": "ECG workflow"
+            }
+          ],
+          [
+            {
+              "cell": "A21",
+              "value": "24-Oct-2026"
+            },
+            {
+              "cell": "B21",
+              "value": "Saturday"
+            },
+            {
+              "cell": "C21",
+              "value": "Myalgia"
+            },
+            {
+              "cell": "D21",
+              "value": "Patient reception and greeting"
+            }
+          ],
+          [
+            {
+              "cell": "A22",
+              "value": "26-Oct-2026"
+            },
+            {
+              "cell": "B22",
+              "value": "Monday"
+            },
+            {
+              "cell": "C22",
+              "value": "Case simulations: chest pain, stroke, dyspnoea"
+            },
+            {
+              "cell": "D22",
+              "value": "Patient communication and complaints"
+            }
+          ],
+          [
+            {
+              "cell": "A23",
+              "value": "27-Oct-2026"
+            },
+            {
+              "cell": "B23",
+              "value": "Tuesday"
+            },
+            {
+              "cell": "C23",
+              "value": "Case simulations: cough, abdominal pain, UTI"
+            },
+            {
+              "cell": "D23",
+              "value": "Pharmacy safety and counselling"
+            }
+          ],
+          [
+            {
+              "cell": "A24",
+              "value": "28-Oct-2026"
+            },
+            {
+              "cell": "B24",
+              "value": "Wednesday"
+            },
+            {
+              "cell": "C24",
+              "value": "Case simulations: joint pain, vertigo, GERD"
+            },
+            {
+              "cell": "D24",
+              "value": "Vitals, documentation, confidentiality and discharge"
+            }
+          ],
+          [
+            {
+              "cell": "A25",
+              "value": "29-Oct-2026"
+            },
+            {
+              "cell": "B25",
+              "value": "Thursday"
+            },
+            {
+              "cell": "C25",
+              "value": "Clinical SOP quiz and referral review"
+            },
+            {
+              "cell": "D25",
+              "value": "Practical drills and monthly assessment"
+            }
+          ]
+        ],
+        "max_row": 25,
+        "max_column": 4,
+        "merged": []
+      }
+    ]
+  },
+  "P&L- Bioscape Healthspan Private Limited (2).pdf": {
+    "path": "C:\\Users\\Lenovo\\Downloads\\P&L- Bioscape Healthspan Private Limited (2).pdf",
+    "pages": [
+      {
+        "page": 1,
+        "text": "Bioscape Healthspan Private Limited\nMIS for FY 26-27\nINR in Lakhs\nParticulars Q1 July Aug Sep YTD Sep\nRevenue - - -\nDirect Cost -\nGC - - - -\nIndirect Expenses -\nEmployee Cost 0 .4 0 .6 3 .6 4.6\nRent & Electricity 2.6 2.6 2.6 7.8\nSales & Marketing -\nOther Administrative 2.4 3.3 1.2 0.6 7.5\nTotal Indirect Expenses 2.4 6.3 4.4 6.8 19.9\nEBIDTA - 2.4 - 6.3 - 4.4 - 6.8 -19.9\nDepreciation - - -\nFinance Cost -\nPBT -2.40 -6.34 -4.39 -6.81 -19.9",
+        "tables": [
+          [
+            [
+              "Particulars",
+              "Q1",
+              "July",
+              "Aug",
+              "Sep",
+              "YTD Sep"
+            ],
+            [
+              "Revenue\nDirect Cost\nGC\nIndirect Expenses\nEmployee Cost\nRent & Electricity\nSales & Marketing\nOther Administrative\nTotal Indirect Expenses",
+              "-\n-\n2.4\n2.4",
+              "-\n-\n0 .4\n2.6\n3.3\n6.3",
+              "-\n0 .6\n2.6\n1.2\n4.4",
+              "3 .6\n2.6\n0.6\n6.8",
+              "-\n-\n-\n-\n4.6\n7.8\n-\n7.5\n19.9"
+            ],
+            [
+              "EBIDTA",
+              "- 2.4",
+              "- 6.3",
+              "- 4.4",
+              "- 6.8",
+              "-19.9"
+            ],
+            [
+              "Depreciation\nFinance Cost",
+              "-",
+              "-",
+              "",
+              "",
+              "-\n-"
+            ],
+            [
+              "PBT",
+              "-2.40",
+              "-6.34",
+              "-4.39",
+              "-6.81",
+              "-19.9"
+            ]
+          ]
+        ]
+      },
+      {
+        "page": 2,
+        "text": "Bioscape Healthspan Private Limited\nFunds Utilization Details\nParticulars INR Lakhs\nLoan from Promoters 100\nLoan from Biomap 60\nTotal 160\nFunds Utilization\nParticulars INR Lakhs\nEquipments 6\nInfra 64\nTowards Expenses 21\nTowards Deposits 18\nTotal 109\nFunds Requirement Analysis ( Oct- Mar ) ( Approx)\nParticulars INR Lakhs\nTowards Capex ( @ 50 lakhs per facility) 150\nTowards expenses 60\nTowards repayment of loan to Biomap 60\nMisc 30\nTotal 300\nAvailable bank balance 50\nLoan from Promoter 250\nNote: Budget for capex or opex is not available . This is only best\nestimate which is subject to change.\nOperations of Bioscape ( Meditrust) will be multifold and will therefore require GST\nregistration and GST compliances which will be more complex than Unipath as there\nwill be taxable services as well.",
+        "tables": [
+          [
+            [
+              "Particulars",
+              "INR Lakhs"
+            ],
+            [
+              "Loan from Promoters\nLoan from Biomap",
+              "100\n60"
+            ],
+            [
+              "Total",
+              "160"
+            ]
+          ],
+          [
+            [
+              "Particulars",
+              "INR Lakhs"
+            ],
+            [
+              "Equipments\nInfra\nTowards Expenses\nTowards Deposits",
+              "6\n64\n21\n18"
+            ],
+            [
+              "Total",
+              "109"
+            ]
+          ],
+          [
+            [
+              "Particulars",
+              "INR Lakhs"
+            ],
+            [
+              "Towards Capex ( @ 50 lakhs per facility)\nTowards expenses\nTowards repayment of loan to Biomap\nMisc",
+              "150\n60\n60\n30"
+            ],
+            [
+              "Total",
+              "300"
+            ],
+            [
+              "Available bank balance\nLoan from Promoter",
+              "50\n250"
+            ]
+          ]
+        ]
+      }
+    ]
+  }
+}

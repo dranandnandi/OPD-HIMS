@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Filter, Calendar, User, Eye, Plus, FileText, CheckCircle, XCircle, Stethoscope, CalendarClock } from 'lucide-react';
 import { Visit, Patient, Profile, Appointment } from '../../types';
 import { visitService } from '../../services/visitService';
@@ -12,6 +12,7 @@ import AddVisitModal from '../Patients/AddVisitModal';
 import VisitDetailsModal from './VisitDetailsModal';
 import { toTitleCase } from '../../utils/stringUtils';
 import { getAppointmentStatusColor, getAppointmentStatusLabel, isAppointmentActive } from '../../utils/appointmentUtils';
+import { VISIT_TYPES, getVisitTypeLabel, summarizeVisitTypes, visitMatchesDateRange } from '../../utils/visitTypes';
 
 /** How far ahead the visit list looks for a patient's next appointment */
 const UPCOMING_WINDOW_DAYS = 180;
@@ -48,6 +49,8 @@ const VisitList: React.FC = () => {
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDoctor, setSelectedDoctor] = useState('');
+  const [selectedType, setSelectedType] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedVisit, setExpandedVisit] = useState<string | null>(null);
@@ -103,13 +106,25 @@ const VisitList: React.FC = () => {
     return 'Closed';
   };
 
+  const patientsById = useMemo(() => {
+    const byId = new Map(patients.map(patient => [patient.id, patient]));
+    for (const visit of visits) if (visit.patient) byId.set(visit.patientId, visit.patient);
+    return byId;
+  }, [patients, visits]);
+
+  const doctorsById = useMemo(() => {
+    const byId = new Map(doctors.map(doctor => [doctor.id, doctor]));
+    for (const visit of visits) if (visit.doctor) byId.set(visit.doctor.id, visit.doctor);
+    return byId;
+  }, [doctors, visits]);
+
   const getPatientName = (patientId: string): string => {
-    const patient = patients.find(p => p.id === patientId);
+    const patient = patientsById.get(patientId);
     return toTitleCase(patient?.name || 'Unknown Patient');
   };
 
   const getDoctorName = (doctorId: string | null): string => {
-    const doctor = doctors.find(d => d.id === doctorId);
+    const doctor = doctorId ? doctorsById.get(doctorId) : undefined;
     return toTitleCase(doctor?.name || 'Unknown Doctor');
   };
 
@@ -124,12 +139,47 @@ const VisitList: React.FC = () => {
     const matchesDoctor = !selectedDoctor || visit.doctorId === selectedDoctor;
 
     // Date range filter
-    const visitDate = new Date(visit.date);
-    const matchesDateFrom = !dateFrom || visitDate >= new Date(dateFrom);
-    const matchesDateTo = !dateTo || visitDate <= new Date(dateTo);
+    const matchesDate = visitMatchesDateRange(new Date(visit.date), dateFrom, dateTo);
+    const matchesType = !selectedType || (visit.visitType ?? 'unclassified') === selectedType;
 
-    return matchesSearch && matchesDoctor && matchesDateFrom && matchesDateTo;
+    return matchesSearch && matchesDoctor && matchesDate && matchesType;
   });
+
+  const typeCounts = summarizeVisitTypes(filteredVisits);
+
+  const exportVisits = async () => {
+    try {
+      setExporting(true);
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      const summary = [
+        ['Visit MIS', 'Count'],
+        ['From date', dateFrom || 'All dates'], ['To date', dateTo || 'All dates'],
+        ['Doctor', selectedDoctor ? getDoctorName(selectedDoctor) : 'All doctors'],
+        ['Visit type filter', selectedType === 'unclassified' ? 'Unclassified' : VISIT_TYPES.find(t => t.value === selectedType)?.label || 'All types'],
+        ['Search', searchTerm || 'None'],
+        ['Total visits', filteredVisits.length],
+        ...VISIT_TYPES.map(type => [type.label, typeCounts[type.value]]),
+        ['Unclassified', typeCounts.unclassified],
+      ];
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summary), 'MIS');
+      const rows = [
+        ['Visit ID', 'Patient No.', 'Patient', 'Visit Date', 'Visit Time', 'Visit Type', 'Doctor', 'Chief Complaint', 'Next Follow-up Date', 'Appointment ID'],
+        ...filteredVisits.map(visit => [
+          visit.id, visit.patient?.patientNumber || visit.patient?.patient_number || '', getPatientName(visit.patientId),
+          format(visit.date, 'yyyy-MM-dd'), format(visit.date, 'HH:mm'), getVisitTypeLabel(visit.visitType),
+          getDoctorName(visit.doctorId), visit.chiefComplaint,
+          visit.followUpDate ? format(visit.followUpDate, 'yyyy-MM-dd') : '', visit.appointmentId || '',
+        ]),
+      ];
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Visits');
+      XLSX.writeFile(workbook, `Visit_MIS_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to export visit MIS');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleViewDetails = (visitId: string) => {
     setSelectedVisitId(visitId);
@@ -139,6 +189,7 @@ const VisitList: React.FC = () => {
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedDoctor('');
+    setSelectedType('');
     setDateFrom('');
     setDateTo('');
   };
@@ -202,6 +253,9 @@ const VisitList: React.FC = () => {
           <div className="text-sm text-gray-600">
             Total: {filteredVisits.length} visits
           </div>
+          <button onClick={() => void exportVisits()} disabled={exporting || !filteredVisits.length} className="px-4 py-2 border border-gray-300 rounded-lg bg-white disabled:opacity-50">
+            {exporting ? 'Exporting...' : 'Export Visit MIS'}
+          </button>
         </div>
       </div>
 
@@ -218,7 +272,15 @@ const VisitList: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div>
+            <label htmlFor="visit-type-filter" className="block mb-2">Visit Type</label>
+            <select id="visit-type-filter" value={selectedType} onChange={event => setSelectedType(event.target.value)} className="input-field">
+              <option value="">All Types</option>
+              {VISIT_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+              <option value="unclassified">Unclassified</option>
+            </select>
+          </div>
           {/* Search */}
           <div>
             <label className="block mb-2">Search</label>
@@ -275,6 +337,15 @@ const VisitList: React.FC = () => {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" aria-label="Visit counts for current filters">
+        {[...VISIT_TYPES.map(type => ({ label: type.label, count: typeCounts[type.value] })), { label: 'Unclassified', count: typeCounts.unclassified }].map(item => (
+          <div key={item.label} className="card-standard p-4">
+            <p className="text-sm text-gray-600">{item.label}</p>
+            <p className="text-2xl font-semibold text-gray-900">{item.count}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Visits Table */}
       <div className="card-standard overflow-hidden">
         <div className="p-6 border-b border-gray-200">
@@ -300,6 +371,7 @@ const VisitList: React.FC = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
                   Reason/Purpose
                 </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Visit Type</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
                   <div className="flex items-center gap-2">
                     <Stethoscope className="w-4 h-4" />
@@ -315,7 +387,7 @@ const VisitList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredVisits.map(visit => {
+              {filteredVisits.map((visit, index) => {
                 const status = getVisitStatus(visit);
                 const isExpanded = expandedVisit === visit.id;
                 const upcoming = upcomingByPatient[visit.patientId] ?? [];
@@ -323,7 +395,7 @@ const VisitList: React.FC = () => {
                 return (
                   <React.Fragment key={visit.id}>
                     <tr className={`hover:bg-gray-50 cursor-pointer transition-colors text-sm ${
-                      filteredVisits.indexOf(visit) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
                     }`}
                       onClick={() => setExpandedVisit(isExpanded ? null : visit.id)}
                     >
@@ -347,12 +419,13 @@ const VisitList: React.FC = () => {
                           {visit.chiefComplaint || 'No complaint specified'}
                         </div>
                       </td>
+                      <td className="px-6 py-4 text-gray-900">{getVisitTypeLabel(visit.visitType)}</td>
                       <td className="px-6 py-4">
                         <div className="text-gray-900">
                           {getDoctorName(visit.doctorId)}
                         </div>
                         <div className="text-xs text-gray-500">
-                          Consultation
+                          Attending Doctor
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -403,7 +476,7 @@ const VisitList: React.FC = () => {
                     {/* Expandable Row */}
                     {isExpanded && (
                       <tr className="bg-blue-50/30">
-                        <td colSpan={6} className="px-6 py-4">
+                        <td colSpan={7} className="px-6 py-4">
                           <div className="space-y-3">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* Symptoms */}
@@ -535,7 +608,7 @@ const VisitList: React.FC = () => {
           <div className="p-8 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">
-              {searchTerm || selectedDoctor || dateFrom || dateTo 
+              {searchTerm || selectedDoctor || selectedType || dateFrom || dateTo
                 ? 'No visits found matching your filters' 
                 : 'No visits recorded yet'
               }
@@ -548,7 +621,7 @@ const VisitList: React.FC = () => {
       {showVisitDetailsModal && selectedVisitId && (
         <VisitDetailsModal
           visitId={selectedVisitId}
-          onClose={() => setShowVisitDetailsModal(false)}
+          onClose={() => { setShowVisitDetailsModal(false); void loadData(); }}
         />
       )}
 

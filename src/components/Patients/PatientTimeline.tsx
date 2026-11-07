@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Calendar, FileText, Activity, Search, Filter, Plus, QrCode } from 'lucide-react';
 import { Patient, Visit } from '../../types';
 import { visitService } from '../../services/visitService';
+import { getVisitTypeLabel } from '../../utils/visitTypes';
 import { format } from 'date-fns';
 import { useAuth } from '../Auth/useAuth';
 import AddVisitModal from './AddVisitModal';
@@ -241,6 +242,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onBack }) =>
                           <h4 className="text-gray-800">
                             {format(visit.date, 'MMMM dd, yyyy')}
                           </h4>
+                          <span className="text-sm text-gray-600">{getVisitTypeLabel(visit.visitType)}</span>
                         </div>
                         
                         <div className="space-y-3">

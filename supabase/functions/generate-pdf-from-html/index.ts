@@ -5,6 +5,7 @@ import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
 // breaking `supabase functions deploy` at the bundling step. 2.111.0 resolves.
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0'
 import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts"
+import { prepareCompactVisitLanguage } from "../_shared/compactVisitLanguage.ts"
 import {
   ensureDocumentLink,
   beginDocumentLinkGeneration,
@@ -966,6 +967,7 @@ serve(async (req) => {
       const { visit, patient, doctor } = data;
       filename = `CompactRx_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(visit.date).toLocaleDateString('en-IN').replace(/\//g, '-')}.pdf`;
       const impressionDetails = extractImpressionDetails(visit.doctorNotes);
+      const compactLanguage = await prepareCompactVisitLanguage(visit, Deno.env.get('ALLGOOGLE_KEY'));
 
       htmlContent = `
         <!DOCTYPE html>
@@ -973,6 +975,7 @@ serve(async (req) => {
         <head>
           <meta charset="UTF-8">
           <title>Prescription - ${patient.name}</title>
+          ${compactLanguage.code !== 'en' ? `<link href="https://fonts.googleapis.com/css2?family=${compactLanguage.font.replace(/ /g, '+')}:wght@400;700&amp;display=swap" rel="stylesheet">` : ''}
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             body {
@@ -1035,6 +1038,7 @@ serve(async (req) => {
             }
             .advice-list { padding-left: 12px; }
             .advice-list li { margin-bottom: 2px; }
+            .patient-directions { font-family: '${compactLanguage.font}', Arial, sans-serif; }
             .sig-row {
               display: flex;
               justify-content: space-between;
@@ -1129,14 +1133,14 @@ serve(async (req) => {
               </tr>
             </thead>
             <tbody>
-              ${visit.prescriptions.map((p, i) => `
+              ${compactLanguage.prescriptions.map((p, i) => `
               <tr>
                 <td>${i + 1}</td>
                 <td><b>${p.medicine}</b></td>
                 <td>${p.dosage || '-'}</td>
-                <td>${p.frequency || '-'}</td>
-                <td>${p.duration || '-'}</td>
-                <td>${p.instructions || '-'}</td>
+                <td class="patient-directions" lang="${compactLanguage.code}">${escapeHtml(p.frequency || '-')}</td>
+                <td class="patient-directions" lang="${compactLanguage.code}">${escapeHtml(p.duration || '-')}</td>
+                <td class="patient-directions" lang="${compactLanguage.code}">${escapeHtml(p.instructions || '-')}</td>
               </tr>
               `).join('')}
             </tbody>
@@ -1150,10 +1154,10 @@ serve(async (req) => {
           </div>
           ` : ''}
 
-          ${visit.advice && visit.advice.length > 0 ? `
+          ${compactLanguage.advice.length > 0 ? `
           <div class="section-title">Advice</div>
-          <ul class="advice-list">
-            ${visit.advice.map(a => `<li>${a}</li>`).join('')}
+          <ul class="advice-list patient-directions" lang="${compactLanguage.code}">
+            ${compactLanguage.advice.map(a => `<li>${escapeHtml(a)}</li>`).join('')}
           </ul>
           ` : ''}
 

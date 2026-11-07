@@ -4,6 +4,7 @@ import { X, Calendar, User, FileText, Pill, TestTube, CreditCard, Activity, Chec
 import { Visit, Bill } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
 import { visitService } from '../../services/visitService';
+import { getVisitTypeLabel } from '../../utils/visitTypes';
 import { billingService } from '../../services/billingService';
 import { useAuth } from '../Auth/useAuth';
 import { authService } from '../../services/authService';
@@ -237,6 +238,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
             ['Field', 'Value'],
             ['Visit ID', visit.id],
             ['Visit Date', visitDate],
+            ['Visit Type', getVisitTypeLabel(visit.visitType)],
             ['Visit Time', visitTime],
             ['Doctor', doctorName],
             ['Chief Complaint', visit.chiefComplaint || ''],
@@ -439,7 +441,8 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
       // Check if PDF already exists - if so, just download it
       if (currentVisit.pdf_url) {
         console.log('Using cached PDF for download:', currentVisit.pdf_url);
-        window.open(currentVisit.pdf_url, '_blank');
+        if (pdfTab && !pdfTab.closed) pdfTab.location.replace(currentVisit.pdf_url);
+        else window.open(currentVisit.pdf_url, '_blank');
         return;
       }
 
@@ -521,7 +524,11 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
 
       const currentVisit = latestVisit || visit;
 
-      console.log('Generating fresh print PDF to include latest EMR sections...');
+      if (currentVisit.print_pdf_url) {
+        if (pdfTab && !pdfTab.closed) pdfTab.location.replace(currentVisit.print_pdf_url);
+        else window.open(currentVisit.print_pdf_url, '_blank');
+        return;
+      }
 
       // Find the doctor for this visit
       let doctor = doctors.find(d => d.id === currentVisit.doctorId) || currentVisit.doctor;
@@ -547,13 +554,12 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
         entityType: 'visit',
         entityId: currentVisit.id,
         variant: 'print',
-        forceRegenerate: true,
         generate: () => pdfService.generateWithLink('visit', {
           visit: currentVisit,
           patient: currentVisit.patient!,
           doctor: doctor,
           clinicSettings: user.clinic!
-        }, 'print', { forceRegenerate: true }),
+        }, 'print'),
         onComplete: (result) => {
           // No savePrintPdfUrl here: the edge function already wrote
           // print_pdf_url inside the same request.
@@ -572,25 +578,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
   };
 
   // Handle viewing visit summary PDF - opens in new tab (uses cached PDF if available)
-  const handleViewPrescriptionPdf = async () => {
-    if (!visit) return;
-
-    // Reload visit data from database to get latest pdf_url
-    const latestVisit = await visitService.getVisit(visitId);
-    if (latestVisit) {
-      setVisit(latestVisit);
-      // If PDF already exists in database, use it directly
-      if (latestVisit.pdf_url) {
-        console.log('Opening cached visit summary PDF:', latestVisit.pdf_url);
-        window.open(latestVisit.pdf_url, '_blank');
-        return;
-      }
-    }
-
-    // Otherwise, generate and open
-    console.log('No cached PDF found, generating...');
-    await handleExportPDF();
-  };
+  const handleViewPrescriptionPdf = handleExportPDF;
 
   // Handle sending prescription via WhatsApp
   const handleSendWhatsAppPrescription = async () => {
@@ -1065,6 +1053,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ visitId, onClose 
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wide">Visit Date</p>
                       <p className="font-semibold text-gray-900">{format(visit.date, 'PPP')}</p>
+                      <p className="text-sm text-gray-600">{getVisitTypeLabel(visit.visitType)}</p>
                       <p className="text-sm text-gray-600 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {format(visit.date, 'p')}

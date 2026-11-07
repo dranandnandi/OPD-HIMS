@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
 import { pharmacyImportService, openInvoiceFile } from '../../services/pharmacyImportService';
@@ -123,6 +124,7 @@ export default function PharmacyInvoiceImport() {
   return <div className="max-w-5xl mx-auto space-y-5">
     <h2 className="text-2xl font-bold">Supplier invoice upload</h2>
     <p className="text-gray-600">Upload all pages together, or add Part 2 to the same bill. Drafts do not change stock.</p>
+    <p className="text-sm text-gray-600">Merge duplicate products only when their recorded pack MRP matches. Keep invoice rows and batches separate; sales use each batch’s MRP in FIFO order. <Link className="text-blue-700 underline" to="/pharmacy/medicines">Review / merge duplicate products in Medicine Master</Link>.</p>
     {error && <div role="alert" className="p-3 bg-red-50 text-red-800 rounded">{error}</div>}
     {!draft ? <>
       <div className="bg-white rounded-xl border p-5 space-y-4">

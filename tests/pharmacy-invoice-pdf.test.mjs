@@ -43,3 +43,36 @@ test('composition uses bill of supply and cache invalidates for payment, custome
   const pdf=createPharmacyInvoicePdf({...sample,clinic:{...sample.clinic,pharmacyGstScheme:'composition'}});
   assert.ok(pdf.internal.pages.flat().join('\n').includes('BILL OF SUPPLY'));
 });
+
+test('sale percentage is preserved exactly despite rounding and GST components show their rates', async () => {
+  const data = structuredClone(sample);
+  Object.assign(data.bill, { discountAmount: 2.28, taxableAmount: 8.68, cgstAmount: 0.22, sgstAmount: 0.21, totalAmount: 9.11, paidAmount: 9.11 });
+  Object.assign(data.bill.billItems[0], { saleDiscountPercent: 20, discount: 2.28, taxableAmount: 8.68, cgstAmount: 0.22, sgstAmount: 0.21, totalPrice: 9.11 });
+  for (const paper of ['A4', 'A5']) {
+    data.clinic.invoicePaperSize = paper;
+    const pdf = createPharmacyInvoicePdf(data), text = pdf.internal.pages.flat().join('\n');
+    for (const label of ['Sale discount 20%', 'CGST 2.5%', 'SGST 2.5%', 'GST 5%']) assert.ok(text.includes(label), label);
+    assert.ok(!text.includes('20.02%')); assert.ok(!text.includes('estimated'));
+    await writeFile(join(outputDir, `pharmacy-discount-${paper.toLowerCase()}.pdf`), Buffer.from(pdf.output('arraybuffer')));
+  }
+  const exactKey = pharmacyInvoiceContentKey(data);
+  delete data.bill.billItems[0].saleDiscountPercent;
+  assert.notEqual(exactKey, pharmacyInvoiceContentKey(data));
+  const legacy = createPharmacyInvoicePdf(data).internal.pages.flat().join('\n');
+  assert.ok(legacy.includes('Sale discount ~20%')); assert.ok(legacy.includes('estimated'));
+});
+
+test('mixed discounts and GST rates stay item-wise; IGST uses the full rate', async () => {
+  const data = structuredClone(sample);
+  data.bill.billItems = [
+    { ...item, saleDiscountPercent: 20, discount: 2.28, totalPrice: 9.11, taxableAmount: 8.68, cgstAmount: 0.22, sgstAmount: 0.21 },
+    { ...item, itemName: 'SECOND MEDICINE', unitPrice: 112, mrp: 112, saleDiscountPercent: 10, discount: 11.2, totalPrice: 100.8, taxableAmount: 90, gstRate: 12, cgstAmount: 5.4, sgstAmount: 5.4 },
+  ];
+  Object.assign(data.bill, { totalAmount: 109.91, paidAmount: 109.91, discountAmount: 13.48, taxableAmount: 98.68, cgstAmount: 5.62, sgstAmount: 5.61 });
+  const pdf = createPharmacyInvoicePdf(data), text = pdf.internal.pages.flat().join('\n');
+  for (const label of ['Sale discount 20%', 'Sale discount 10%', 'CGST 2.5%', 'CGST 6%', 'SGST 6%', 'GST 12%', 'see items']) assert.ok(text.includes(label), label);
+  await writeFile(join(outputDir, 'pharmacy-mixed-percentages.pdf'), Buffer.from(pdf.output('arraybuffer')));
+  data.bill.billItems = [{ ...item, gstRate: 12, igstAmount: 1.22, cgstAmount: 0, sgstAmount: 0 }];
+  Object.assign(data.bill, { igstAmount: 1.22, cgstAmount: 0, sgstAmount: 0, discountAmount: 0 });
+  assert.ok(createPharmacyInvoicePdf(data).internal.pages.flat().join('\n').includes('IGST 12%'));
+});

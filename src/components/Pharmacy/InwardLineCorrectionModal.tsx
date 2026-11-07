@@ -75,7 +75,7 @@ const InwardLineCorrectionModal: React.FC<InwardLineCorrectionModalProps> = ({
       discountAmount: form.discountAmount,
       gstRate: form.gstRate,
       hsnCode: form.hsnCode,
-      expiryDate: form.expiryDate ? new Date(`${form.expiryDate}T00:00:00`) : null,
+      expiryDate: form.expiryDate ? new Date(`${form.expiryDate}T00:00:00Z`) : null,
       taxableAmount: tax.taxable,
       cgstAmount: tax.cgst,
       sgstAmount: tax.sgst,
@@ -143,13 +143,13 @@ const InwardLineCorrectionModal: React.FC<InwardLineCorrectionModalProps> = ({
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Qty (packs) *</label>
+              <label className="block text-xs text-gray-600 mb-1">Paid qty (packs) *</label>
               <input type="number" min="1" value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: num(e.target.value) })} className={inputCls} />
               <p className="text-[11px] text-gray-500 mt-0.5">was {fmtQty(item.quantity)}</p>
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Free</label>
+              <label className="block text-xs text-gray-600 mb-1">Free (scheme)</label>
               <input type="number" min="0" value={form.freeQuantity}
                 onChange={(e) => setForm({ ...form, freeQuantity: num(e.target.value) })} className={inputCls} />
               <p className="text-[11px] text-gray-500 mt-0.5">was {fmtQty(item.freeQuantity ?? 0)}</p>
@@ -219,6 +219,7 @@ const InwardLineCorrectionModal: React.FC<InwardLineCorrectionModalProps> = ({
           {/* What this will do, before it does it. */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm space-y-2">
             <h4 className="font-semibold text-gray-800">What changes</h4>
+            <p className="text-xs text-gray-600">Total received: {newUnits} packs. Effective cost per pack (ex-GST): {inr(newUnits > 0 ? tax.taxable / newUnits : 0)}. If free stock was already added manually, reconcile that adjustment before adding it here.</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <div className="text-xs text-gray-500">Line total</div>

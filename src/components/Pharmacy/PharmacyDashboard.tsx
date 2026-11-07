@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import ControlledSalesRegister from './ControlledSalesRegister';
+import { StockExpiryIndicators } from './ExpiryBadge';
+import { usePharmacyDate } from '../../hooks/usePharmacyDate';
+import { expiryStatus, expiryWithin, type ExpiryLot } from '../../utils/pharmacyExpiry';
+import { medicineCategories, dosageForms, stockedUnits, optionLabel } from '../../utils/medicineOptions';
+import MedicineFlags, { MedicineFlagFields } from '../Pharmacy/MedicineFlags';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Pill, TrendingUp, AlertCircle, Package, Plus, Search, CalendarDays, ArrowRight, Bell, RefreshCw, FileText, RotateCcw, Settings, X, Save, ClipboardList, Truck, Percent, BookOpen, MapPin, ShoppingCart } from 'lucide-react';
 import { MedicineWithPrice, StockMovementLog, StockAlert, MedicineMaster } from '../../types';
-import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
+import { packSpec, stockDisplay, fmtQty } from '../../utils/packUnits';
 import { pharmacyService } from '../../services/pharmacyService';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
@@ -12,26 +18,36 @@ import { format } from 'date-fns';
 import ReturnToSupplierModal from './ReturnToSupplierModal';
 import StockAdjustmentModal from './StockAdjustmentModal';
 import { storeIndentService } from '../../services/storeIndentService';
+import { jsPDF } from 'jspdf';
 
 const PharmacyDashboard: React.FC = () => {
+  const today = usePharmacyDate();
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState<{
     totalMedicines: number;
     lowStockCount: number;
     expiringCount: number;
+    expiredCount: number;
     totalStockValue: number;
     recentMovements: StockMovementLog[];
   } | null>(null);
   const [allMedicines, setAllMedicines] = useState<MedicineWithPrice[]>([]);
+  const [expiryLots, setExpiryLots] = useState<ExpiryLot[]>([]);
+  const expiryByMedicine = useMemo(() => {
+    const grouped = new Map<string, ExpiryLot[]>();
+    expiryLots.forEach(lot => grouped.set(lot.medicine.id, [...(grouped.get(lot.medicine.id) || []), lot]));
+    grouped.forEach(lots => lots.sort((a,b) => (expiryStatus(a.expiryDate).days ?? Infinity) - (expiryStatus(b.expiryDate).days ?? Infinity)));
+    return grouped;
+  }, [expiryLots]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'expiring' | 'out'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'expiring' | 'expired' | 'out'>('all');
   const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([]);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [refreshingAlerts, setRefreshingAlerts] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   // /pharmacy?sale=1 (sidebar "Counter Sale") opens the over-the-counter flow directly
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = searchParams.get('view') === 'sales' ? 'sales' : 'stock';
+  const view = searchParams.get('view') === 'controlled' ? 'controlled' : searchParams.get('view') === 'sales' ? 'sales' : 'stock';
   const [salesRevision, setSalesRevision] = useState(0);
   const [stockPage, setStockPage] = useState(0);
   useEffect(() => { setStockPage(0); }, [searchTerm, stockFilter]);
@@ -58,7 +74,7 @@ const PharmacyDashboard: React.FC = () => {
       loadStockAlerts();
       loadIndentCounts();
     }
-  }, [user]);
+  }, [user, today]);
 
   // A ward raising an indent lights the badge up without a refresh.
   useEffect(() => {
@@ -74,6 +90,7 @@ const PharmacyDashboard: React.FC = () => {
       const data = await pharmacyService.getPharmacyDashboardData(clinicId);
       setDashboardData(data);
       setAllMedicines(data.medicines);
+      setExpiryLots(data.expiryLots);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pharmacy dashboard data');
       console.error('Error loading pharmacy dashboard data:', err);
@@ -146,11 +163,64 @@ const PharmacyDashboard: React.FC = () => {
   const filteredMedicines = allMedicines.filter(medicine => {
     const matches = [medicine.name, medicine.genericName, medicine.batchNumber, medicine.rackLocation]
       .some(value => value?.toLowerCase().includes(searchTerm.toLowerCase()));
-    const expiring = !!medicine.expiryDate && medicine.currentStock > 0 && new Date(medicine.expiryDate).getTime() <= Date.now() + 30 * 86400000;
+    const lots = expiryByMedicine.get(medicine.id) || [];
+    const expiring = lots.some(lot => expiryWithin(lot.expiryDate, 30));
+    const expired = lots.some(lot => expiryStatus(lot.expiryDate).kind === 'expired');
     return matches && (stockFilter === 'all' || (stockFilter === 'low' && medicine.currentStock <= medicine.reorderLevel)
-      || (stockFilter === 'out' && medicine.currentStock <= 0) || (stockFilter === 'expiring' && expiring));
+      || (stockFilter === 'out' && medicine.currentStock <= 0) || (stockFilter === 'expiring' && expiring) || (stockFilter === 'expired' && expired));
   });
   const visibleStockPage = Math.min(stockPage, Math.max(0, Math.ceil(filteredMedicines.length / 50) - 1));
+
+  const downloadDoctorMedicineList = () => {
+    if (!filteredMedicines.length) return;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 12;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const columns = [
+      { title: 'Medicine / Brand', width: 48, value: (m: MedicineWithPrice) => m.brandName || m.name },
+      { title: 'Generic name', width: 58, value: (m: MedicineWithPrice) => m.genericName || '' },
+      { title: 'Strength', width: 30, value: (m: MedicineWithPrice) => m.strength || '' },
+      { title: 'Dosage form', width: 35, value: (m: MedicineWithPrice) => m.dosageForm || '' },
+      { title: 'Pack', width: 35, value: (m: MedicineWithPrice) => [m.packSize ? `${m.packSize} units` : '', m.stockUnit, m.dispenseUnit ? `(${m.dispenseUnit})` : ''].filter(Boolean).join(' ') },
+      { title: 'Manufacturer', width: 55, value: (m: MedicineWithPrice) => m.manufacturer || '' },
+    ];
+    const usableWidth = pageWidth - margin * 2;
+    const scale = usableWidth / columns.reduce((sum, col) => sum + col.width, 0);
+    const widths = columns.map(col => col.width * scale);
+    const drawHeader = (continued = false) => {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text('Medicine Information for Doctors', margin, 13);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.text(`${filteredMedicines.length} medicines${searchTerm ? ` · Search: ${searchTerm}` : ''}${continued ? ' · continued' : ''}`, margin, 19);
+      let x = margin;
+      let y = 24;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setFillColor(239, 246, 255);
+      pdf.rect(margin, y - 4, usableWidth, 7, 'F');
+      columns.forEach((col, i) => { pdf.text(col.title, x + 1.5, y); x += widths[i]; });
+      pdf.setFont('helvetica', 'normal');
+      return y + 7;
+    };
+    let y = drawHeader();
+    for (const medicine of filteredMedicines) {
+      const values = columns.map(col => col.value(medicine));
+      const lines = values.map((value, i) => pdf.splitTextToSize(value || '—', widths[i] - 3) as string[]);
+      const rowHeight = Math.max(7, ...lines.map(cell => cell.length * 4 + 2));
+      if (y + rowHeight > pdf.internal.pageSize.getHeight() - 10) {
+        pdf.addPage();
+        y = drawHeader(true);
+      }
+      let x = margin;
+      lines.forEach((cell, i) => { pdf.text(cell, x + 1.5, y + 2, { baseline: 'top' }); x += widths[i]; });
+      pdf.setDrawColor(220, 226, 232);
+      pdf.line(margin, y + rowHeight, pageWidth - margin, y + rowHeight);
+      y += rowHeight;
+    }
+    pdf.save('doctor-medicine-information.pdf');
+  };
 
   if (!user) {
     return (
@@ -323,6 +393,7 @@ const PharmacyDashboard: React.FC = () => {
               <div>
                 <p className="text-sm text-gray-600">Expiring Soon</p>
                 <p className="text-2xl font-bold text-yellow-600">{dashboardData.expiringCount}</p>
+                <button onClick={() => setStockFilter('expired')} className="text-sm text-red-700 underline">Expired stock: {dashboardData.expiredCount}</button>
               </div>
               <CalendarDays className="w-8 h-8 text-yellow-600" />
             </div>
@@ -342,7 +413,7 @@ const PharmacyDashboard: React.FC = () => {
 
       {error && <p role="alert" className="text-red-700 bg-red-50 p-3 rounded">{error}</p>}
       <nav aria-label="Pharmacy views" className="flex flex-wrap gap-2 border-b pb-3">
-        {([['stock', 'Current Stock'], ['sales', 'Sales & Bills']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined}
+        {([['stock', 'Current Stock'], ['sales', 'Sales & Bills'], ['controlled', 'NRx / H1 Register']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined}
           onClick={() => { const next = new URLSearchParams(searchParams); next.set('view', key); setSearchParams(next, { replace: true }); }}
           className={`px-5 py-3 rounded-lg font-medium ${view === key ? 'bg-blue-600 text-white' : 'bg-white border text-gray-700'}`}>{label}</button>)}
       </nav>
@@ -496,13 +567,21 @@ const PharmacyDashboard: React.FC = () => {
         </div>
       </details>
 
+      {view === 'controlled' && <ControlledSalesRegister revision={salesRevision} />}
       {view === 'sales' && <PharmacySalesRegister revision={salesRevision} />}
       {view === 'stock' && <>
       {/* Medicine Inventory */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="p-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <h3 className="font-semibold text-gray-800">Medicine Inventory</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="font-semibold text-gray-800">Medicine Inventory</h3>
+              <button type="button" onClick={downloadDoctorMedicineList} disabled={!filteredMedicines.length}
+                className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Download doctor-facing medicine information without pricing or tax details">
+                <FileText className="h-4 w-4" /> Doctor PDF
+              </button>
+            </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex gap-2">
                 <button
@@ -529,6 +608,7 @@ const PharmacyDashboard: React.FC = () => {
                 >
                   Expiring
                 </button>
+                <button onClick={() => setStockFilter('expired')} className={`px-3 py-1 text-sm rounded-full ${stockFilter === 'expired' ? 'bg-red-700 text-white' : 'bg-red-100 text-red-800'}`}>Expired</button>
                 <button
                   onClick={() => setStockFilter('out')}
                   className={`px-3 py-1 text-sm rounded-full transition-colors ${
@@ -584,7 +664,7 @@ const PharmacyDashboard: React.FC = () => {
                 <tr key={medicine.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{medicine.name}</div>
+                      <div className="text-sm font-medium text-gray-900">{medicine.name}<MedicineFlags medicine={medicine} /></div>
                       {medicine.genericName && (
                         <div className="text-sm text-gray-500">{medicine.genericName}</div>
                       )}
@@ -608,7 +688,7 @@ const PharmacyDashboard: React.FC = () => {
                         ? 'text-red-600' 
                         : 'text-gray-900'
                     }`}>
-                      {stockBreakdown(medicine.currentStock, packSpec(medicine))}
+                      {stockDisplay(medicine.currentStock, packSpec(medicine))}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -621,19 +701,11 @@ const PharmacyDashboard: React.FC = () => {
                     {medicine.sellingPrice ? `₹${medicine.sellingPrice}` : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {medicine.currentStock <= medicine.reorderLevel ? (
-                      <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">
-                        Low Stock
-                      </span>
-                    ) : medicine.expiryDate && new Date(medicine.expiryDate) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) ? (
-                      <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">
-                        Expiring Soon
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
-                        In Stock
-                      </span>
-                    )}
+                    <div className="space-y-1">
+                      {medicine.currentStock <= 0 ? <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">Out of stock</span>
+                        : medicine.currentStock <= medicine.reorderLevel && <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Low Stock</span>}
+                      <StockExpiryIndicators lots={expiryByMedicine.get(medicine.id) || []} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -839,21 +911,15 @@ const AddMedicineModal: React.FC<{
     stockUnit: '',
     dispenseUnit: '',
     allowLooseSale: true,
+    isNrx: false,
+    isScheduleH1: false,
     isActive: true
   });
 
   const [sideEffectInput, setSideEffectInput] = useState('');
   const [contraindicationInput, setContraindicationInput] = useState('');
 
-  const medicineCategories = [
-    'analgesic', 'antibiotic', 'antihistamine', 'antiseptic', 'antipyretic',
-    'cardiovascular', 'gastrointestinal', 'respiratory', 'diabetes', 'vitamin', 'other'
-  ];
 
-  const dosageForms = [
-    'tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment', 
-    'drops', 'inhaler', 'powder', 'suspension', 'other'
-  ];
 
   const handleAddSideEffect = () => {
     if (sideEffectInput.trim()) {
@@ -959,7 +1025,7 @@ const AddMedicineModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {medicineCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                  <option key={cat} value={cat}>{optionLabel(cat)}</option>
                 ))}
               </select>
             </div>
@@ -972,7 +1038,7 @@ const AddMedicineModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {dosageForms.map(form => (
-                  <option key={form} value={form}>{form.charAt(0).toUpperCase() + form.slice(1)}</option>
+                  <option key={form} value={form}>{optionLabel(form)}</option>
                 ))}
               </select>
             </div>
@@ -1029,11 +1095,14 @@ const AddMedicineModal: React.FC<{
               />
             </div>
 
+            <MedicineFlagFields value={formData} onChange={patch => setFormData({ ...formData, ...patch })} />
+            <datalist id="medicine-stocked-units">{stockedUnits.map(unit => <option key={unit} value={unit} />)}</datalist>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
               <input
                 type="text"
-                value={formData.stockUnit}
+                list="medicine-stocked-units"
+                      value={formData.stockUnit}
                 onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Strip / Bottle / Vial"

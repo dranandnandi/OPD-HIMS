@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import type { PublicBookingPolicy } from '../types';
+import type { GenericNameReview } from '../utils/genericNameMatching';
+import type { PublicBookingPolicy, VisitType } from '../types';
 
 /**
  * Which Supabase project this build talks to.
@@ -91,6 +92,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // Database type definitions
 export interface Database {
   public: {
+    Functions: {
+      save_visit_with_details: {
+        Args: {
+          p_visit_id: string | null;
+          p_visit: Record<string, unknown>;
+          p_details: Record<string, unknown>;
+          p_request_id: string;
+          p_expected_updated_at: string | null;
+        };
+        Returns: string;
+      };
+    };
     Tables: {
       roles: {
         Row: DatabaseRole;
@@ -181,6 +194,11 @@ export interface Database {
         Row: DatabaseMedicineMaster;
         Insert: Omit<DatabaseMedicineMaster, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<DatabaseMedicineMaster, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      medicine_generic_name_reviews: {
+        Row: GenericNameReview;
+        Insert: GenericNameReview;
+        Update: Partial<GenericNameReview>;
       };
       tests_master: {
         Row: DatabaseTestMaster;
@@ -351,6 +369,12 @@ export interface DatabaseAppointment {
 
 export interface DatabaseVisit {
   id: string;
+  visit_type?: VisitType | null;
+  pdf_url?: string | null;
+  pdf_generated_at?: string | null;
+  print_pdf_url?: string | null;
+  print_pdf_generated_at?: string | null;
+  compact_print_pdf_url?: string | null;
   patient_id: string;
   doctor_id: string | null;
   appointment_id?: string;
@@ -429,6 +453,7 @@ export interface DatabasePrescription {
 export interface DatabaseTestOrdered {
   id: string;
   visit_id: string;
+  test_id?: string | null;
   testName: string;
   test_type: 'lab' | 'radiology' | 'procedure' | 'other';
   instructions?: string;
@@ -494,6 +519,7 @@ export interface DatabaseBillItem {
   unit_price: number;
   total_price: number;
   discount?: number;
+  sale_discount_percent?: number | null;
   tax?: number;
   refunded_quantity?: number;
   refunded_amount?: number;
@@ -698,6 +724,8 @@ export interface DatabaseMedicineMaster {
   rack_location?: string | null;
   barcode?: string | null;
   is_chronic?: boolean;
+  is_nrx?: boolean;
+  is_schedule_h1?: boolean;
   hsn_code?: string | null;
   gst_rate?: number;
   /** Dispense units in one stocked unit: 10 for a strip of 10 tablets. */
@@ -769,6 +797,7 @@ export interface DatabasePharmacyInwardReceipt {
 }
 
 export interface DatabasePharmacyInwardItem {
+  effective_unit_cost?: number;
   id: string;
   receipt_id: string;
   medicine_id: string;
@@ -829,6 +858,7 @@ export interface DatabasePharmacyDispensedItem {
 }
 
 export interface DatabaseMedicineBatch {
+  effective_cost?: number;
   id: string;
   clinic_id: string;
   medicine_id: string;
@@ -843,6 +873,9 @@ export interface DatabaseMedicineBatch {
 }
 
 export interface DatabasePharmacyDebitNote {
+  credit_type?: 'gst_credit' | 'commercial_credit' | 'stock_only';
+  credit_reference?: string | null;
+  credit_date?: string | null;
   id: string;
   clinic_id: string;
   supplier_id: string;
@@ -862,6 +895,10 @@ export interface DatabasePharmacyDebitNote {
 }
 
 export interface DatabasePharmacyDebitNoteItem {
+  inward_item_id?: string | null;
+  paid_quantity?: number;
+  free_quantity?: number;
+  credit_amount?: number;
   id: string;
   clinic_id: string;
   debit_note_id: string;

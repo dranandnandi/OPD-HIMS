@@ -1,0 +1,720 @@
+{
+  "clinic": {
+    "id": "238307be-362b-4fff-bb9a-3f2f9ff44519",
+    "clinic_name": "Meditrust Clinics"
+  },
+  "extractedAt": "2026-10-30T07:49:45.009Z",
+  "results": {
+    "linked_bills": [
+      {
+        "id": "07a21641-0290-43ff-8349-2903723a2f65",
+        "bill_number": "BILL-20260930-01604",
+        "bill_date": "2026-09-30T05:23:51.046Z",
+        "bill_type": "opd",
+        "status": "cancelled",
+        "total_amount": "500",
+        "paid_amount": "0",
+        "balance_amount": "0",
+        "total_refunded_amount": "500"
+      },
+      {
+        "id": "b8c53ca8-25b6-4c72-b282-8111183dbbb9",
+        "bill_number": "BILL-20260930-01606",
+        "bill_date": "2026-09-30T09:25:11.822Z",
+        "bill_type": "opd",
+        "status": "cancelled",
+        "total_amount": "500",
+        "paid_amount": "0",
+        "balance_amount": "0",
+        "total_refunded_amount": "1000"
+      },
+      {
+        "id": "74584fed-947a-4f51-b931-7afa64ca6b76",
+        "bill_number": "BILL-20261001-01610",
+        "bill_date": "2026-10-01T12:13:26.039Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "b16f077f-7aa0-4c7f-b4ea-8820c89eb318",
+        "bill_number": "BILL-20261006-01640",
+        "bill_date": "2026-10-06T14:35:26.863Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "87a55910-17b8-4dd3-83a9-05559eaeb4fa",
+        "bill_number": "BILL-20261007-01642",
+        "bill_date": "2026-10-07T10:06:56.498Z",
+        "bill_type": "opd",
+        "status": "cancelled",
+        "total_amount": "500",
+        "paid_amount": "0",
+        "balance_amount": "0",
+        "total_refunded_amount": "500"
+      },
+      {
+        "id": "5758938a-0844-43be-a414-6f6c31e8eefc",
+        "bill_number": "BILL-20261009-01644",
+        "bill_date": "2026-10-09T05:53:56.776Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "94cb1417-839d-443f-9f45-54085bd08aa1",
+        "bill_number": "BILL-20261013-01664",
+        "bill_date": "2026-10-13T09:03:56.310Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "5be9dcc1-80bc-44e2-87c2-6463160a7259",
+        "bill_number": "BILL-20261014-01670",
+        "bill_date": "2026-10-14T13:55:16.165Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "8c3e4ff0-406d-42d6-920a-cf7cfd21474f",
+        "bill_number": "BILL-20261015-01672",
+        "bill_date": "2026-10-15T05:33:07.857Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "0a14ab26-3313-42f8-91d0-0eb8a49c1936",
+        "bill_number": "BILL-20261015-01674",
+        "bill_date": "2026-10-15T13:19:20.618Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "abf6fc4c-3fce-45aa-b9c2-9f0648ab4aa8",
+        "bill_number": "BILL-20261016-01676",
+        "bill_date": "2026-10-16T05:36:39.864Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "520a8d4b-11cc-4416-806d-0ed7b003eb7b",
+        "bill_number": "BILL-20261018-01688",
+        "bill_date": "2026-10-18T05:24:13.222Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "6a423ad4-32d9-423a-b8b8-73db5eb64775",
+        "bill_number": "BILL-20261019-01690",
+        "bill_date": "2026-10-19T08:01:50.000Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "de87b023-4903-4f32-a42d-af7b75d141e5",
+        "bill_number": "BILL-20261022-01724",
+        "bill_date": "2026-10-22T13:17:05.015Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "a44497fa-5e97-49bd-aff2-af50bd82386f",
+        "bill_number": "BILL-20261023-01730",
+        "bill_date": "2026-10-23T12:31:48.161Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "350",
+        "paid_amount": "350",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "1cfd9967-ea71-489f-a42f-00c1cecdde5e",
+        "bill_number": "BILL-20261024-01734",
+        "bill_date": "2026-10-24T10:57:25.143Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "50",
+        "paid_amount": "50",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "e0ade6d3-23a5-4de5-860a-1972a26facad",
+        "bill_number": "BILL-20261024-01736",
+        "bill_date": "2026-10-24T12:03:41.883Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "9.11",
+        "paid_amount": "9.11",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "0d144db8-4b36-44f9-8b83-fbd9a0819718",
+        "bill_number": "BILL-20261025-01738",
+        "bill_date": "2026-10-25T05:53:09.971Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "104",
+        "paid_amount": "104",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "8a47a0f7-03d3-4348-ad45-fe965704c8ca",
+        "bill_number": "BILL-20261025-01740",
+        "bill_date": "2026-10-25T06:23:51.764Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "c854e5ce-4997-4496-a29b-5f64ed673dbc",
+        "bill_number": "BILL-20261025-01742",
+        "bill_date": "2026-10-25T06:48:38.874Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "300",
+        "paid_amount": "300",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "5eec1a18-1c50-4382-9f28-402eaf794911",
+        "bill_number": "BILL-20261026-01744",
+        "bill_date": "2026-10-26T08:25:54.560Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "500",
+        "paid_amount": "500",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "961c0169-a3ed-4f61-841b-ed3be0451371",
+        "bill_number": "BILL-20261026-01746",
+        "bill_date": "2026-10-26T08:34:49.226Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "346.54",
+        "paid_amount": "346.54",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "9d94aa77-0e98-43ad-94c9-1e37eef3488e",
+        "bill_number": "BILL-20261027-01748",
+        "bill_date": "2026-10-27T04:22:12.422Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "103.98",
+        "paid_amount": "103.98",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "f1e7db45-3a6a-4891-8756-f56f13ba81b0",
+        "bill_number": "BILL-20261027-01752",
+        "bill_date": "2026-10-27T09:32:52.305Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "23",
+        "paid_amount": "23",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "0122f3fc-246a-424e-97bb-54fac3e9ee5e",
+        "bill_number": "BILL-20261028-01776",
+        "bill_date": "2026-10-28T12:09:21.950Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "111",
+        "paid_amount": "111",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "036ddeb0-8fcc-40bf-af51-46cd7debd45b",
+        "bill_number": "BILL-20261029-01786",
+        "bill_date": "2026-10-29T06:08:58.975Z",
+        "bill_type": "opd",
+        "status": "paid",
+        "total_amount": "300",
+        "paid_amount": "300",
+        "balance_amount": "0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "3f738b92-0792-4c29-895d-a48052863445",
+        "bill_number": "BILL-20261029-01790",
+        "bill_date": "2026-10-29T14:00:26.444Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "218.48",
+        "paid_amount": "218.48",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "d89a4c68-0aaa-4b9c-898f-600025dd93c2",
+        "bill_number": "BILL-20261029-01792",
+        "bill_date": "2026-10-29T14:01:55.204Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "42.21",
+        "paid_amount": "42.21",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "00be4d05-5253-44c1-b766-a401aba683ac",
+        "bill_number": "BILL-20261029-01794",
+        "bill_date": "2026-10-29T14:03:54.356Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "151.46",
+        "paid_amount": "151.46",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "7d43597c-4e21-4b0f-8f6b-9a0423c8eedb",
+        "bill_number": "BILL-20261030-01816",
+        "bill_date": "2026-10-30T06:00:36.508Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "8.8",
+        "paid_amount": "8.8",
+        "balance_amount": "0.0",
+        "total_refunded_amount": "0"
+      },
+      {
+        "id": "d6682d76-3b02-4286-bfc5-b369008b377a",
+        "bill_number": "BILL-20261030-01818",
+        "bill_date": "2026-10-30T07:43:55.554Z",
+        "bill_type": "pharmacy",
+        "status": "paid",
+        "total_amount": "273.44",
+        "paid_amount": "273.44",
+        "balance_amount": "0.00",
+        "total_refunded_amount": "0"
+      }
+    ],
+    "linked_refunds": [
+      {
+        "id": "37fd686d-73d1-4314-b58d-0e444b5e4ac2",
+        "bill_id": "b8c53ca8-25b6-4c72-b282-8111183dbbb9",
+        "total_amount": "500",
+        "status": "paid",
+        "created_at": "2026-09-30T09:27:58.280Z",
+        "paid_at": "2026-10-03T04:31:17.353Z"
+      },
+      {
+        "id": "36090e26-1402-431d-bf8f-e5c172ebb07f",
+        "bill_id": "b8c53ca8-25b6-4c72-b282-8111183dbbb9",
+        "total_amount": "500",
+        "status": "paid",
+        "created_at": "2026-09-30T09:32:20.450Z",
+        "paid_at": "2026-10-03T04:31:21.599Z"
+      },
+      {
+        "id": "7cd362ea-ff03-4387-9bb2-52e33c8bd5cf",
+        "bill_id": "07a21641-0290-43ff-8349-2903723a2f65",
+        "total_amount": "500",
+        "status": "paid",
+        "created_at": "2026-10-05T07:56:13.140Z",
+        "paid_at": "2026-10-05T07:57:15.374Z"
+      },
+      {
+        "id": "d1c40569-ded4-46a9-a4ed-9237976a2513",
+        "bill_id": "87a55910-17b8-4dd3-83a9-05559eaeb4fa",
+        "total_amount": "500",
+        "status": "paid",
+        "created_at": "2026-10-07T10:17:39.533Z",
+        "paid_at": "2026-10-08T04:27:51.431Z"
+      }
+    ],
+    "linked_bill_all_payments": [
+      {
+        "bill_id": "00be4d05-5253-44c1-b766-a401aba683ac",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "151.46"
+      },
+      {
+        "bill_id": "0122f3fc-246a-424e-97bb-54fac3e9ee5e",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "111"
+      },
+      {
+        "bill_id": "036ddeb0-8fcc-40bf-af51-46cd7debd45b",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "300"
+      },
+      {
+        "bill_id": "07a21641-0290-43ff-8349-2903723a2f65",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "07a21641-0290-43ff-8349-2903723a2f65",
+        "record_type": "refund",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "0a14ab26-3313-42f8-91d0-0eb8a49c1936",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "0d144db8-4b36-44f9-8b83-fbd9a0819718",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "104"
+      },
+      {
+        "bill_id": "1cfd9967-ea71-489f-a42f-00c1cecdde5e",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "50"
+      },
+      {
+        "bill_id": "3f738b92-0792-4c29-895d-a48052863445",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "218.48"
+      },
+      {
+        "bill_id": "520a8d4b-11cc-4416-806d-0ed7b003eb7b",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "5758938a-0844-43be-a414-6f6c31e8eefc",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "5be9dcc1-80bc-44e2-87c2-6463160a7259",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "5eec1a18-1c50-4382-9f28-402eaf794911",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "6a423ad4-32d9-423a-b8b8-73db5eb64775",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "74584fed-947a-4f51-b931-7afa64ca6b76",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "7d43597c-4e21-4b0f-8f6b-9a0423c8eedb",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "8.8"
+      },
+      {
+        "bill_id": "87a55910-17b8-4dd3-83a9-05559eaeb4fa",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "87a55910-17b8-4dd3-83a9-05559eaeb4fa",
+        "record_type": "refund",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "8a47a0f7-03d3-4348-ad45-fe965704c8ca",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "8c3e4ff0-406d-42d6-920a-cf7cfd21474f",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "94cb1417-839d-443f-9f45-54085bd08aa1",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "961c0169-a3ed-4f61-841b-ed3be0451371",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "346.54"
+      },
+      {
+        "bill_id": "9d94aa77-0e98-43ad-94c9-1e37eef3488e",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "103.98"
+      },
+      {
+        "bill_id": "a44497fa-5e97-49bd-aff2-af50bd82386f",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "350"
+      },
+      {
+        "bill_id": "abf6fc4c-3fce-45aa-b9c2-9f0648ab4aa8",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "b16f077f-7aa0-4c7f-b4ea-8820c89eb318",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "b8c53ca8-25b6-4c72-b282-8111183dbbb9",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "b8c53ca8-25b6-4c72-b282-8111183dbbb9",
+        "record_type": "refund",
+        "records": "2",
+        "amount": "1000"
+      },
+      {
+        "bill_id": "c854e5ce-4997-4496-a29b-5f64ed673dbc",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "300"
+      },
+      {
+        "bill_id": "d6682d76-3b02-4286-bfc5-b369008b377a",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "273.44"
+      },
+      {
+        "bill_id": "d89a4c68-0aaa-4b9c-898f-600025dd93c2",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "42.21"
+      },
+      {
+        "bill_id": "de87b023-4903-4f32-a42d-af7b75d141e5",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "500"
+      },
+      {
+        "bill_id": "e0ade6d3-23a5-4de5-860a-1972a26facad",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "9.11"
+      },
+      {
+        "bill_id": "f1e7db45-3a6a-4891-8756-f56f13ba81b0",
+        "record_type": "payment",
+        "records": "1",
+        "amount": "23"
+      }
+    ],
+    "lims": [],
+    "hims": [],
+    "stock_summary": [
+      {
+        "active_products": "790",
+        "stocked_products": "788",
+        "at_or_below_reorder": "2",
+        "negative_stock_products": "0"
+      }
+    ],
+    "expired_lots": [
+      {
+        "lots": "0",
+        "stock_quantity": "0"
+      }
+    ],
+    "movements": [
+      {
+        "movement_type": "adjustment",
+        "reference_type": "manual_adjustment",
+        "records": "5",
+        "earliest": "2026-10-26T05:00:59.868Z",
+        "latest": "2026-10-26T05:06:11.114Z"
+      },
+      {
+        "movement_type": "inward",
+        "reference_type": "inward_receipt",
+        "records": "815",
+        "earliest": "2026-10-17T07:47:40.578Z",
+        "latest": "2026-10-29T08:25:40.772Z"
+      },
+      {
+        "movement_type": "outward",
+        "reference_type": "dispensed_item",
+        "records": "19",
+        "earliest": "2026-10-24T12:03:42.913Z",
+        "latest": "2026-10-30T07:43:59.384Z"
+      },
+      {
+        "movement_type": "adjustment",
+        "reference_type": "inward_correction",
+        "records": "14",
+        "earliest": "2026-10-23T07:47:21.382Z",
+        "latest": "2026-10-23T07:48:28.561Z"
+      }
+    ],
+    "visit_reference_check": [
+      {
+        "id": "05b10efb-055a-48f7-b814-447d7c2877fd",
+        "encounter_at": "2026-09-30T09:24:34.408Z"
+      },
+      {
+        "id": "cf1670c1-afe2-4222-8030-e0d726adc382",
+        "encounter_at": "2026-10-01T07:23:38.929Z"
+      },
+      {
+        "id": "5aff1161-1fe7-45d3-b3b7-4b3581afcd3f",
+        "encounter_at": "2026-10-01T12:06:30.031Z"
+      },
+      {
+        "id": "3cccc2bf-fc0c-4b11-a84e-63193ff3e483",
+        "encounter_at": "2026-10-06T14:34:21.233Z"
+      },
+      {
+        "id": "a091e7bf-b50b-49da-9132-6abf0bff945e",
+        "encounter_at": "2026-10-07T10:16:24.591Z"
+      },
+      {
+        "id": "8f07a917-c85d-4d93-895b-1d6bcc5737a9",
+        "encounter_at": "2026-10-09T05:39:53.906Z"
+      },
+      {
+        "id": "2b9a04de-00f4-42df-bea3-2237d72bcb0b",
+        "encounter_at": "2026-10-13T09:00:06.077Z"
+      },
+      {
+        "id": "0d9159fc-b92f-4e36-84f4-f54a84c18353",
+        "encounter_at": "2026-10-14T13:55:43.775Z"
+      },
+      {
+        "id": "87f12ada-920f-40b9-bbbc-7f4ccd78ed0f",
+        "encounter_at": "2026-10-15T05:20:29.207Z"
+      },
+      {
+        "id": "daed8321-ea34-4491-a622-16aabec5132d",
+        "encounter_at": "2026-10-15T13:25:21.073Z"
+      },
+      {
+        "id": "04d919ef-7073-4f19-9a36-820a6cb6ccb0",
+        "encounter_at": "2026-10-16T05:23:49.407Z"
+      },
+      {
+        "id": "8c3a2726-5c22-437b-a304-a73636213557",
+        "encounter_at": "2026-10-18T05:08:16.937Z"
+      },
+      {
+        "id": "d7539810-4ea6-4ca2-a555-6963d1a7dce4",
+        "encounter_at": "2026-10-19T07:57:45.651Z"
+      },
+      {
+        "id": "d06604b8-0419-4932-a278-28dc6a358b64",
+        "encounter_at": "2026-10-23T07:39:32.908Z"
+      },
+      {
+        "id": "31c2161d-e7d3-480e-8097-3d4a8997b702",
+        "encounter_at": "2026-10-23T12:24:21.323Z"
+      },
+      {
+        "id": "1e6897dd-7106-42bb-9ee1-5faa00ee7d0a",
+        "encounter_at": "2026-10-25T06:23:35.036Z"
+      },
+      {
+        "id": "c0c1a716-57fd-424a-b6a2-8cddf41db694",
+        "encounter_at": "2026-10-26T08:20:47.094Z"
+      },
+      {
+        "id": "6596e95a-bdc7-432d-97af-e5e4e93ced05",
+        "encounter_at": "2026-10-29T14:07:14.942Z"
+      },
+      {
+        "id": "69b77779-3a16-4447-9e9e-466e08fbf86f",
+        "encounter_at": "2026-10-29T14:08:50.251Z"
+      },
+      {
+        "id": "2f74473f-5e5a-4ab6-b794-b2dc462d6061",
+        "encounter_at": "2026-10-29T14:10:00.430Z"
+      }
+    ]
+  }
+}

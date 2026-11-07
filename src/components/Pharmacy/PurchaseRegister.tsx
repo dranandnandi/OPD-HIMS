@@ -1,3 +1,4 @@
+import MedicineFlags from './MedicineFlags';
 import React, { useState, useEffect } from 'react';
 import { Download, ChevronDown, ChevronRight, FileText, RotateCcw, Plus, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -7,6 +8,8 @@ import { pharmacyService } from '../../services/pharmacyService';
 import { useAuth } from '../Auth/useAuth';
 import { inr, toCsv, downloadCsv } from '../../utils/gst';
 import InwardLineCorrectionModal from './InwardLineCorrectionModal';
+import ReturnToSupplierModal from './ReturnToSupplierModal';
+import { purchaseNetValue } from '../../utils/supplierReturns';
 
 const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -23,6 +26,7 @@ const PurchaseRegister: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [creditReturn, setCreditReturn] = useState<PharmacyDebitNote | null>(null);
   const [tab, setTab] = useState<'purchases' | 'returns'>('purchases');
   // The line being put right after a bad scan, with the invoice it belongs to.
   const [correcting, setCorrecting] = useState<{ receipt: PharmacyInwardReceipt; item: PharmacyInwardItem } | null>(null);
@@ -76,12 +80,26 @@ const PurchaseRegister: React.FC = () => {
         ['Invoice Date', 'Invoice No', 'Supplier', 'Supplier GSTIN', 'Supply', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Items'], rows));
     } else {
       const rows = debitNotes.map(d => [
-        format(d.noteDate, 'dd/MM/yyyy'), d.debitNoteNumber, d.supplier?.name || '', d.supplier?.gstin || '', d.reason || '',
-        d.taxableAmount.toFixed(2), d.cgstAmount.toFixed(2), d.sgstAmount.toFixed(2), d.igstAmount.toFixed(2), d.grandTotal.toFixed(2)
+        format(d.creditDate ? new Date(`${d.creditDate}T12:00:00`) : d.noteDate, 'dd/MM/yyyy'), d.debitNoteNumber, d.supplier?.name || '', d.supplier?.gstin || '', d.reason || '',
+        d.taxableAmount.toFixed(2), d.cgstAmount.toFixed(2), d.sgstAmount.toFixed(2), d.igstAmount.toFixed(2), d.grandTotal.toFixed(2), d.creditType || 'gst_credit', d.creditReference || '', d.creditDate || '',
+        (d.items || []).reduce((s, i) => s + (i.paidQuantity || 0), 0), (d.items || []).reduce((s, i) => s + (i.freeQuantity || 0), 0),
+        (d.items || []).reduce((s, i) => s + Number(i.quantity), 0)
       ]);
       downloadCsv(`debit-notes-${from}-to-${to}.csv`, toCsv(
-        ['Date', 'Debit Note No', 'Supplier', 'Supplier GSTIN', 'Reason', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'], rows));
+        ['Date', 'Debit Note No', 'Supplier', 'Supplier GSTIN', 'Reason', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Credit treatment', 'Supplier credit reference', 'Credit date', 'Paid packs', 'Free packs', 'Total returned packs'], rows));
     }
+  };
+
+  const exportLinesCsv = () => {
+    const rows = receipts.flatMap(r => (r.inwardItems || []).map(i => [
+      r.invoiceNumber || '', r.supplier?.name || '', i.medicine?.name || i.medicineId, i.batchNumber || '',
+      i.quantity, i.freeQuantity || 0, i.quantity + (i.freeQuantity || 0), i.packSize || 1,
+      i.unitCostPrice.toFixed(2), (purchaseNetValue(i) / (i.quantity + (i.freeQuantity || 0))).toFixed(4),
+      i.discountPercent || 0, i.gstRate || 0, purchaseNetValue(i).toFixed(2), (i.lineTotal ?? i.totalCostPrice).toFixed(2),
+    ]));
+    downloadCsv(`purchase-lines-${from}-to-${to}.csv`, toCsv(
+      ['Invoice', 'Supplier', 'Medicine', 'Batch', 'Paid packs', 'Free packs', 'Received packs', 'Units per pack',
+       'Invoice rate ex-GST', 'Effective cost per pack ex-GST', 'Purchase discount %', 'GST %', 'Taxable', 'Line total'], rows));
   };
 
   const toggle = (id: string) => setExpanded(e => ({ ...e, [id]: !e[id] }));
@@ -91,12 +109,13 @@ const PurchaseRegister: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Purchase Register</h2>
-          <p className="text-gray-600">Supplier invoices and debit notes with GST input</p>
+          <p className="text-gray-600">Supplier invoices and returns. Credits use the supplier credit date; pending returns use the return date.</p>
         </div>
         <div className="flex items-center gap-2">
           <Link to="/pharmacy/inward" className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
             <Plus className="w-4 h-4" /> New Purchase
           </Link>
+          {tab === 'purchases' && <button onClick={exportLinesCsv} className="border border-gray-300 px-3 py-2 rounded-lg text-sm">Lines CSV</button>}
           <button onClick={exportCsv} className="flex items-center gap-2 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50">
             <Download className="w-4 h-4" /> CSV
           </button>
@@ -168,7 +187,7 @@ const PurchaseRegister: React.FC = () => {
                           <thead className="text-gray-500">
                             <tr>
                               <th className="text-left py-1">Medicine</th><th className="text-left py-1">HSN</th><th className="text-left py-1">Batch</th>
-                              <th className="text-left py-1">Expiry</th><th className="text-right py-1">Qty</th><th className="text-right py-1">Free</th>
+                              <th className="text-left py-1">Expiry</th><th className="text-right py-1">Paid</th><th className="text-right py-1">Free</th><th className="text-right py-1">Received</th><th className="text-right py-1">Effective cost</th>
                               <th className="text-right py-1">MRP</th><th className="text-right py-1">Rate</th><th className="text-right py-1">Disc%</th>
                               <th className="text-right py-1">GST%</th><th className="text-right py-1">Taxable</th><th className="text-right py-1">Tax</th><th className="text-right py-1">Total</th>
                               <th className="text-right py-1"></th>
@@ -177,7 +196,7 @@ const PurchaseRegister: React.FC = () => {
                           <tbody>
                             {(r.inwardItems || []).map(i => (
                               <tr key={i.id} className="border-t border-gray-200">
-                                <td className="py-1">{i.medicine?.name || i.medicineId}</td>
+                                <td className="py-1">{i.medicine?.name || i.medicineId}<MedicineFlags medicine={i.medicine} /></td>
                                 {/* Only the HSN the supplier's invoice carried. Falling back to
                                     the master's current HSN would make an old purchase appear to
                                     change every time someone corrects the medicine. */}
@@ -188,6 +207,8 @@ const PurchaseRegister: React.FC = () => {
                                 <td className="py-1">{i.expiryDate ? format(i.expiryDate, 'MM/yy') : '—'}</td>
                                 <td className="py-1 text-right">{i.quantity}</td>
                                 <td className="py-1 text-right">{i.freeQuantity || 0}</td>
+                                <td className="py-1 text-right">{i.quantity + (i.freeQuantity || 0)}</td>
+                                <td className="py-1 text-right" title="Net invoice value spread across paid and free packs, excluding GST">{(purchaseNetValue(i) / (i.quantity + (i.freeQuantity || 0))).toFixed(2)}</td>
                                 <td className="py-1 text-right">{i.mrp?.toFixed(2) || '—'}</td>
                                 <td className="py-1 text-right">{i.unitCostPrice.toFixed(2)}</td>
                                 <td className="py-1 text-right">{i.discountPercent || 0}</td>
@@ -239,7 +260,7 @@ const PurchaseRegister: React.FC = () => {
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-3 py-3 text-left w-8"></th>
-                <th className="px-3 py-3 text-left">Date</th>
+                <th className="px-3 py-3 text-left">Document date</th>
                 <th className="px-3 py-3 text-left">Debit Note</th>
                 <th className="px-3 py-3 text-left">Supplier</th>
                 <th className="px-3 py-3 text-left">Reason</th>
@@ -258,7 +279,7 @@ const PurchaseRegister: React.FC = () => {
                 <React.Fragment key={d.id}>
                   <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggle(d.id)}>
                     <td className="px-3 py-3 text-gray-400">{expanded[d.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">{format(d.noteDate, 'dd MMM yyyy')}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{format(d.creditDate ? new Date(`${d.creditDate}T12:00:00`) : d.noteDate, 'dd MMM yyyy')}</td>
                     <td className="px-3 py-3 font-medium font-mono">{d.debitNoteNumber}</td>
                     <td className="px-3 py-3">{d.supplier?.name || '—'}</td>
                     <td className="px-3 py-3 text-gray-600 max-w-xs truncate">{d.reason}</td>
@@ -271,15 +292,20 @@ const PurchaseRegister: React.FC = () => {
                   {expanded[d.id] && (
                     <tr className="bg-gray-50">
                       <td colSpan={10} className="px-6 py-3">
+                        <p className="mb-2 text-xs">Stock returned: {format(d.noteDate, 'dd MMM yyyy')} | {d.creditType === 'stock_only' ? 'Supplier credit pending / no credit' : d.creditType === 'commercial_credit' ? 'Commercial credit, no GST adjustment' : 'GST credit'}
+                          {d.creditReference && <> | Supplier reference: {d.creditReference} | Date: {d.creditDate}</>}
+                        </p>
+                        {d.creditType === 'stock_only' && d.items?.every(i => i.inwardItemId) && <button className="mb-3 text-blue-600 text-sm underline" onClick={() => setCreditReturn(d)}>Record supplier credit</button>}
                         <table className="w-full text-xs">
                           <thead className="text-gray-500">
-                            <tr><th className="text-left py-1">Medicine</th><th className="text-left py-1">Batch</th><th className="text-right py-1">Qty</th><th className="text-right py-1">Rate</th><th className="text-right py-1">GST%</th><th className="text-right py-1">Taxable</th><th className="text-right py-1">Total</th></tr>
+                            <tr><th className="text-left py-1">Medicine</th><th className="text-left py-1">Batch</th><th className="text-right py-1">Paid / Free</th><th className="text-right py-1">Total packs</th><th className="text-right py-1">Rate</th><th className="text-right py-1">GST%</th><th className="text-right py-1">Taxable</th><th className="text-right py-1">Total</th></tr>
                           </thead>
                           <tbody>
                             {(d.items || []).map(i => (
                               <tr key={i.id} className="border-t border-gray-200">
-                                <td className="py-1">{i.medicine?.name || i.medicineId}</td>
+                                <td className="py-1">{i.medicine?.name || i.medicineId}<MedicineFlags medicine={i.medicine} /></td>
                                 <td className="py-1">{i.batchNumber || '—'}</td>
+                                <td className="py-1 text-right">{i.inwardItemId ? `${i.paidQuantity || 0} / ${i.freeQuantity || 0}` : "Legacy: not split"}</td>
                                 <td className="py-1 text-right">{i.quantity}</td>
                                 <td className="py-1 text-right">{i.unitRate.toFixed(2)}</td>
                                 <td className="py-1 text-right">{i.gstRate}</td>
@@ -311,6 +337,7 @@ const PurchaseRegister: React.FC = () => {
         </div>
       )}
 
+      {creditReturn && <ReturnToSupplierModal existingReturn={creditReturn} onSave={() => { setCreditReturn(null); load(); }} onClose={() => setCreditReturn(null)} />}
       {correcting && (
         <InwardLineCorrectionModal
           receipt={correcting.receipt}

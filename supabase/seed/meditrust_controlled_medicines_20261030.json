@@ -1,0 +1,580 @@
+{
+  "clinicId": "238307be-362b-4fff-bb9a-3f2f9ff44519",
+  "clinicName": "Meditrust Clinics",
+  "drugLicence": "GJ-ADR-272601",
+  "reviewedOn": "2026-10-30",
+  "sources": {
+    "h1": "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2022/drug_rules/Drugs%20Rules,%201945.pdf",
+    "pregabalin": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2263975&lang=1&reg=6",
+    "ndps": "https://www.cbn.gov.in/pdf/qtynotif.pdf",
+    "tramadol": "https://www.cbn.gov.in/en/notifications/circulars_notifications/"
+  },
+  "notes": [
+    "Positive classifications for this catalogue only. Never treat unlisted medicines as cleared of regulatory controls.",
+    "NRx and H1 are independent; clobazam and clonazepam are NRx, while pregabalin is H1 under the 2026 amendment.",
+    "Register captures supplies after activation; no historic supplies are invented. Additional Gujarat/NDPS records depend on substance and licence conditions.",
+    "AKT-3, AKT-4 and Akurit-4 compositions completed from Lupin Form V. Their imported strength labels require pack review."
+  ],
+  "medicines": [
+    {
+      "id": "8439b78e-8204-4d8a-a402-f92c7e6ea833",
+      "name": "AKT 3MG TAB",
+      "generic": "Isoniazid + Rifampicin + Ethambutol",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "ethambutol",
+        "isoniazid",
+        "rifampicin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "8555921e-4b5f-4690-b94d-520c1eb033a1",
+      "name": "AKT 4MG TAB",
+      "generic": "Isoniazid + Rifampicin + Ethambutol + Pyrazinamide",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "ethambutol",
+        "isoniazid",
+        "pyrazinamide",
+        "rifampicin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "333c9324-9c42-45c8-952c-970f2cc1316f",
+      "name": "AKURIT 3MG TAB",
+      "generic": "Isoniazid + Rifampicin +Ethambutol",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "ethambutol",
+        "isoniazid",
+        "rifampicin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "3fc7b65c-46fc-46b0-83c0-72b8339a8337",
+      "name": "AKURIT 4MG TAB",
+      "generic": "Isoniazid + Rifampicin + Ethambutol + Pyrazinamide",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "ethambutol",
+        "isoniazid",
+        "pyrazinamide",
+        "rifampicin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "83d255ed-27ce-4f2c-a150-a1c819ccea56",
+      "name": "ALPRAX 0.25 TAB",
+      "generic": "ALPRAZOLAM",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "alprazolam"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "59598729-1ed7-4e32-a6c3-7ba4f2a255d4",
+      "name": "ALPRAX 1MG TAB",
+      "generic": "ALPRAZOLAM",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "alprazolam"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "fc4f5aca-8df5-4b99-8994-644d2b9dedb4",
+      "name": "ALPRAX PLUS TAB",
+      "generic": "ALPRAZOLAM+SERTALINE",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "alprazolam"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "b89447ba-71f4-4211-ba6e-aba9906d530e",
+      "name": "ANXIT 0.25 TAB",
+      "generic": "ALPRAZOLAM",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "alprazolam"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "2fcfce40-b5b1-4434-a9fc-4185c61ad534",
+      "name": "CEFTAS 200 MG TAB",
+      "generic": "Cefixime",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "03284d36-8dcb-4795-9431-98f3ba9edf51",
+      "name": "CEFTAS 400 TAB",
+      "generic": "Cefixime",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "5b58fd52-7b64-4456-a53e-7a279f6bad7a",
+      "name": "CEFTAS-50 PINEAP FLAV DRY 30ML",
+      "generic": "Cefixime",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "19630140-93c5-4251-8b13-5f5a84daac39",
+      "name": "CEPODEM 200 TAB  ",
+      "generic": "Cefpodoxime",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefpodoxime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "be3bd6fc-3d06-482a-b538-7c0f643d3de6",
+      "name": "CEPODEM XP 325 MG TAB",
+      "generic": "CEFPODOXIME+CLAVULANATE",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefpodoxime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "52f40b0b-3ae8-43c6-9fbd-d457ddb92a43",
+      "name": "CIZASPA X TAB",
+      "generic": "Mebeverine + Chlordiazepoxide",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "chlordiazepoxide"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "53228f06-6a36-4680-9ba5-ef06d7153f48",
+      "name": "CONTRAMAL 50 DT TAB",
+      "generic": "TRAMADOL",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "tramadol"
+      ],
+      "sourceKeys": [
+        "h1",
+        "tramadol"
+      ]
+    },
+    {
+      "id": "02b3278a-93ea-4beb-bcef-e1bce69c5ae9",
+      "name": "FRISIUM 10 TAB",
+      "generic": "Clobazam",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clobazam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "4c3b4299-e9a4-4979-bbe7-6eb8957df188",
+      "name": "FRISIUM 5 TAB",
+      "generic": "Clobazam",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clobazam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "4e69e108-fda0-4fe0-b7a1-c382fd74c72a",
+      "name": "GB 29 TOTAL",
+      "generic": "PREGABALIN+NORTRIPTYLIN+METHYLCOBALAMIN",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "e3fa108b-0cc3-4db4-b592-b2362389d0c2",
+      "name": "LEVOFLOX 750 MG",
+      "generic": "Levofloxacin",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "levofloxacin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "8eb1c9be-009a-4f86-8573-b83af169b6f5",
+      "name": "LOXOF 500MG TAB",
+      "generic": "Levofloxacin",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "levofloxacin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "231edd39-025c-46bd-b7d5-3c6b6973fc56",
+      "name": "MOXIF 400 MG ",
+      "generic": "Moxifloxacin",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "moxifloxacin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "f7915217-d67a-4728-864f-d7d55482eea6",
+      "name": "MOXIF EYE DROP 10 ML ",
+      "generic": "Moxifloxacin",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "moxifloxacin"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "5a2278f3-0a0b-4194-b15b-58239cb7a03c",
+      "name": "NEXITO PLUS TAB",
+      "generic": "Escitalopram + Clonazepam",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clonazepam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "139987de-2ced-4a66-a524-7a7774478baf",
+      "name": "PETRIL 0.5",
+      "generic": "Clonazepam",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clonazepam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "5e0072f0-f04e-49c0-9f59-59050936f3b4",
+      "name": "PETRIL BETA",
+      "generic": "Clonazepam + Propranolol",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clonazepam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "4c02caa2-650e-4568-bb5f-b4416db0c916",
+      "name": "PREGABID 75 CAP",
+      "generic": "PREGABALIN",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "d7861019-2960-46dc-b6dd-06646fdc2f2f",
+      "name": "PREGABID NT TAB",
+      "generic": "PREGABALIN+NORTRIPTYLINE",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "ee2efa72-da33-433d-8135-95f1dcddb06d",
+      "name": "PREGASON 75MG CAP 1X10",
+      "generic": "PREGABALIN",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "acc757f7-ba99-4795-91b7-3a669c865c11",
+      "name": "PREGASON M XR TAB",
+      "generic": "PREGABALIN+METHYLCOBALAMIN",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "783d227a-3b6e-42ef-9e52-dd5b56171af9",
+      "name": "PREGASON NT TAB",
+      "generic": "PREGABALIN + NORTRIPTYLINE ",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "496561ed-558c-4cbb-868b-adb07f1fcd14",
+      "name": "PREGASON TOTAL XR TAB",
+      "generic": "PREGABALINE + METHYLCOBALMINE + NORTRIPTILINE ",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "pregabalin"
+      ],
+      "sourceKeys": [
+        "h1",
+        "pregabalin"
+      ]
+    },
+    {
+      "id": "7cc7fea6-d28e-49e9-a6d1-155f69ac14fe",
+      "name": "TEXIDEP 0.25 TAB",
+      "generic": "ALPRAZOLAM",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "alprazolam"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    },
+    {
+      "id": "f0cfd18e-ee24-45ed-a619-1c83366d49f3",
+      "name": "ULTRACET SEMI TAB",
+      "generic": "TRAMADOL+ACETAMINOPHEN",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "tramadol"
+      ],
+      "sourceKeys": [
+        "h1",
+        "tramadol"
+      ]
+    },
+    {
+      "id": "779894a3-5fa4-4199-9b58-3753d1905249",
+      "name": "ULTRACET TAB",
+      "generic": "PARACETAMOL+TRAMADOL",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "tramadol"
+      ],
+      "sourceKeys": [
+        "h1",
+        "tramadol"
+      ]
+    },
+    {
+      "id": "8690ce5f-ee16-4ff6-b1e2-81559f6c7e9e",
+      "name": "ZAPIZ 0.25MG TAB",
+      "generic": "CLONAZEPAM",
+      "isNrx": true,
+      "isScheduleH1": false,
+      "identifiedIngredients": [
+        "clonazepam"
+      ],
+      "sourceKeys": [
+        "ndps"
+      ]
+    },
+    {
+      "id": "dedd358b-d440-4001-9152-9807b6bc1390",
+      "name": "ZIFI 100  MG TAB",
+      "generic": "CEFIXIME",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "48f48ce0-51bb-4da5-ac05-79e49d04b188",
+      "name": "ZIFI DT 50 TAB",
+      "generic": "CEFIXIME",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "acac4d60-0b41-401c-b84c-a5e9ea166560",
+      "name": "ZIFI O 200MG TAB",
+      "generic": "CEFIXIME+OFLOXACIN",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "c475ba4d-92aa-4526-b959-efb4e5c1850f",
+      "name": "ZIFI Oral Drops 10ML",
+      "generic": "CEFIXIME",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "63315153-a487-4551-ab7b-e9f1075ae207",
+      "name": "ZIFI REDYMIX 50MG SYRUP 60ML",
+      "generic": "CEFIXIME ORAL SUSPENSION",
+      "isNrx": false,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "cefixime"
+      ],
+      "sourceKeys": [
+        "h1"
+      ]
+    },
+    {
+      "id": "4fbfcec5-e1fc-4a93-a1da-4663bd6b7278",
+      "name": "ZOLFRESH 5 MG TAB ",
+      "generic": "ZOLPIDEM",
+      "isNrx": true,
+      "isScheduleH1": true,
+      "identifiedIngredients": [
+        "zolpidem"
+      ],
+      "sourceKeys": [
+        "h1",
+        "ndps"
+      ]
+    }
+  ]
+}

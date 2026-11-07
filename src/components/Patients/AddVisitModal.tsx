@@ -210,6 +210,9 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
 
   const handlePatientSelect = (patient: Patient) => {
     setSelectedPatient(patient);
+    setSelectedAppointmentId(undefined);
+    setSelectedAppointmentTime('');
+    setSelectedDoctorId(undefined);
     setPatientSearchTerm('');
     setShowPatientSearchResults(false);
     setStep('method');
@@ -233,6 +236,9 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
 
   const clearPatientSelection = () => {
     setSelectedPatient(null);
+    setSelectedAppointmentId(undefined);
+    setSelectedAppointmentTime('');
+    setSelectedDoctorId(undefined);
     setPatientSearchTerm('');
     setShowPatientSearchResults(false);
     setStep('patient');
@@ -241,7 +247,7 @@ const AddVisitModal: React.FC<AddVisitModalProps> = ({ patient, existingVisit, a
   const handleSaveNewPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'lastVisit'>) => {
     try {
       const newPatient = await patientService.addPatient(patientData);
-      setSelectedPatient(newPatient);
+      handlePatientSelect(newPatient);
       setShowNewPatientModal(false);
       setStep('method');
       await loadPatients(); // Refresh patient list

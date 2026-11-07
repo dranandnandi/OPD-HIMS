@@ -1,3 +1,4 @@
+import { invoiceMedicineMatches } from '../utils/invoiceMedicineMatching';
 import { supabase } from '../lib/supabase';
 import { MedicineMaster, TestMaster, MedicineWithPrice, TestWithPrice, ClinicMedicinePrice, ClinicTestPrice } from '../types';
 import { getCurrentProfile } from './profileService';
@@ -23,6 +24,8 @@ const convertDatabaseMedicineMaster = (dbMedicine: DatabaseMedicineMaster): Medi
   rackLocation: dbMedicine.rack_location ?? undefined,
   barcode: dbMedicine.barcode ?? undefined,
   isChronic: dbMedicine.is_chronic ?? false,
+  isNrx: dbMedicine.is_nrx ?? false,
+  isScheduleH1: dbMedicine.is_schedule_h1 ?? false,
   hsnCode: dbMedicine.hsn_code ?? undefined,
   gstRate: dbMedicine.gst_rate ?? 12,
   packSize: dbMedicine.pack_size != null ? Number(dbMedicine.pack_size) : 1,
@@ -50,7 +53,7 @@ const convertDatabaseTestMaster = (dbTest: DatabaseTestMaster): TestMaster => ({
 });
 
 // Convert app medicine master to database medicine master type
-const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'createdAt' | 'updatedAt'>): Omit<DatabaseMedicineMaster, 'id' | 'created_at' | 'updated_at'> => ({
+const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'createdAt' | 'updatedAt'>): Omit<DatabaseMedicineMaster, 'id' | 'created_at' | 'updated_at' | 'clinic_id'> => ({
   name: medicine.name,
   generic_name: medicine.genericName,
   brand_name: medicine.brandName,
@@ -68,6 +71,8 @@ const convertMedicineToDatabase = (medicine: Omit<MedicineMaster, 'id' | 'create
   rack_location: medicine.rackLocation?.trim() || null,
   barcode: medicine.barcode?.replace(/\s+/g, '') || null,
   is_chronic: medicine.isChronic ?? false,
+  is_nrx: medicine.isNrx ?? false,
+  is_schedule_h1: medicine.isScheduleH1 ?? false,
   hsn_code: medicine.hsnCode?.trim() || null,
   gst_rate: medicine.gstRate ?? 12,
   pack_size: medicine.packSize && medicine.packSize > 0 ? medicine.packSize : 1,
@@ -90,6 +95,13 @@ const convertTestToDatabase = (test: Omit<TestMaster, 'id' | 'createdAt' | 'upda
 });
 
 export const masterDataService = {
+  async mergeMedicines(sourceId: string, targetId: string, reason: string): Promise<void> {
+    if (!supabase) throw new Error('Database connection is unavailable.');
+    const { error } = await supabase.rpc('merge_pharmacy_products', {
+      p_source_id: sourceId, p_target_id: targetId, p_reason: reason.trim(),
+    });
+    if (error) throw new Error(error.message);
+  },
   // Medicine Master Methods
   async getMedicines(clinicId?: string): Promise<MedicineWithPrice[]> {
     if (!supabase) {
@@ -112,22 +124,50 @@ export const masterDataService = {
       `)
       .eq('is_active', true)
       .eq('clinic_id', profile.clinicId)
-      .order('name');
+      .order('name').order('id');
 
-    const { data, error } = await query;
+    const data: any[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data: page, error } = await query.range(offset, offset + 499);
+      if (error) throw new Error('Failed to fetch medicines');
+      data.push(...(page || []));
+      if (!page || page.length < 500) break;
+    }
 
-    if (error) {
-      throw new Error('Failed to fetch medicines');
+    const batchQuery = supabase
+      .from('medicine_batches')
+      .select('medicine_id, expiry_date, quantity, supplier:suppliers(name)')
+      .eq('clinic_id', profile.clinicId)
+      .gt('quantity', 0)
+      .order('expiry_date', { ascending: true, nullsFirst: false }).order('id');
+    const batches: any[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data: page, error } = await batchQuery.range(offset, offset + 499);
+      if (error) throw new Error('Failed to fetch medicine batch suppliers');
+      batches.push(...(page || []));
+      if (!page || page.length < 500) break;
+    }
+
+    const batchDetailsByMedicine = new Map<string, { supplierName?: string; expiryDate?: string }>();
+    for (const batch of batches ?? []) {
+      const supplier = batch.supplier as unknown as { name?: string } | { name?: string }[] | null;
+      const name = Array.isArray(supplier) ? supplier[0]?.name : supplier?.name;
+      if (!batchDetailsByMedicine.has(batch.medicine_id)) {
+        batchDetailsByMedicine.set(batch.medicine_id, { supplierName: name, expiryDate: batch.expiry_date ?? undefined });
+      }
     }
 
     return data.map(medicine => {
       const baseMedicine = convertDatabaseMedicineMaster(medicine);
       const priceData = medicine.clinic_medicine_prices?.[0];
+      const batchDetails = batchDetailsByMedicine.get(medicine.id);
 
       return {
         ...baseMedicine,
+        ...(batchDetails?.expiryDate ? { expiryDate: new Date(batchDetails.expiryDate) } : {}),
         sellingPrice: priceData?.selling_price,
-        costPrice: priceData?.cost_price
+        costPrice: priceData?.cost_price,
+        supplierName: batchDetails?.supplierName
       };
     });
   },
@@ -262,6 +302,8 @@ export const masterDataService = {
     }
 
     const dbMedicine: any = {};
+    if (medicine.isNrx !== undefined) dbMedicine.is_nrx = medicine.isNrx;
+    if (medicine.isScheduleH1 !== undefined) dbMedicine.is_schedule_h1 = medicine.isScheduleH1;
 
     if (medicine.name) dbMedicine.name = medicine.name;
     if (medicine.genericName !== undefined) dbMedicine.generic_name = medicine.genericName;
@@ -779,9 +821,11 @@ export const masterDataService = {
         // Check if medicine exists
         const existingMedicines = await this.searchMedicines(masterData.name);
 
-        if (existingMedicines.length > 0) {
-          // Use existing medicine (no updates to master data allowed)
-          const existingMedicine = existingMedicines[0];
+        const exactMatches = invoiceMedicineMatches({ medicineName: masterData.name,
+          strength: masterData.strength, manufacturer: masterData.manufacturer }, existingMedicines);
+        if (exactMatches.length > 1) throw new Error('Multiple matching products exist. Select the intended product or merge duplicate records.');
+        if (exactMatches.length === 1) {
+          const existingMedicine = exactMatches[0];
           itemId = existingMedicine.id;
         } else {
           // Create new medicine in master catalog

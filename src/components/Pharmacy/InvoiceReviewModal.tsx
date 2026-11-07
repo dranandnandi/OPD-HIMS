@@ -1,3 +1,6 @@
+import MedicineSearchSelect from './MedicineSearchSelect';
+import MedicineFlags from './MedicineFlags';
+import { invoiceMedicineMatches } from '../../utils/invoiceMedicineMatching';
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Trash2, Plus, CheckCircle, AlertCircle, Eye, X, Search } from 'lucide-react';
 import { useAuth } from '../Auth/useAuth';
@@ -133,11 +136,9 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
 
   const matchMedicinesWithMaster = () => {
     setMedicineItems(prev => prev.map(item => {
-      if (item.medicineId) return item;
-      const matchedMedicine = medicines.find(m => 
-        m.name.toLowerCase() === item.medicineName.toLowerCase() ||
-        m.brandName?.toLowerCase() === item.medicineName.toLowerCase()
-      );
+      if (item.medicineId && medicines.some(m => m.id === item.medicineId)) return item;
+      const matches = invoiceMedicineMatches(item, medicines);
+      const matchedMedicine = matches.length === 1 ? matches[0] : undefined;
 
       if (matchedMedicine) {
         return {
@@ -150,7 +151,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
         };
       }
 
-      return item;
+      return { ...item, medicineId: '', isMatched: false };
     }));
   };
 
@@ -172,7 +173,8 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       if (i === index) {
         const updatedItem = { ...item, [field]: value };
         // Keep printed amounts intact so corrections can be reconciled.
-        if (field === 'medicineName') { updatedItem.medicineId = ''; updatedItem.isMatched = false; }
+        if (['medicineName', 'strength', 'manufacturer'].includes(field)) { updatedItem.medicineId = ''; updatedItem.isMatched = false; }
+        if (field === 'medicineId') updatedItem.isMatched = !!value;
         if (field === 'unitCostPrice') updatedItem.rateUnknown = false;
         
         return updatedItem;
@@ -253,11 +255,13 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
         if (!item.medicineId) {
           // Exact names only: fuzzy first-result matching can post stock to a different medicine.
           const matches = await masterDataService.searchMedicines(item.medicineName.trim());
-          const exact = matches.find(m => m.name.trim().toLowerCase() === item.medicineName.trim().toLowerCase());
+          const exactMatches = invoiceMedicineMatches(item, matches);
+          if (exactMatches.length > 1) throw new Error(`Multiple master products match ${item.medicineName}. Select the correct product or merge the duplicates in Medicine Master.`);
+          const exact = exactMatches[0];
           if (exact) processed[i] = { ...item, medicineId: exact.id, isMatched: true };
           else {
             const created = await masterDataService.upsertMasterDataAndPrice('medicine', {
-              name: item.medicineName.trim(), genericName: item.medicineName.trim(), brandName: item.medicineName.trim(),
+              name: item.medicineName.trim(), genericName: '', brandName: item.medicineName.trim(),
               category: 'other', dosageForm: 'other', strength: item.strength || null, manufacturer: item.manufacturer || null,
               description: `Created from invoice ${invoiceInfo.invoiceNumber}`, sideEffects: [], contraindications: [], currentStock: 0,
               reorderLevel: 10, hsnCode: item.hsnCode || null, gstRate: item.gstRate!, isActive: true
@@ -426,7 +430,7 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
               <p>{continuationConflict ? 'Confirmation needed beside the Finalize button.' : 'Header differences reviewed for the selected invoice.'}</p>
             </div>}
             {(totalMismatch || taxMismatch || taxableMismatch) && <p>Printed totals differ. Printed taxable: {invoiceInfo.extractedTaxable ?? 'unknown'}; tax: {invoiceInfo.extractedTax ?? 'unknown'}; grand total: {extractedGrand ?? 'unknown'}. Check missing rows, discounts, tax and rounding.</p>}
-            {duplicateRows.length > 0 && <p>Possible repeated rows: {duplicateRows.join(', ')}. Verify before keeping them; legitimate batches are never automatically deleted.</p>}
+            {duplicateRows.length > 0 && <p>Possible repeated invoice rows (separate batches remain separate): {duplicateRows.join(', ')}. Verify before keeping them; legitimate batches are never automatically deleted.</p>}
             {existingDuplicates && <p>Some new rows resemble items already on this bill. Remove any overlapping uploads.</p>}
             <details><summary className="cursor-pointer">Extraction notes ({extractedData.warnings?.length || 0})</summary>{extractedData.warnings?.map((warning, i) => <p key={i}>{warning}</p>)}</details>
             {unresolved && <p className="text-red-700">Resolve blank GST, product names or invalid quantities/rates before posting.</p>}
@@ -506,6 +510,9 @@ const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Medicine name"
                       />
+                      <label className="block text-xs text-gray-600 mt-2 mb-1">Medicine master product</label>
+                      <MedicineSearchSelect medicines={medicines} value={item.medicineId || ''} onChange={id => updateMedicineItem(originalIndex, 'medicineId', id)} />
+                      <MedicineFlags medicine={medicines.find(m => m.id === item.medicineId)} />
                     </div>
 
                     <div>

@@ -1,3 +1,5 @@
+import { medicineCategories, dosageForms, stockedUnits, optionLabel } from '../../utils/medicineOptions';
+import MedicineFlags, { MedicineFlagFields } from '../Pharmacy/MedicineFlags';
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Edit, Trash2, Pill, TestTube, Save, X, IndianRupee, Bot } from 'lucide-react';
@@ -7,7 +9,9 @@ import { getCurrentProfile } from '../../services/profileService';
 import { MedicineMaster, TestMaster, MedicineWithPrice, TestWithPrice, ClinicMedicinePrice, ClinicTestPrice } from '../../types';
 import AIMasterSettings from './AIMasterSettings';
 import { hasModuleAccess } from '../../utils/modulePermissions';
-import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
+import { packSpec, stockDisplay, fmtQty } from '../../utils/packUnits';
+import ProductMergeModal from '../Pharmacy/ProductMergeModal';
+import GenericNameFill from '../Pharmacy/GenericNameFill';
 
 interface MasterDataManagementProps {
   /**
@@ -46,9 +50,12 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
   const [medicinePrices, setMedicinePrices] = useState<ClinicMedicinePrice[]>([]);
   const [testPrices, setTestPrices] = useState<ClinicTestPrice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [medicineExpiryFilter, setMedicineExpiryFilter] = useState<'all' | 'expired' | 'expiring' | 'valid' | 'missing'>('all');
+  const [medicineSupplierFilter, setMedicineSupplierFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [showAddMedicineModal, setShowAddMedicineModal] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState<MedicineWithPrice | null>(null);
   const [editingTest, setEditingTest] = useState<TestWithPrice | null>(null);
   const [showAddTestModal, setShowAddTestModal] = useState(false);
@@ -99,11 +106,22 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
     }
   };
 
-  const filteredMedicines = medicines.filter(medicine =>
-    medicine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    medicine.genericName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    medicine.brandName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const supplierNames = [...new Set(medicines.map(m => m.supplierName).filter((name): name is string => !!name))].sort((a, b) => a.localeCompare(b));
+  const filteredMedicines = medicines.filter(medicine => {
+    const term = searchTerm.trim().toLowerCase();
+    const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const expiry = medicine.expiryDate ? dateKey(new Date(medicine.expiryDate)) : '';
+    const matchesSearch = !term || [medicine.name, medicine.genericName, medicine.brandName, medicine.batchNumber, medicine.supplierName, expiry]
+      .some(value => value?.toLowerCase().includes(term));
+    const today = dateKey(new Date());
+    const near = dateKey(new Date(Date.now() + 30 * 86400000));
+    const expiryMatch = medicineExpiryFilter === 'all' ||
+      (medicineExpiryFilter === 'missing' && !expiry) ||
+      (medicineExpiryFilter === 'expired' && !!expiry && expiry < today) ||
+      (medicineExpiryFilter === 'expiring' && !!expiry && expiry >= today && expiry <= near) ||
+      (medicineExpiryFilter === 'valid' && !!expiry && expiry > near);
+    return matchesSearch && expiryMatch && (medicineSupplierFilter === 'all' || medicine.supplierName === medicineSupplierFilter);
+  });
 
   const filteredTests = tests.filter(test =>
     test.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -212,6 +230,16 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+          {activeTab === 'medicines' && (
+            <div className="mt-3 flex flex-wrap gap-3">
+              <select aria-label="Filter medicines by expiry" value={medicineExpiryFilter} onChange={e => setMedicineExpiryFilter(e.target.value as typeof medicineExpiryFilter)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
+                <option value="all">All expiry dates</option><option value="expired">Expired</option><option value="expiring">Expires within 30 days</option><option value="valid">Valid beyond 30 days</option><option value="missing">No expiry recorded</option>
+              </select>
+              <select aria-label="Filter medicines by supplier" value={medicineSupplierFilter} onChange={e => setMedicineSupplierFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
+                <option value="all">All suppliers</option>{supplierNames.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Content */}
@@ -224,8 +252,12 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
             <AIMasterSettings />
           ) : activeTab === 'medicines' ? (
             <>
+              {canManageMedicines && user.clinicId && <GenericNameFill clinicId={user.clinicId} medicines={medicines} onSaved={async () => {
+                setMedicines(await masterDataService.getMedicines(user.clinicId));
+              }} />}
               {canManageMedicines && (
-                <div className="mb-4 flex justify-end">
+                <div className="mb-4 flex justify-end gap-3">
+                  <button onClick={() => setShowMerge(true)} disabled={medicines.length < 2} className="border rounded-lg px-4 py-2 text-blue-700 disabled:opacity-50">Merge products</button>
                   <button
                     onClick={() => setShowAddMedicineModal(true)}
                     className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -322,6 +354,8 @@ const MasterDataManagement: React.FC<MasterDataManagementProps> = ({ pharmacyMod
           )}
         </div>
       </div>
+
+      {showMerge && <ProductMergeModal medicines={medicines} onClose={() => setShowMerge(false)} onMerged={loadData} />}
 
       {/* Pricing Modal */}
       {showPricingModal && selectedPriceItem && (
@@ -440,6 +474,8 @@ const MedicinesTable: React.FC<{
             <th className="text-left py-3 px-4 font-medium text-gray-700">Category</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Dosage Form</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Rack</th>
+            <th className="text-left py-3 px-4 font-medium text-gray-700">Expiry</th>
+            <th className="text-left py-3 px-4 font-medium text-gray-700">Supplier</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">HSN / GST</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Stock Info</th>
             <th className="text-left py-3 px-4 font-medium text-gray-700">Clinic Pricing</th>
@@ -452,7 +488,7 @@ const MedicinesTable: React.FC<{
             <tr key={medicine.id} className="border-b border-gray-100 hover:bg-gray-50">
               <td className="py-3 px-4">
                 <div>
-                  <div className="font-medium text-gray-800">{medicine.name}</div>
+                  <div className="font-medium text-gray-800">{medicine.name}<MedicineFlags medicine={medicine} /></div>
                   {medicine.brandName && (
                     <div className="text-sm text-gray-600">Brand: {medicine.brandName}</div>
                   )}
@@ -469,6 +505,8 @@ const MedicinesTable: React.FC<{
                   ? <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-medium">{medicine.rackLocation}</span>
                   : <span className="text-gray-400 text-xs">—</span>}
               </td>
+              <td className="py-3 px-4 whitespace-nowrap text-gray-600">{medicine.expiryDate ? new Date(medicine.expiryDate).toLocaleDateString('en-IN') : <span className="text-gray-400">—</span>}</td>
+              <td className="py-3 px-4 text-gray-600">{medicine.supplierName || <span className="text-gray-400">—</span>}</td>
               <td className="py-3 px-4 text-gray-600 text-xs">
                 <div>{medicine.hsnCode || <span className="text-amber-600">HSN not set</span>}</div>
                 <div>GST {medicine.gstRate ?? 12}%</div>
@@ -479,7 +517,7 @@ const MedicinesTable: React.FC<{
                     const spec = packSpec(medicine);
                     return (
                       <>
-                        <div>Stock: {stockBreakdown(medicine.currentStock, spec)}</div>
+                        <div>Stock: {stockDisplay(medicine.currentStock, spec)}</div>
                         {spec.packSize > 1 && (
                           <div className="text-xs text-blue-700">
                             1 {spec.stockUnit} = {fmtQty(spec.packSize)} {spec.dispenseUnit}
@@ -896,7 +934,7 @@ const MasterDataModal: React.FC<{
           name: '',
           genericName: '',
           brandName: '',
-          category: 'tablet',
+          category: 'other',
           dosageForm: 'tablet',
           strength: '',
           manufacturer: '',
@@ -914,6 +952,8 @@ const MasterDataModal: React.FC<{
           stockUnit: '',
           dispenseUnit: '',
           allowLooseSale: true,
+    isNrx: false,
+    isScheduleH1: false,
           isActive: true
         });
       } else {
@@ -992,18 +1032,11 @@ const MasterDataModal: React.FC<{
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                   <select
                     required
-                    value={formData.category || 'tablet'}
+                    value={formData.category || 'other'}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="tablet">Tablet</option>
-                    <option value="capsule">Capsule</option>
-                    <option value="syrup">Syrup</option>
-                    <option value="injection">Injection</option>
-                    <option value="cream">Cream</option>
-                    <option value="ointment">Ointment</option>
-                    <option value="drops">Drops</option>
-                    <option value="other">Other</option>
+                    {[...new Set([...medicineCategories, formData.category].filter(Boolean))].map(value => <option key={value} value={value}>{optionLabel(value)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1012,20 +1045,9 @@ const MasterDataModal: React.FC<{
                     required
                     value={formData.dosageForm || 'tablet'}
                     onChange={(e) => setFormData({ ...formData, dosageForm: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="tablet">Tablet</option>
-                    <option value="capsule">Capsule</option>
-                    <option value="syrup">Syrup</option>
-                    <option value="injection">Injection</option>
-                    <option value="cream">Cream</option>
-                    <option value="ointment">Ointment</option>
-                    <option value="drops">Drops</option>
-                    <option value="inhaler">Inhaler</option>
-                    <option value="suppository">Suppository</option>
-                    <option value="suspension">Suspension</option>
-                    <option value="powder">Powder</option>
-                    <option value="other">Other</option>
+                    {[...new Set([...dosageForms, formData.dosageForm].filter(Boolean))].map(value => <option key={value} value={value}>{optionLabel(value)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1076,6 +1098,8 @@ const MasterDataModal: React.FC<{
                   />
                 </div>
               </div>
+              <MedicineFlagFields value={formData} onChange={patch => setFormData({ ...formData, ...patch })} />
+              <datalist id="medicine-stocked-units">{stockedUnits.map(unit => <option key={unit} value={unit} />)}</datalist>
               {/* How this SKU is stocked vs how it leaves the counter. */}
               <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-4 space-y-3">
                 <div>
@@ -1090,6 +1114,7 @@ const MasterDataModal: React.FC<{
                     <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
                     <input
                       type="text"
+                      list="medicine-stocked-units"
                       value={formData.stockUnit || ''}
                       onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1227,15 +1252,9 @@ const MasterDataModal: React.FC<{
                     required
                     value={formData.category || 'blood'}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="blood">Blood</option>
-                    <option value="cardiac">Cardiac</option>
-                    <option value="imaging">Imaging</option>
-                    <option value="neurology">Neurology</option>
-                    <option value="pathology">Pathology</option>
-                    <option value="urine">Urine</option>
-                    <option value="other">Other</option>
+                    {[...new Set([...medicineCategories, formData.category].filter(Boolean))].map(value => <option key={value} value={value}>{optionLabel(value)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1355,6 +1374,8 @@ const AddMedicineModal: React.FC<{
     stockUnit: '',
     dispenseUnit: '',
     allowLooseSale: true,
+    isNrx: false,
+    isScheduleH1: false,
     rackLocation: '',
     hsnCode: '3004',
     gstRate: 12,
@@ -1364,15 +1385,7 @@ const AddMedicineModal: React.FC<{
   const [sideEffectInput, setSideEffectInput] = useState('');
   const [contraindicationInput, setContraindicationInput] = useState('');
 
-  const medicineCategories = [
-    'analgesic', 'antibiotic', 'antihistamine', 'antiseptic', 'antipyretic',
-    'cardiovascular', 'gastrointestinal', 'respiratory', 'diabetes', 'vitamin', 'other'
-  ];
 
-  const dosageForms = [
-    'tablet', 'capsule', 'syrup', 'injection', 'cream', 'ointment',
-    'drops', 'inhaler', 'powder', 'suspension', 'other'
-  ];
 
   const handleAddSideEffect = () => {
     if (sideEffectInput.trim()) {
@@ -1478,7 +1491,7 @@ const AddMedicineModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {medicineCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                  <option key={cat} value={cat}>{optionLabel(cat)}</option>
                 ))}
               </select>
             </div>
@@ -1491,7 +1504,7 @@ const AddMedicineModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {dosageForms.map(form => (
-                  <option key={form} value={form}>{form.charAt(0).toUpperCase() + form.slice(1)}</option>
+                  <option key={form} value={form}>{optionLabel(form)}</option>
                 ))}
               </select>
             </div>
@@ -1559,11 +1572,14 @@ const AddMedicineModal: React.FC<{
               />
             </div>
 
+            <MedicineFlagFields value={formData} onChange={patch => setFormData({ ...formData, ...patch })} />
+            <datalist id="medicine-stocked-units">{stockedUnits.map(unit => <option key={unit} value={unit} />)}</datalist>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Stocked unit</label>
               <input
                 type="text"
-                value={formData.stockUnit}
+                list="medicine-stocked-units"
+                      value={formData.stockUnit}
                 onChange={(e) => setFormData({ ...formData, stockUnit: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Strip / Bottle / Vial"
@@ -1855,7 +1871,7 @@ const AddTestModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {testCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                  <option key={cat} value={cat}>{optionLabel(cat)}</option>
                 ))}
               </select>
             </div>

@@ -1,7 +1,8 @@
+import MedicineFlags from './MedicineFlags';
 import React, { useMemo, useRef, useState } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 import { MedicineWithPrice } from '../../types';
-import { packSpec, stockBreakdown } from '../../utils/packUnits';
+import { packSpec, stockDisplay } from '../../utils/packUnits';
 
 interface MedicineSearchSelectProps {
   medicines: MedicineWithPrice[];
@@ -117,9 +118,9 @@ const MedicineSearchSelect: React.FC<MedicineSearchSelectProps> = ({ medicines, 
               } ${m.id === value ? 'font-semibold' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-gray-800 truncate">{m.name}{m.strength ? ` ${m.strength}` : ''}</span>
+                <span className="text-gray-800 truncate">{m.name}{m.strength ? ` ${m.strength}` : ''}<MedicineFlags medicine={m} /></span>
                 <span className={`text-xs whitespace-nowrap ${m.currentStock > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  Stock: {stockBreakdown(m.currentStock, packSpec(m))}
+                  Stock: {stockDisplay(m.currentStock, packSpec(m))}
                 </span>
               </div>
               <div className="text-xs text-gray-500 flex items-center gap-2">

@@ -1,10 +1,16 @@
+import MedicineFlags from './MedicineFlags';
+import ControlledSupplyPopup from './ControlledSupplyPopup';
+import ExpiryBadge from './ExpiryBadge';
+import { expiryStatus, expiryDateKey } from '../../utils/pharmacyExpiry';
+import { usePharmacyDate } from '../../hooks/usePharmacyDate';
+import { fifoBatches, allocateFifoBatches } from '../../utils/pharmacyBatches';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Save, Plus, Trash2, AlertCircle, CheckCircle, MapPin, Printer, Receipt, FileText, Camera, Bell, User, Pencil } from 'lucide-react';
 import BarcodeScanInput from './BarcodeScanInput';
 import MedicineSearchSelect from './MedicineSearchSelect';
 import MedicineIdentifyModal from './MedicineIdentifyModal';
 import { refillReminderService, parseDurationDays } from '../../services/refillReminderService';
-import { Visit, Patient, MedicineWithPrice, PharmacyDispensedItem, MedicineBatch, Bill } from '../../types';
+import { Visit, Patient, MedicineWithPrice, PharmacyDispensedItem, MedicineBatch, Bill, ControlledSaleDetails } from '../../types';
 import { masterDataService } from '../../services/masterDataService';
 import { patientService } from '../../services/patientService';
 import { pharmacyService, DispenseItemInput } from '../../services/pharmacyService';
@@ -12,8 +18,9 @@ import { PharmacyBillLineInput } from '../../services/billingService';
 import { pharmacyInvoiceService } from '../../services/pharmacyInvoiceService';
 import { useAuth } from '../Auth/useAuth';
 import { computeGstLine, sumGstLines, groupByRate, GST_RATES, inr, round2 } from '../../utils/gst';
-import { packSpec, toStockUnits, toDispenseUnits, unitRate, round3, fmtQty, stockBreakdown } from '../../utils/packUnits';
+import { packSpec, toStockUnits, toDispenseUnits, unitRate, round3, fmtQty, stockDisplay } from '../../utils/packUnits';
 import { resolveDispensePrice } from '../../utils/dispensePrice';
+import { noSaleDiscount, saleDiscountPercent, updateSaleDiscount } from '../../utils/saleDiscount';
 
 interface DispenseModalProps {
   /** The OPD visit being dispensed against. Omit for an over-the-counter sale. */
@@ -40,6 +47,7 @@ interface DispenseLine {
   /** MRP of one stocked unit — the whole pack, as printed on it. */
   unitPrice: number;
   discountPercent: number;
+  applySaleDiscount: boolean;
   gstRate: number;
   originalPrescriptionName?: string;
   isMatched: boolean;
@@ -50,6 +58,7 @@ interface DispenseLine {
 type PaymentMethod = 'cash' | 'card' | 'upi' | 'cheque' | 'net_banking' | 'wallet';
 
 const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientProp, onSave, onClose }) => {
+  const today = usePharmacyDate();
   const { user } = useAuth();
   const patient: Patient | undefined = visit?.patient || patientProp;
   const isCounterSale = !visit;
@@ -69,6 +78,17 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
   const [collectNow, setCollectNow] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [notes, setNotes] = useState('');
+  const [controlled, setControlled] = useState<ControlledSaleDetails>({
+    patientName: patient?.name?.startsWith('Customer ') ? '' : patient?.name || '', patientAddress: patient?.address || '',
+    prescriberName: visit?.doctor?.name || '', prescriberAddress: visit?.doctor ? user?.clinic?.address || '' : '',
+    prescriptionReference: '', prescriptionDate: '', pharmacistName: user?.name || '', pharmacistRegistration: user?.registrationNo || '',
+  });
+  const [prescriptionChecked, setPrescriptionChecked] = useState(false);
+  const [controlledAction, setControlledAction] = useState<'dispense' | 'invoice' | null>(null);
+  const hasControlled = lines.some(l => {
+    const m = medicines.find(m => m.id === l.medicineId);
+    return l.quantity > 0 && (m?.isNrx || m?.isScheduleH1);
+  });
 
   // Success state: invoice raised, offer print
   const [result, setResult] = useState<{ dispensed: PharmacyDispensedItem[]; bill?: Bill } | null>(null);
@@ -115,9 +135,9 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
   };
 
   const batchesFor = (medicineId: string): MedicineBatch[] =>
-    batches.filter(b => b.medicineId === medicineId && b.quantity > 0);
+    fifoBatches(batches, medicineId, today);
 
-  /** First-expiry-first-out default batch */
+  /** First-received available batch (FIFO); expired batches are excluded. */
   const defaultBatch = (medicineId: string): MedicineBatch | undefined => batchesFor(medicineId)[0];
 
   const lineFromMedicine = (
@@ -136,7 +156,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       // switch the line back to whole packs.
       sellLoose: base.sellLoose ?? spec.looseCapable,
       unitPrice: resolveDispensePrice(m, batch).unitPrice,
-      discountPercent: 0,
+      ...noSaleDiscount(),
       gstRate: compositionScheme ? 0 : (m?.gstRate ?? 12),
       originalPrescriptionName: base.originalPrescriptionName,
       isMatched: !!m
@@ -166,7 +186,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     const tax = computeGstLine({
       quantity: entered,
       unitPrice: billedRate,
-      discountPercent: line.discountPercent,
+      discountPercent: saleDiscountPercent(line),
       gstRate: line.gstRate,
       priceIncludesGst: pricesIncludeGst,
       interstate: false
@@ -283,6 +303,8 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     setLines(lines.map((line, i) => {
       if (i !== index) return line;
       const next = { ...line, ...patch };
+      Object.assign(next, updateSaleDiscount(line, patch,
+        patch.medicineId !== undefined && patch.medicineId !== line.medicineId));
       if (patch.medicineId !== undefined) {
         const m = medicines.find(x => x.id === patch.medicineId);
         const b = m ? defaultBatch(m.id) : undefined;
@@ -303,9 +325,28 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     }));
   };
 
+  const allocateFifo = (index: number) => {
+    const line = lines[index];
+    const m = medicines.find(m => m.id === line.medicineId);
+    if (!m) return;
+    const spec = packSpec(m), reserved = new Map<string, number>();
+    lines.forEach((other, i) => {
+      if (i !== index && other.batchId) reserved.set(other.batchId, (reserved.get(other.batchId) || 0) + lineMath(other).stockQty);
+    });
+    try {
+      const allocated = allocateFifoBatches(batchesFor(m.id), line.quantity, spec.packSize, line.sellLoose, reserved);
+      setLines(lines.flatMap((l, i) => i === index ? allocated.map(({ batch, quantity }) => ({
+        ...l, batchId: batch.id, quantity, unitPrice: resolveDispensePrice(m, batch).unitPrice,
+      })) : [l]));
+      setError(null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not allocate batches.'); }
+  };
+
   const availableStock = (line: DispenseLine): number => {
     if (line.batchId) return batches.find(b => b.id === line.batchId)?.quantity || 0;
-    return medicines.find(m => m.id === line.medicineId)?.currentStock || 0;
+    const total = medicines.find(m => m.id === line.medicineId)?.currentStock || 0;
+    // The pool excludes every tracked batch, including expired batches.
+    return Math.max(0, total - batches.filter(b => b.medicineId === line.medicineId).reduce((sum,b) => sum + b.quantity, 0));
   };
 
   /** Stock is held in stocked units, so a loose quantity is converted first. */
@@ -332,6 +373,12 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       return null;
     }
     for (const l of valid) {
+      const medicine = medicines.find(m => m.id === l.medicineId);
+      const batch = batches.find(b => b.id === l.batchId);
+      if ((l.batchId && !batch) || expiryStatus(l.batchId ? batch?.expiryDate : medicine?.expiryDate).kind === 'expired') {
+        alert(`The selected stock for ${medicine?.name || 'this medicine'} has expired or is no longer available. Select an unexpired batch.`);
+        return null;
+      }
       const { spec, stockQty, loose } = lineMath(l);
       if (!loose && spec.packSize > 1 && !Number.isInteger(l.quantity)) {
         alert(`Enter whole ${spec.stockUnit.toLowerCase()}s, or select ${spec.dispenseUnit} for a loose quantity.`);
@@ -345,7 +392,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       if (!stockOk(l)) {
         const m = medicines.find(x => x.id === l.medicineId);
         alert(
-          `Insufficient stock for ${m?.name}. Available: ${stockBreakdown(availableStock(l), spec)}, ` +
+          `Insufficient stock for ${m?.name}. Available: ${stockDisplay(availableStock(l), spec)}, ` +
           `required: ${fmtQty(stockQty)} ${spec.stockUnit}` +
           (loose ? ` (${fmtQty(lineMath(l).dispenseQty)} ${spec.dispenseUnit})` : '')
         );
@@ -361,6 +408,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
       const b = batches.find(x => x.id === l.batchId);
       const { spec, stockQty, billedQty, billedUnitLabel, billedRate, tax: t } = lineMath(l);
       return {
+        controlledSaleDetails: m?.isNrx || m?.isScheduleH1 ? { ...controlled, prescriptionVerified: prescriptionChecked } : undefined,
         visitId: visit?.id ?? null,
         prescriptionId: l.prescriptionId,
         medicineId: l.medicineId,
@@ -429,6 +477,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
         hsnCode: m.hsnCode,
         gstRate: l.gstRate,
         discountAmount: t.discount,
+        saleDiscountPercent: saleDiscountPercent(l),
         taxableAmount: t.taxable,
         cgstAmount: t.cgst,
         sgstAmount: t.sgst,
@@ -465,6 +514,15 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
     } finally {
       setSaving(false);
     }
+  };
+
+  const requestDispense = (action: 'dispense' | 'invoice') => {
+    if (!validate()) return;
+    if (hasControlled) {
+      setControlledAction(action);
+      return;
+    }
+    void (action === 'dispense' ? handleDispenseOnly() : handleDispenseAndInvoice());
   };
 
   const saveCustomer = async () => {
@@ -748,7 +806,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                 const lineBatches = line.medicineId ? batchesFor(line.medicineId) : [];
                 const batch = batches.find(b => b.id === line.batchId);
                 const ok = stockOk(line);
-                const { spec, loose, stockQty, dispenseQty, billedRate, tax: t } = lineMath(line);
+                const { spec, loose, dispenseQty, billedRate, tax: t } = lineMath(line);
 
                 return (
                   <div key={index} className={`border rounded-lg p-4 ${
@@ -765,6 +823,9 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                       </div>
                     )}
 
+                    <div className="mb-2 flex items-center justify-between"><div><MedicineFlags medicine={medicine} /></div>
+                      {lineBatches.length > 0 && <button type="button" onClick={() => allocateFifo(index)} className="text-xs text-blue-700 border rounded px-2 py-1">Allocate quantity by FIFO</button>}
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                       <div className="col-span-2">
                         <label className="block text-xs text-gray-600 mb-1">Medicine *</label>
@@ -787,7 +848,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                           <option value="">{lineBatches.length ? 'Select batch' : 'No batch (pool)'}</option>
                           {lineBatches.map(b => (
                             <option key={b.id} value={b.id}>
-                              {b.batchNumber} · {stockBreakdown(b.quantity, spec)} left{b.expiryDate ? ` · exp ${b.expiryDate.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}` : ''}
+                              {b.batchNumber}{b.mrp != null ? ` · MRP ₹${b.mrp.toFixed(2)}` : ''} · {stockDisplay(b.quantity, spec)} left · {expiryStatus(b.expiryDate).label}
                             </option>
                           ))}
                         </select>
@@ -841,12 +902,21 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                       </div>
 
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Disc %</label>
+                        <label className="flex items-center gap-1 text-xs text-gray-600 mb-1">
+                          <input type="checkbox" checked={line.applySaleDiscount}
+                            onChange={(e) => updateLine(index, { applySaleDiscount: e.target.checked })}
+                            aria-label={`Apply customer discount for ${medicine?.name || 'this medicine'}`} />
+                          Sale discount %
+                        </label>
                         <input
                           type="number" min="0" max="100" step="0.5" value={line.discountPercent}
+                          disabled={!line.applySaleDiscount}
+                          aria-label={`Customer discount percentage for ${medicine?.name || 'this medicine'}`}
+                          onWheel={(e) => e.currentTarget.blur()}
                           onChange={(e) => updateLine(index, { discountPercent: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                         />
+                        <p className="text-[11px] text-gray-500 mt-0.5">Customer discount only</p>
                       </div>
 
                       <div>
@@ -881,7 +951,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                           </span>
                         )}
                         <span>
-                          Available: <strong className={ok ? '' : 'text-red-600'}>{stockBreakdown(availableStock(line), spec)}</strong>
+                          Available: <strong className={ok ? '' : 'text-red-600'}>{stockDisplay(availableStock(line), spec)}</strong>
                           {batch ? ' in batch' : ' total'}
                         </span>
                         {spec.packSize > 1 && (
@@ -895,7 +965,8 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
                           </span>
                         )}
                         {medicine.hsnCode && <span>HSN {medicine.hsnCode}</span>}
-                        {batch?.expiryDate && <span>Exp {batch.expiryDate.toLocaleDateString('en-IN')}</span>}
+                        <span>Exp {expiryDateKey(line.batchId ? batch?.expiryDate : medicine.expiryDate) || 'Not recorded'}</span>
+                        <ExpiryBadge expiryDate={line.batchId ? batch?.expiryDate : medicine.expiryDate} />
                         <span>Generic: {medicine.genericName || 'N/A'}</span>
                         {!compositionScheme && (
                           <span>Taxable {inr(t.taxable)} + CGST {inr(t.cgst)} + SGST {inr(t.sgst)}</span>
@@ -937,7 +1008,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
               )}
               <div className="space-y-1">
                 <div className="flex justify-between"><span>Gross</span><span>{inr(totals.gross)}</span></div>
-                {totals.discount > 0 && <div className="flex justify-between text-green-700"><span>Discount</span><span>- {inr(totals.discount)}</span></div>}
+                {totals.discount > 0 && <div className="flex justify-between text-green-700"><span>Customer discount</span><span>- {inr(totals.discount)}</span></div>}
                 <div className="flex justify-between"><span>Taxable value</span><span>{inr(totals.taxable)}</span></div>
                 {!compositionScheme && (
                   <div className="flex justify-between"><span>GST (CGST + SGST)</span><span>{inr(round2(totals.cgst + totals.sgst))}</span></div>
@@ -1005,7 +1076,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
             </button>
             {!isCounterSale && (
               <button
-                onClick={handleDispenseOnly}
+                onClick={() => requestDispense('dispense')}
                 disabled={saving || lines.some(l => !stockOk(l))}
                 title="Deduct stock without raising a pharmacy invoice (items can be added to the OPD bill instead)"
                 className="flex items-center gap-2 px-5 py-2 border border-blue-600 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1015,7 +1086,7 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
               </button>
             )}
             <button
-              onClick={handleDispenseAndInvoice}
+              onClick={() => requestDispense('invoice')}
               disabled={saving || lines.some(l => !stockOk(l)) || totals.grandTotal <= 0}
               className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
@@ -1025,6 +1096,20 @@ const DispenseModal: React.FC<DispenseModalProps> = ({ visit, patient: patientPr
           </div>
         </div>
       </div>
+
+      {controlledAction && <ControlledSupplyPopup
+        details={controlled}
+        prescriptionChecked={prescriptionChecked}
+        today={today}
+        onChange={setControlled}
+        onPrescriptionChecked={setPrescriptionChecked}
+        onClose={() => setControlledAction(null)}
+        onContinue={() => {
+          const action = controlledAction;
+          setControlledAction(null);
+          void (action === 'dispense' ? handleDispenseOnly() : handleDispenseAndInvoice());
+        }}
+      />}
 
       {showIdentify && (
         <MedicineIdentifyModal

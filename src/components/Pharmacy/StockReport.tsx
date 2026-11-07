@@ -1,13 +1,17 @@
+import ExpiryBadge from './ExpiryBadge';
+import { usePharmacyDate } from '../../hooks/usePharmacyDate';
+import { expiryStatus, expiryDateKey } from '../../utils/pharmacyExpiry';
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, TrendingUp, TrendingDown, BarChart3, AlertTriangle, Clock, Package, Pill, Pencil } from 'lucide-react';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { StockMovementLog, MedicineMaster, MedicineWithPrice, MedicineBatch } from '../../types';
 import { pharmacyService } from '../../services/pharmacyService';
-import { packSpec, stockBreakdown, fmtQty } from '../../utils/packUnits';
+import { packSpec, stockDisplay, fmtQty } from '../../utils/packUnits';
 import { masterDataService } from '../../services/masterDataService';
 import { useAuth } from '../Auth/useAuth';
 
 const StockReport: React.FC = () => {
+  const today = usePharmacyDate();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'movements' | 'low-stock' | 'expiring' | 'batches'>('movements');
   const [batches, setBatches] = useState<MedicineBatch[]>([]);
@@ -21,7 +25,7 @@ const StockReport: React.FC = () => {
   const [savingBatch, setSavingBatch] = useState(false);
   const [movements, setMovements] = useState<StockMovementLog[]>([]);
   const [lowStockMedicines, setLowStockMedicines] = useState<MedicineWithPrice[]>([]);
-  const [expiringMedicines, setExpiringMedicines] = useState<MedicineWithPrice[]>([]);
+  const [expiringMedicines, setExpiringMedicines] = useState<(MedicineWithPrice & { expiryLotId: string })[]>([]);
   const [medicines, setMedicines] = useState<MedicineMaster[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,7 @@ const StockReport: React.FC = () => {
     if (user) {
       loadData();
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, expiryDaysFilter, today]);
 
   /**
    * Save a corrected MRP / expiry onto the batch. Only the batch moves: the
@@ -69,7 +73,7 @@ const StockReport: React.FC = () => {
         mrp,
         // An empty date box means "no expiry on record", which is a real state
         // for a batch, so it is passed through as a deliberate clear.
-        expiryDate: editBatch.expiry ? new Date(`${editBatch.expiry}T00:00:00`) : null
+        expiryDate: editBatch.expiry ? new Date(`${editBatch.expiry}T00:00:00Z`) : null
       });
       setEditBatch(null);
       await loadData();
@@ -85,9 +89,10 @@ const StockReport: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const clinicId = user?.clinicId;
-      
+      setExpiringMedicines(await pharmacyService.getExpiringMedicines(expiryDaysFilter, clinicId));
+
       if (activeTab === 'movements') {
         const [movementsData, medicinesData] = await Promise.all([
           pharmacyService.getStockMovementLog(),
@@ -98,9 +103,7 @@ const StockReport: React.FC = () => {
       } else if (activeTab === 'low-stock') {
         const lowStockData = await pharmacyService.getLowStockMedicines(clinicId);
         setLowStockMedicines(lowStockData);
-      } else if (activeTab === 'expiring') {
-        const expiringData = await pharmacyService.getExpiringMedicines(expiryDaysFilter, clinicId);
-        setExpiringMedicines(expiringData);
+
       } else if (activeTab === 'batches') {
         setBatches(await pharmacyService.getBatches(undefined, true));
       }
@@ -114,7 +117,7 @@ const StockReport: React.FC = () => {
 
   const filteredMovements = movements.filter(movement => {
     // Search filter
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       movement.medicine?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       movement.remarks?.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -133,13 +136,13 @@ const StockReport: React.FC = () => {
   });
 
   const filteredLowStock = lowStockMedicines.filter(medicine =>
-    !searchTerm || 
+    !searchTerm ||
     medicine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     medicine.genericName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredExpiring = expiringMedicines.filter(medicine =>
-    !searchTerm || 
+    !searchTerm ||
     medicine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     medicine.genericName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -168,14 +171,6 @@ const StockReport: React.FC = () => {
       default:
         return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const getExpiryStatus = (expiryDate: Date) => {
-    const daysUntilExpiry = differenceInDays(expiryDate, new Date());
-    if (daysUntilExpiry <= 0) return { status: 'Expired', color: 'bg-red-100 text-red-800' };
-    if (daysUntilExpiry <= 7) return { status: 'Critical', color: 'bg-red-100 text-red-800' };
-    if (daysUntilExpiry <= 30) return { status: 'Warning', color: 'bg-yellow-100 text-yellow-800' };
-    return { status: 'Good', color: 'bg-green-100 text-green-800' };
   };
 
   const clearFilters = () => {
@@ -234,7 +229,7 @@ const StockReport: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Stock Movements Today</p>
               <p className="text-2xl font-bold text-blue-600">
-                {movements.filter(m => 
+                {movements.filter(m =>
                   new Date(m.movementDate).toDateString() === new Date().toDateString()
                 ).length}
               </p>
@@ -256,7 +251,7 @@ const StockReport: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Expiring Soon</p>
+              <p className="text-sm text-gray-600">Expiry alerts (stock lots)</p>
               <p className="text-2xl font-bold text-yellow-600">{expiringMedicines.length}</p>
             </div>
             <Clock className="w-8 h-8 text-yellow-600" />
@@ -304,7 +299,7 @@ const StockReport: React.FC = () => {
               }`}
             >
               <Clock className="w-4 h-4" />
-              Expiring Medicines
+              Expiry Alerts (by batch)
               {expiringMedicines.length > 0 && (
                 <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs">
                   {expiringMedicines.length}
@@ -437,8 +432,6 @@ const StockReport: React.FC = () => {
                     value={expiryDaysFilter}
                     onChange={(e) => {
                       setExpiryDaysFilter(parseInt(e.target.value));
-                      // Reload data when filter changes
-                      setTimeout(loadData, 100);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
@@ -593,7 +586,7 @@ const StockReport: React.FC = () => {
                           <span className={`text-sm font-medium ${
                             medicine.currentStock === 0 ? 'text-red-600' : 'text-orange-600'
                           }`}>
-                            {stockBreakdown(medicine.currentStock, packSpec(medicine))}
+                            {stockDisplay(medicine.currentStock, packSpec(medicine))}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -609,8 +602,8 @@ const StockReport: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs rounded-full ${
-                            medicine.currentStock === 0 
-                              ? 'bg-red-100 text-red-800' 
+                            medicine.currentStock === 0
+                              ? 'bg-red-100 text-red-800'
                               : 'bg-orange-100 text-orange-800'
                           }`}>
                             {medicine.currentStock === 0 ? 'Out of Stock' : 'Low Stock'}
@@ -626,8 +619,8 @@ const StockReport: React.FC = () => {
                 <div className="p-8 text-center">
                   <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    {searchTerm 
-                      ? 'No low stock medicines found matching your search' 
+                    {searchTerm
+                      ? 'No low stock medicines found matching your search'
                       : 'No medicines are currently low on stock'
                     }
                   </p>
@@ -645,12 +638,11 @@ const StockReport: React.FC = () => {
               b.batchNumber.toLowerCase().includes(q) ||
               b.medicine?.rackLocation?.toLowerCase().includes(q)
             );
-            const soon = new Date(); soon.setDate(soon.getDate() + 90);
             return (
               <div>
                 <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
                   <p className="text-sm text-gray-600">
-                    Stock per batch (first expiry first). Batches are created automatically from purchase entries that carry a batch
+                    Stock per batch (receipt order / FIFO). Batches are created automatically from purchase entries that carry a batch
                     number; the number, MRP and expiry can be corrected here when the scan read them wrong.
                   </p>
                   <div className="relative">
@@ -684,8 +676,7 @@ const StockReport: React.FC = () => {
                         <tr><td colSpan={9} className="px-6 py-8 text-center text-gray-500">No batches yet. Record a purchase with a batch number to start batch tracking.</td></tr>
                       )}
                       {rows.map(b => {
-                        const expired = b.expiryDate && b.expiryDate < new Date();
-                        const expiring = !expired && b.expiryDate && b.expiryDate <= soon;
+
                         const editing = editBatch?.id === b.id;
                         return (
                           <tr key={b.id} className={`hover:bg-gray-50 ${b.quantity === 0 ? 'text-gray-400' : ''}`}>
@@ -717,14 +708,12 @@ const StockReport: React.FC = () => {
                                   onChange={(e) => setEditBatch({ ...editBatch!, expiry: e.target.value })}
                                   className="w-36 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
                                 />
-                              ) : b.expiryDate ? (
-                                <span className={`px-2 py-0.5 rounded text-xs ${expired ? 'bg-red-100 text-red-800' : expiring ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                                  {format(b.expiryDate, 'MMM yyyy')}{expired ? ' · expired' : expiring ? ` · ${differenceInDays(b.expiryDate, new Date())}d` : ''}
-                                </span>
-                              ) : '—'}
+                              ) : <div className="space-y-1"><div>{expiryDateKey(b.expiryDate) || 'Not set'}</div>
+                                {b.quantity > 0 ? <ExpiryBadge expiryDate={b.expiryDate} /> : <span className="text-xs text-gray-400">No stock</span>}
+                              </div>}
                             </td>
                             <td className="px-6 py-3 text-sm text-right font-medium">
-                              {stockBreakdown(b.quantity, packSpec(b.medicine))}
+                              {stockDisplay(b.quantity, packSpec(b.medicine))}
                             </td>
                             <td className="px-6 py-3 text-sm text-right">
                               {editing ? (
@@ -776,7 +765,7 @@ const StockReport: React.FC = () => {
             );
           })()}
 
-          {/* Expiring Medicines Tab */}
+          {/* Expiry Alerts (by batch) Tab */}
           {activeTab === 'expiring' && (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -804,11 +793,11 @@ const StockReport: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredExpiring.map(medicine => {
-                    const daysRemaining = medicine.expiryDate ? differenceInDays(medicine.expiryDate, new Date()) : 0;
-                    const expiryStatus = medicine.expiryDate ? getExpiryStatus(medicine.expiryDate) : { status: 'Unknown', color: 'bg-gray-100 text-gray-800' };
-                    
+                    const daysRemaining = expiryStatus(medicine.expiryDate).days;
+                    const status = expiryStatus(medicine.expiryDate);
+
                     return (
-                      <tr key={medicine.id} className="hover:bg-gray-50">
+                      <tr key={medicine.expiryLotId} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
                             <div className="text-sm font-medium text-gray-900">{medicine.name}</div>
@@ -819,27 +808,27 @@ const StockReport: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {stockBreakdown(medicine.currentStock, packSpec(medicine))}
+                          {stockDisplay(medicine.currentStock, packSpec(medicine))}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {medicine.expiryDate ? format(medicine.expiryDate, 'MMM dd, yyyy') : 'Not set'}
+                          {expiryDateKey(medicine.expiryDate) || 'Not set'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`text-sm font-medium ${
-                            daysRemaining <= 0 ? 'text-red-600' :
-                            daysRemaining <= 7 ? 'text-red-600' :
-                            daysRemaining <= 30 ? 'text-yellow-600' :
+                            (daysRemaining ?? Infinity) < 0 ? 'text-red-600' :
+                            (daysRemaining ?? Infinity) <= 7 ? 'text-red-600' :
+                            (daysRemaining ?? Infinity) <= 30 ? 'text-yellow-600' :
                             'text-green-600'
                           }`}>
-                            {daysRemaining <= 0 ? 'Expired' : `${daysRemaining} days`}
+                            {daysRemaining === null ? 'Unknown' : daysRemaining < 0 ? `${Math.abs(daysRemaining)} days overdue` : daysRemaining === 0 ? 'Today' : `${daysRemaining} days`}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {medicine.batchNumber || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${expiryStatus.color}`}>
-                            {expiryStatus.status}
+                          <span className={`px-2 py-1 text-xs rounded-full ${status.color}`}>
+                            {status.label}
                           </span>
                         </td>
                       </tr>
@@ -852,9 +841,9 @@ const StockReport: React.FC = () => {
                 <div className="p-8 text-center">
                   <Clock className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    {searchTerm 
-                      ? 'No expiring medicines found matching your search' 
-                      : `No medicines expiring in the next ${expiryDaysFilter} days`
+                    {searchTerm
+                      ? 'No expiring medicines found matching your search'
+                      : `No expired stock or stock expiring in the next ${expiryDaysFilter} days`
                     }
                   </p>
                 </div>

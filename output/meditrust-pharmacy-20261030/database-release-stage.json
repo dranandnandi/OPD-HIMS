@@ -1,0 +1,37 @@
+{
+  "projectRef": "kiezgfhonvwryxpubfvl",
+  "stage": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\meditrust-pharmacy-release-PG34gT",
+  "preparedAt": "2026-10-30T05:39:57.154Z",
+  "remoteVersionCount": 136,
+  "migrations": [
+    {
+      "name": "20261026160000_pharmacy_generic_name_reviews.sql",
+      "sha256": "77e83ce1b127733e32270c6ef37cf2276fee9ac3fc0bae6c1e14ab309f912cc0"
+    },
+    {
+      "name": "20261026180000_pharmacy_generic_name_cleanup.sql",
+      "sha256": "7789660cefbe04d5ae5908db7f2fe755e455c3a001c153d29d8c1445617b8eab"
+    },
+    {
+      "name": "20261026190000_pharmacy_generic_name_claude.sql",
+      "sha256": "c0acf6d92e6fae957c1be99aad842be8665f8914a92a8a14dc4b9d650c5df2e5"
+    },
+    {
+      "name": "20261030090000_pharmacy_catalogue_options.sql",
+      "sha256": "b5c34b93500e05825090110b6d567608f32ef8c8cd0d145e95b543a5a7cca259"
+    },
+    {
+      "name": "20261030091000_pharmacy_controlled_sale_register.sql",
+      "sha256": "9102f279d3e02655a043541a0d35b2f5370c5fb72887dc346b85425f9bdfab0e"
+    },
+    {
+      "name": "20261030092000_pharmacy_product_merge.sql",
+      "sha256": "08c217c54a8e98b93a628beee6fcb0a4836c69b5acb64968a6313d30b7c6b25b"
+    },
+    {
+      "name": "20261030093000_meditrust_drug_licence.sql",
+      "sha256": "e4d17db730f49a507341f658153f137894b9f4a4798d5c09f210fbde50089238"
+    }
+  ],
+  "flagMigrationHeldForFrontend": "20261030094000_meditrust_controlled_medicine_flags.sql"
+}

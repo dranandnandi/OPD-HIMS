@@ -1,3 +1,4 @@
+import MedicineFlags from './MedicineFlags';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Save, Trash2, Bot, FileText, AlertCircle, Camera } from 'lucide-react';
 import BarcodeScanInput from './BarcodeScanInput';
@@ -331,8 +332,9 @@ const InwardStock: React.FC = () => {
                       <label className="block text-xs text-gray-600 mb-1">Medicine *</label>
                       <select value={row.medicineId} onChange={(e) => updateItem(index, { medicineId: e.target.value })} className={inputCls}>
                         <option value="">Select medicine</option>
-                        {medicines.map(med => <option key={med.id} value={med.id}>{med.name}{med.strength ? ` ${med.strength}` : ''}</option>)}
+                        {medicines.map(med => <option key={med.id} value={med.id}>{med.name}{med.strength ? ` ${med.strength}` : ''}{med.isNrx ? ' [NRx]' : ''}{med.isScheduleH1 ? ' [H1]' : ''}</option>)}
                       </select>
+                      <MedicineFlags medicine={m} />
                       {m && <p className="text-xs text-gray-500 mt-1">HSN {m.hsnCode || '—'}{m.rackLocation ? ` · Rack ${m.rackLocation}` : ''}</p>}
                     </div>
                     <div>
@@ -344,7 +346,7 @@ const InwardStock: React.FC = () => {
                       <input type="date" value={row.expiryDate} onChange={(e) => updateItem(index, { expiryDate: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Qty * ({packSpec(m).stockUnit}s)</label>
+                      <label className="block text-xs text-gray-600 mb-1">Paid qty * ({packSpec(m).stockUnit}s)</label>
                       <input type="number" min="1" value={row.quantity} onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })} className={inputCls} />
                     </div>
                     <div>
@@ -357,7 +359,7 @@ const InwardStock: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Free</label>
+                      <label className="block text-xs text-gray-600 mb-1">Free (scheme)</label>
                       <input type="number" min="0" value={row.freeQuantity} onChange={(e) => updateItem(index, { freeQuantity: parseInt(e.target.value) || 0 })} className={inputCls} />
                     </div>
                     <div>
@@ -390,15 +392,17 @@ const InwardStock: React.FC = () => {
                   </div>
                   {row.medicineId && row.quantity > 0 && (
                     <div className="mt-2 text-xs text-gray-600 flex flex-wrap gap-x-4">
+                      <span>Received: {row.quantity} paid + {row.freeQuantity} free = {row.quantity + row.freeQuantity} {packSpec(m).stockUnit}s</span>
+                      <span>Effective cost / {packSpec(m).stockUnit} (ex-GST): {inr(t.taxable / (row.quantity + row.freeQuantity))}</span>
                       <span>Taxable {inr(t.taxable)}</span>
                       {interstate ? <span>IGST {inr(t.igst)}</span> : <span>CGST {inr(t.cgst)} · SGST {inr(t.sgst)}</span>}
                       <span className="font-medium text-gray-800">Line total {inr(t.total)}</span>
                       {row.mrp > 0 && row.unitCostPrice > 0 && (
-                        <span className="text-green-700">Margin on MRP {(((row.mrp - row.unitCostPrice * (1 + row.gstRate / 100)) / row.mrp) * 100).toFixed(1)}%</span>
+                        <span className="text-green-700">Margin on MRP {(((row.mrp - (t.taxable / (row.quantity + row.freeQuantity)) * (1 + row.gstRate / 100)) / row.mrp) * 100).toFixed(1)}%</span>
                       )}
                       {row.packSize > 1 && (
                         <span>
-                          {fmtQty(row.quantity * row.packSize)} {packSpec(m).dispenseUnit.toLowerCase()}s in all
+                          {fmtQty((row.quantity + row.freeQuantity) * row.packSize)} {packSpec(m).dispenseUnit.toLowerCase()}s in all
                           {row.mrp > 0 && ` · ${inr(row.mrp / row.packSize)} per ${packSpec(m).dispenseUnit.toLowerCase()}`}
                         </span>
                       )}

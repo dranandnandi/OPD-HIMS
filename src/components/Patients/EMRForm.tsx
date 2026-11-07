@@ -5,10 +5,13 @@ import PhysicalExaminationSection from './PhysicalExaminationSection';
 import VoiceRecorder from './VoiceRecorder';
 import { getCurrentProfile } from '../../services/profileService';
 import { visitService } from '../../services/visitService';
+import { buildVisitSavePayload } from '../../utils/visitSave';
 import { masterDataService } from '../../services/masterDataService';
 import { authService } from '../../services/authService';
 import { presetService, PrescriptionPreset } from '../../services/presetService';
 import { supabase } from '../../lib/supabase';
+import type { VisitType } from '../../types';
+import { VISIT_TYPES, visitTypeFromAppointment } from '../../utils/visitTypes';
 import { useAuth } from '../Auth/useAuth';
 import { toTitleCase } from '../../utils/stringUtils';
 import { analyzeVisitImageWithAI } from '../../services/ocrService';
@@ -60,7 +63,7 @@ interface EmrFormState {
   };
   diagnoses: Array<Omit<Diagnosis, 'id' | 'visitId' | 'createdAt'>>;
   prescriptions: Prescription[];
-  testsOrdered: Array<Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'>>;
+  testsOrdered: Array<Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'> & { id?: string }>;
   advice: string[];
   adviceLanguage: string;
   adviceRegional: string;
@@ -77,12 +80,43 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveAttemptRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
+  const newVisitIdRef = useRef<string>();
   const [medicines, setMedicines] = useState<MedicineMaster[]>([]);
   const [medicineSuggestions, setMedicineSuggestions] = useState<{ [key: number]: MedicineMaster[] }>({});
   const [showMedicineSuggestions, setShowMedicineSuggestions] = useState<{ [key: number]: boolean }>({});
   const [doctors, setDoctors] = useState<Profile[]>([]);
   const [frequencies, setFrequencies] = useState<Array<{ code: string, label: string, timesPerDay: number | null }>>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState(existingVisit?.doctorId || initialDoctorId || '');
+  const [visitType, setVisitType] = useState<VisitType | ''>(
+    existingVisit ? existingVisit.visitType ?? '' : appointmentIdProp ? '' : 'new'
+  );
+  const visitTypeChanged = useRef(false);
+  const [visitTypeHint, setVisitTypeHint] = useState('');
+
+  useEffect(() => {
+    if (existingVisit || !appointmentIdProp || !user?.clinicId || !supabase) return;
+    let cancelled = false;
+    const client = supabase;
+    void (async () => {
+      try {
+        const [appointment, settings] = await Promise.all([
+          client.from('appointments').select('appointment_type')
+            .eq('id', appointmentIdProp).eq('clinic_id', user.clinicId).eq('patient_id', patient.id).single(),
+          client.from('clinic_settings').select('appointment_types').eq('id', user.clinicId).single(),
+        ]);
+        if (appointment.error) throw appointment.error;
+        const inferred = visitTypeFromAppointment(appointment.data.appointment_type, settings.data?.appointment_types ?? []);
+        if (cancelled || visitTypeChanged.current) return;
+        setVisitType(inferred ?? '');
+        setVisitTypeHint(inferred ? 'Prefilled from appointment. Confirm the type for this visit.' : 'Choose the visit type for this appointment.');
+      } catch {
+        if (!cancelled && !visitTypeChanged.current) setVisitTypeHint('Appointment type could not be loaded. Please choose the visit type.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [appointmentIdProp, existingVisit, patient.id, user?.clinicId]);
   const [visitDate, setVisitDate] = useState(initialVisitDate);
   const [visitTime, setVisitTime] = useState<string>(() => {
     if (existingVisit) {
@@ -112,7 +146,6 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<VisitImage | null>(null);
   const [testsMaster, setTestsMaster] = useState<TestMaster[]>([]);
-  const [testSearchQuery, setTestSearchQuery] = useState<{ [key: number]: string }>({});
   const [testSuggestions, setTestSuggestions] = useState<{ [key: number]: TestMaster[] }>({});
   const [showTestSuggestions, setShowTestSuggestions] = useState<{ [key: number]: boolean }>({});
 
@@ -144,6 +177,8 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
       })) || [],
       prescriptions: visit.prescriptions || [],
       testsOrdered: visit.testsOrdered?.map(test => ({
+        id: test.id,
+        testId: test.testId,
         testName: test.testName,
         testType: test.testType,
         instructions: test.instructions,
@@ -305,11 +340,11 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
       ...prev,
       testsOrdered: prev.testsOrdered.map((t, i) => i === index ? {
         ...t,
+        testId: test.id,
         testName: test.name,
         testType: test.type as 'lab' | 'radiology' | 'procedure' | 'other'
       } : t)
     }));
-    setTestSearchQuery(prev => ({ ...prev, [index]: test.name }));
     setShowTestSuggestions(prev => ({ ...prev, [index]: false }));
   };
 
@@ -538,6 +573,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
     setFormData(prev => ({
       ...prev,
       testsOrdered: [...prev.testsOrdered, {
+        id: crypto.randomUUID(),
         testName: '',
         testType: 'lab' as 'lab' | 'radiology' | 'procedure' | 'other',
         instructions: undefined,
@@ -552,11 +588,15 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const updateTestOrdered = (index: number, field: keyof Omit<TestOrdered, 'id' | 'visitId' | 'createdAt'>, value: string | Date) => {
     setFormData(prev => ({
       ...prev,
-      testsOrdered: prev.testsOrdered.map((test, i) => i === index ? { ...test, [field]: value } : test)
+      testsOrdered: prev.testsOrdered.map((test, i) => i === index ? {
+        ...test, [field]: value, ...(field === 'testName' ? { testId: undefined } : {})
+      } : test)
     }));
   };
 
   const removeTestOrdered = (index: number) => {
+    setTestSuggestions({});
+    setShowTestSuggestions({});
     setFormData(prev => ({
       ...prev,
       testsOrdered: prev.testsOrdered.filter((_, i) => i !== index)
@@ -771,11 +811,17 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   const handleSave = async () => {
     if (savingRef.current) return;
 
+    if (!visitType && !existingVisit) {
+      alert('Please select New, Follow-up, or Emergency for this visit.');
+      return;
+    }
+
     if (!user) { // user from useAuth()
       alert('You must be logged in to save a visit');
       return;
     }
 
+    setSaveError(null);
     savingRef.current = true;
     setSaving(true);
     try {
@@ -789,6 +835,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         patientId: patient.id,
         doctorId: selectedDoctorId || null,
         appointmentId: appointmentIdProp || existingVisit?.appointmentId || undefined,
+        visitType: visitType || null,
         date: new Date(`${visitDate}T${visitTime || '00:00'}:00`),
         chiefComplaint: formData.chiefComplaint,
 
@@ -814,9 +861,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           (p) => typeof p.medicine === 'string' && p.medicine.trim() !== ''
         ),
 
-        testsOrdered: formData.testsOrdered.filter(
-          (t) => typeof t.testName === 'string' && t.testName.trim() !== ''
-        ) as Visit['testsOrdered'],
+        testsOrdered: formData.testsOrdered as Visit['testsOrdered'],
 
         testResults: existingVisit?.testResults || [],
 
@@ -835,18 +880,31 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           existingVisit?.caseImageUrl ||
           visitImages.find(img => img.imageType === 'case_paper')?.url ||
           undefined,
-        visitImages: visitImages.length > 0 ? visitImages : undefined
+        visitImages: visitImages
+      };
+
+      // Validate all rows instead of silently dropping unnamed tests. Reuse
+      // the request ID for an identical retry, including after a lost response.
+      const payload = buildVisitSavePayload(visitData);
+      const fingerprint = JSON.stringify({ id: existingVisit?.id, ...payload });
+      if (saveAttemptRef.current?.fingerprint !== fingerprint) {
+        saveAttemptRef.current = { fingerprint, requestId: crypto.randomUUID() };
+      }
+      const options = {
+        requestId: saveAttemptRef.current.requestId,
+        expectedUpdatedAt: existingVisit?.saveVersion,
+        newVisitId: existingVisit ? undefined : (newVisitIdRef.current ||= crypto.randomUUID()),
       };
 
       if (existingVisit) {
         // Update existing visit
-        const updatedVisit = await visitService.updateVisit(existingVisit.id, visitData);
-        console.log('Visit updated successfully:', updatedVisit);
+        const updatedVisit = await visitService.updateVisit(existingVisit.id, visitData, options);
+        if (!updatedVisit) throw new Error('The server did not confirm the visit update.');
         alert('Visit updated successfully!');
       } else {
         // Create new visit
-        const savedVisit = await visitService.addVisit(visitData);
-        console.log('Visit saved successfully:', savedVisit);
+        const savedVisit = await visitService.addVisit(visitData, options);
+        if (!savedVisit) throw new Error('The server did not confirm the visit save.');
         alert('Visit saved successfully!');
       }
 
@@ -854,7 +912,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
 
     } catch (error) {
       console.error('Error saving visit:', error);
-      alert(error instanceof Error ? error.message : `Failed to ${existingVisit ? 'update' : 'save'} visit. Please try again.`);
+      setSaveError(error instanceof Error ? error.message : `Failed to ${existingVisit ? 'update' : 'save'} visit. Please try again.`);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -870,7 +928,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+    <fieldset disabled={saving} className="bg-white rounded-lg shadow-md p-6 space-y-6 min-w-0">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-gray-800">
           {existingVisit ? 'Edit Visit' : 'Create EMR Entry'}
@@ -878,6 +936,20 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         <div className="text-sm text-gray-600">
           Patient: <span className="font-medium">{toTitleCase(patient.name)}</span>
         </div>
+      </div>
+
+      <div>
+        <label htmlFor="emr-visit-type" className="block text-sm font-medium text-gray-700 mb-1">Visit Type *</label>
+        <select
+          id="emr-visit-type"
+          value={visitType}
+          onChange={event => { visitTypeChanged.current = true; setVisitType(event.target.value as VisitType | ''); }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="" disabled={!existingVisit}>{existingVisit ? 'Unclassified (historical visit)' : 'Select visit type'}</option>
+          {VISIT_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+        </select>
+        <p className="mt-1 text-xs text-gray-500">{visitTypeHint || 'Classify this encounter for reporting. A planned follow-up date is recorded separately.'}</p>
       </div>
 
       {/* Doctor Selection */}
@@ -1421,7 +1493,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
             <div key={index} className="border border-gray-200 rounded-lg p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="relative">
-                  <label className="block text-xs text-gray-600 mb-1">Test Name</label>
+                  <label className="block text-xs text-gray-600 mb-1">Test Name *</label>
                   <input
                     type="text"
                     value={test.testName}
@@ -1443,17 +1515,19 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
                   {showTestSuggestions[index] && testSuggestions[index]?.length > 0 && (
                     <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                       {testSuggestions[index].map((suggestion) => (
-                        <div
+                        <button
+                          type="button"
                           key={suggestion.id}
-                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                          onMouseDown={() => selectTestFromMaster(suggestion, index)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          onPointerDown={event => event.preventDefault()}
+                          onClick={() => selectTestFromMaster(suggestion, index)}
                         >
                           <div className="font-medium text-sm">{suggestion.name}</div>
                           <div className="text-xs text-gray-500">
                             {suggestion.type.charAt(0).toUpperCase() + suggestion.type.slice(1)}
                             {suggestion.category && ` • ${suggestion.category}`}
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -1826,6 +1900,13 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
         )}
       </div>
 
+      {saveError && (
+        <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-medium">Save was not confirmed</p>
+          <p>{saveError}</p>
+          <p className="mt-1">Your entries are still in this form. Keep it open and retry after resolving the error.</p>
+        </div>
+      )}
       {/* Save Button */}
       <div className="flex justify-end">
         <button
@@ -1886,7 +1967,7 @@ const EMRForm: React.FC<EMRFormProps> = ({ patient, existingVisit, ocrData, init
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 };
 
